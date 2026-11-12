@@ -1492,3 +1492,74 @@ th.num {
     transition: none !important;
   }
 }
+
+/* ---------- briefs ---------- */
+
+.briefs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+  gap: 12px;
+}
+
+.brief {
+  padding: 14px 16px;
+}
+
+.brief-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.brief-summary {
+  margin: 8px 0 4px;
+  font-size: 14px;
+}
+
+.funnel {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+}
+
+.funnel ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: grid;
+  gap: 3px;
+}
+
+.funnel ul li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.funnel li[data-hire="true"] .pick {
+  color: var(--agent);
+  font-weight: 600;
+}
+
+.funnel .amt {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.status[data-s="Delivered"] { color: var(--good); }
+.status[data-s="Failed"] { color: var(--bad); }

@@ -154,14 +154,23 @@ export class LeagueAgent {
     return out;
   }
 
-  /** Open rounds and jobs this agent could enter right now. */
-  async open(): Promise<{ rounds: number[]; jobs: number[] }> {
-    const rounds = (await this.view<RoundLike[]>("get_rounds", { limit: 20 })).filter((r) => r.status === "Open" && !r.entries.some((e) => e.agent === this.env.account)).map((r) => r.id);
+  /** Open rounds and jobs this agent could enter right now, and rounds it was entered in
+   *  (by a scout, for a brief's tryout) that still wait for its answer. */
+  async open(): Promise<{ rounds: number[]; jobs: number[]; entered: number[] }> {
+    const all = await this.view<RoundLike[]>("get_rounds", { limit: 20 });
+    const rounds = all.filter((r) => r.status === "Open" && !r.entries.some((e) => e.agent === this.env.account)).map((r) => r.id);
+    const entered = all
+      .filter((r) => (r.status === "Trading" || r.status === "Locked") && r.entries.some((e) => e.agent === this.env.account && !e.answer_hash))
+      .map((r) => r.id);
     const jobs: number[] = [];
     for (const j of await this.view<Array<{ id: number; skill: string; min_rating: number; min_rounds: number }>>("get_jobs", { status: "Open", limit: 20 })) {
       if (await this.view<boolean>("is_qualified", { agent: this.env.account, skill: j.skill, min_rating: j.min_rating, min_rounds: j.min_rounds, min_attested: null })) jobs.push(j.id);
     }
-    return { rounds, jobs };
+    // Jobs from a brief's accepted offer are already taken by this agent.
+    for (const j of await this.view<Array<{ id: number; agent: string | null }>>("get_jobs", { status: "Taken", limit: 20 })) {
+      if (j.agent === this.env.account) jobs.push(j.id);
+    }
+    return { rounds, jobs, entered };
   }
 
   private async answer(kind: "rounds" | "jobs", id: number, attested: boolean, commit: (hash: string, attestation: unknown) => Promise<unknown>): Promise<string> {
@@ -190,5 +199,5 @@ interface RoundLike {
   id: number;
   status: string;
   attested: boolean;
-  entries: Array<{ agent: string }>;
+  entries: Array<{ agent: string; answer_hash?: string | null }>;
 }

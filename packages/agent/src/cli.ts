@@ -52,10 +52,11 @@ async function main(): Promise<void> {
       for (const id of arg("id") ? [Number(arg("id"))] : await agent.claimable()) await agent.claim(id);
       break;
     case "auto":
-      // Joins every open round and takes every job it qualifies for, one at a time.
+      // Joins every open round, answers tryouts scouts entered it in, takes every job it
+      // qualifies for (or was hired for through a brief), and claims what it is owed.
       for (;;) {
-        const { rounds, jobs } = await agent.open();
-        for (const id of rounds) await agent.playRound(id).catch((e) => console.log(`round ${id}: ${e.message}`));
+        const { rounds, jobs, entered } = await agent.open();
+        for (const id of [...entered, ...rounds]) await agent.playRound(id).catch((e) => console.log(`round ${id}: ${e.message}`));
         for (const id of jobs) await agent.playJob(id).catch((e) => console.log(`job ${id}: ${e.message}`));
         for (const id of await agent.claimable()) await agent.claim(id).catch(() => undefined);
         await new Promise((r) => setTimeout(r, 15_000));

@@ -12,6 +12,7 @@ import { llmScout, SCRIPTED_SCOUTS } from "./scouts.js";
 import { scoutChat } from "./llm.js";
 import { configure, setup, upgrade } from "./setup.js";
 import { runJob } from "./job.js";
+import { runBrief } from "./brief.js";
 import { near } from "./config.js";
 import { issueIdentity } from "./identity.js";
 import path from "node:path";
@@ -169,6 +170,24 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     }
+    case "brief": {
+      const taskId = arg("task", "parse-csv")!;
+      const m = mode();
+      await withVerifier((verifier) =>
+        runBrief({
+          chain,
+          verifier,
+          taskId,
+          summary: arg("summary", "I need a function that parses the CSV exports of my shop, quoted fields and all.")!,
+          solver: m.solver ?? simSolver,
+          scouts: m.scouts,
+          budget: near(arg("budget", "0.2")!),
+          scoutReward: near(arg("reward", "0.05")!),
+        }),
+      );
+      await leaderboard(chain);
+      break;
+    }
     case "watch":
       await watch(chain, Number(arg("round")), process.argv.includes("--dispute"));
       break;
@@ -188,7 +207,7 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     default:
-      console.log("usage: league <setup|upgrade|configure|identities|round|demo|job|watch|arbitrate|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm] [--round n] [--dispute]");
+      console.log("usage: league <setup|upgrade|configure|identities|round|demo|job|brief|watch|arbitrate|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm] [--round n] [--dispute]");
       process.exit(cmd ? 1 : 0);
   }
 }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Arena } from "./Arena";
-import { blockHeight, EXPLORER, getBettors, getIdentities, getJobs, getLeaderboard, getRounds, getTasks, isFinal, LEAGUE, type Bettor, type Identity, type Job, type Rating, type Round, type Task } from "./chain";
+import { blockHeight, EXPLORER, getBettors, getIdentities, getBriefs, getJobs, getLeaderboard, getScoutRecord, getRounds, getTasks, isFinal, LEAGUE, type Bettor, type Brief, type Identity, type Job, type ScoutRecord, type Rating, type Round, type Task } from "./chain";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
-import { Jobs, Scouts, Standings, Tasks } from "./Tables";
+import { Briefs, Jobs, Scouts, Standings, Tasks } from "./Tables";
 
 // Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
 const POLL_MS = 15000;
@@ -13,6 +13,8 @@ export function App() {
   const [bettors, setBettors] = useState<Bettor[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [briefs, setBriefs] = useState<Brief[]>([]);
+  const [picks, setPicks] = useState<Record<string, ScoutRecord | null>>({});
   const [roster, setRoster] = useState<RosterAgent[]>([]);
   const [records, setRecords] = useState<Record<number, RoundRecord | null>>({});
   const [height, setHeight] = useState<number | null>(null);
@@ -34,7 +36,10 @@ export function App() {
     const tick = async () => {
       if (document.hidden && identitiesSeen >= 0) return;
       try {
-        const [r, l, b, h, ids, t, j] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities(), getTasks(), getJobs()]);
+        const [r, l, b, h, ids, t, j, br] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities(), getTasks(), getJobs(), getBriefs()]);
+        setBriefs(br);
+        const scouts = [...new Set(br.flatMap((x) => x.nominations.map((n) => n.scout)))];
+        Promise.all(scouts.map(async (s) => [s, await getScoutRecord(s)] as const)).then((rows) => live && setPicks(Object.fromEntries(rows)));
         if (!live) return;
         setIdentities(ids);
         if (ids.length !== identitiesSeen) {
@@ -133,8 +138,16 @@ export function App() {
             <h2>Scouts</h2>
             <span className="note">forecasting skill and profit across rounds</span>
           </div>
-          <Scouts bettors={bettors} records={Object.values(records).filter((r): r is RoundRecord => !!r)} />
+          <Scouts bettors={bettors} records={Object.values(records).filter((r): r is RoundRecord => !!r)} picks={picks} />
         </div>
+      </div>
+
+      <div className="section">
+        <div className="section-head">
+          <h2>Briefs</h2>
+          <span className="note">a client asks for an agent; scouts nominate and stake, a tryout picks the best, the hire pays or slashes them</span>
+        </div>
+        <Briefs briefs={briefs} identities={identities} jobs={jobs} onRound={(id) => { select(id); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       </div>
 
       <div className="section split">
@@ -178,6 +191,10 @@ export function App() {
           <div>
             <b>Scores you can challenge</b>
             <span>Verifiers stake and sign. Anyone can re-run the published answers and dispute in the window; a wrong score costs the verifier its stake.</span>
+          </div>
+          <div>
+            <b>Scouts vouch with money</b>
+            <span>For a client's brief, scouts nominate agents and stake on them. A tryout round picks the best; if the hire delivers its scouts share the reward, if not they lose their stake.</span>
           </div>
           <div>
             <b>Rated against field and task</b>

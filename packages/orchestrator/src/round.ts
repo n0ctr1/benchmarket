@@ -44,6 +44,10 @@ export interface RoundOptions {
   openSeconds?: number;
   /** Demo of the dispute path: the verifier posts swapped scores, the watcher catches it. */
   lie?: boolean;
+  /** Play a round that already exists and is trading (a brief's tryout) instead of creating one. */
+  existingRoundId?: number;
+  /** Extra balance scouts need on top of their bet (brief nominations). */
+  extraScoutFunds?: bigint;
   log?: (line: string) => void;
 }
 
@@ -81,7 +85,9 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   const { chain, verifier, taskId } = opts;
   const solver = opts.solver ?? simSolver;
   const scouts = opts.scouts ?? SCRIPTED_SCOUTS;
-  const agents = opts.agents ?? ROSTER;
+  const existing = opts.existingRoundId ? await chain.getRound(opts.existingRoundId) : null;
+  // In an existing round, the league plays the entrants it runs; outsiders answer on their own.
+  const agents = existing ? (opts.agents ?? ROSTER).filter((a) => existing.entries.some((e) => e.agent === agentAccount(a, config.leagueAccount))) : opts.agents ?? ROSTER;
   const say = opts.log ?? ((l: string) => console.log(l));
   const league = config.leagueAccount;
   const task = loadTask(taskId);
@@ -98,14 +104,14 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   const reserve = 0.05;
   for (const id of [...agents.map((a) => agentAccount(a, league)), ...scouts.map((s) => `${s.id}.${league}`)]) {
     const need = id.startsWith("scout") ? config.scoutBet : config.builderStake;
-    const sent = await chain.topUp(league, id, need + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
+    const sent = await chain.topUp(league, id, need + (opts.extraScoutFunds && id.startsWith("scout") ? opts.extraScoutFunds : 0n) + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
     if (sent > 0n) say(`  topped up ${short(id)} with ${formatNear(sent, sent < 10n ** 21n ? 6 : 3)} NEAR`);
   }
 
   // 1. Create. The deadline is a generous upper bound; the manager locks as soon as the last
   // scout has bought.
   const deadlineMs = Date.now() + Math.max(marketSeconds * 1000, 15 * 60_000);
-  const roundId = Number(
+  const roundId = existing ? existing.id : Number(
     await chain.createRound(league, {
       skill: task.skill,
       taskRef: opts.taskRef ?? task.id,
@@ -123,19 +129,22 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     saveLog(log);
   };
   const created = (await chain.getRound(roundId))!;
-  say(`round ${roundId}: ${task.title} (${task.id}), bounty ${formatNear(config.bounty)} NEAR${attested ? ", attested answers only" : ""}`);
+  say(`round ${roundId}: ${task.title} (${task.id}), bounty ${formatNear(created.bounty)} NEAR${created.attested ? ", attested answers only" : ""}`);
   say(`  task difficulty ${(created.task_rating_before / 100).toFixed(1)}${created.rated ? "" : " (uncurated: no rating changes)"}`);
-  note("round_created", { task: publicView(task), attested, task_rating: created.task_rating_before });
+  note("round_created", { task: publicView(task), attested: created.attested, task_rating: created.task_rating_before, tryout: !!existing });
+  if (existing) {
+    say(`  tryout: ${existing.entries.map((e) => short(e.agent)).join(", ")} entered by the scouts who nominated them; market maker funded with ${formatNear(existing.subsidy)} NEAR from the brief`);
+  }
 
   // 2. Agents register themselves; the bond comes back if they answer.
-  for (const a of agents) {
+  for (const a of existing ? [] : agents) {
     const acc = agentAccount(a, league);
     await chain.registerAgent(acc, roundId, acc, "Open", configHash(a), config.builderStake);
     say(`  ${a.name.padEnd(7)} registered (${a.model}), bond ${formatNear(config.builderStake)} NEAR`);
   }
 
   // Outside agents register themselves while registration is open.
-  if (opts.openSeconds) {
+  if (opts.openSeconds && !existing) {
     say(`  registration open for ${opts.openSeconds}s: any agent with a passport can enter (round ${roundId})`);
     await sleep(opts.openSeconds * 1000);
     const r = (await chain.getRound(roundId))!;
@@ -145,8 +154,10 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   }
 
   // 3. The manager funds the market maker. Its subsidy is its maximum loss.
-  await chain.openMarket(league, roundId, config.subsidy);
-  say(`  market maker funded with ${formatNear(config.subsidy)} NEAR (LMSR)`);
+  if (!existing) {
+    await chain.openMarket(league, roundId, config.subsidy);
+    say(`  market maker funded with ${formatNear(config.subsidy)} NEAR (LMSR)`);
+  }
 
   // 4. Scouts buy one by one, each seeing the prices the previous purchases produced.
   for (const scout of scouts) {
@@ -170,7 +181,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   }
 
   // 5. Lock: prices and expected scores are frozen.
-  await chain.lockRound(league, roundId);
+  await chain.lockRound(created.manager, roundId);
   const locked = (await chain.getRound(roundId))!;
   say(`  market locked, volume ${formatNear(locked.total_pool)} NEAR`);
   for (const e of locked.entries) say(`    ${short(e.agent).padEnd(7)} price ${pct(e.market_ppm)}  expected ${pct(e.p_ppm)}`);
@@ -184,7 +195,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
         const out = await solver(a, task.id, tag, salt);
         const body = out.completion ? out.completion.response : out.answer;
         const hash = sha256Tagged(body);
-        if (attested && !out.signature) throw new Error("the cloud returned no signature for this completion");
+        if (created.attested && !out.signature) throw new Error("the cloud returned no signature for this completion");
         await chain.submitAnswer(acc, roundId, hash, out.signature ? attestationArg(out.signature) : undefined);
         verifier.submit(roundId, acc, task.id, body, out.meta, { request: out.completion?.request, config: publicConfig(a) });
         const took = typeof out.meta?.latencyMs === "number" ? ` in ${(out.meta.latencyMs / 1000).toFixed(1)}s` : "";

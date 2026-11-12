@@ -1,4 +1,4 @@
-import { near, short, type Bettor, type Identity, type Job, type Rating, type Round, type Task } from "./chain";
+import { near, short, type Bettor, type Brief, type Identity, type Job, type Rating, type Round, type ScoutRecord, type Task } from "./chain";
 import { Identicon } from "./Figure";
 import { hueColor } from "./identity";
 import type { RosterAgent, RoundRecord } from "./offchain";
@@ -126,7 +126,7 @@ export function Standings({ ratings, rounds, roster, identities }: { ratings: Ra
   );
 }
 
-export function Scouts({ bettors, records }: { bettors: Bettor[]; records: RoundRecord[] }) {
+export function Scouts({ bettors, records, picks = {} }: { bettors: Bettor[]; records: RoundRecord[]; picks?: Record<string, ScoutRecord | null> }) {
   const latest = new Map<string, { reasoning: string; kind: string; round: number }>();
   for (const rec of [...records].sort((a, b) => a.roundId - b.roundId)) {
     for (const e of rec.events) {
@@ -181,6 +181,11 @@ export function Scouts({ bettors, records }: { bettors: Bettor[]; records: Round
                 </td>
                 <td className="num">
                   {s.wins}/{s.bets}
+                  {picks[s.account] && picks[s.account]!.nominated > 0 && (
+                    <div className="muted" style={{ fontSize: 11 }} title="Brief nominations: hired, and of those delivered">
+                      picks {picks[s.account]!.hired}/{picks[s.account]!.nominated} hired · {picks[s.account]!.delivered} delivered
+                    </div>
+                  )}
                 </td>
               </tr>
             );
@@ -306,6 +311,84 @@ export function Jobs({ jobs, identities }: { jobs: Job[]; identities: Identity[]
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const BRIEF_STATE: Record<Brief["status"], string> = {
+  Scouting: "scouts nominating",
+  Tryout: "tryout round running",
+  Offered: "offer to the client",
+  Hired: "hired, job running",
+  Delivered: "delivered, scouts paid",
+  Failed: "failed, scouts slashed",
+  Declined: "client declined",
+  Cancelled: "cancelled, refunded",
+};
+
+/** A client's brief from nominations to the hire: who put whom forward, and how it paid off. */
+export function Briefs({ briefs, identities, jobs, onRound }: { briefs: Brief[]; identities: Identity[]; jobs: Job[]; onRound: (id: number) => void }) {
+  if (briefs.length === 0) return <div className="panel empty">No briefs yet.</div>;
+  return (
+    <div className="briefs">
+      {briefs.map((b) => {
+        const job = jobs.find((j) => j.id === b.job_id);
+        const closed = b.status === "Delivered" || b.status === "Failed" || b.status === "Declined" || b.status === "Cancelled";
+        return (
+          <article key={b.id} className="panel brief" data-s={b.status}>
+            <div className="brief-head">
+              <span className="mono muted">BRIEF {String(b.id).padStart(2, "0")}</span>
+              <span className="status" data-s={b.status}>
+                {BRIEF_STATE[b.status]}
+              </span>
+            </div>
+            <p className="brief-summary">“{b.summary}”</p>
+            <div className="muted" style={{ fontSize: 12 }}>
+              {short(b.client)} · budget {near(b.budget)} · scout reward {near(b.scout_reward)} · tryout {near(BigInt(b.tryout_bounty) + BigInt(b.tryout_subsidy))} NEAR
+            </div>
+            <ol className="funnel">
+              <li>
+                <b>Nominations</b>
+                <ul>
+                  {b.nominations.map((n, i) => {
+                    const ident = identities.find((x) => x.agent === n.agent);
+                    const isHire = n.agent === b.offered && (b.status === "Hired" || closed);
+                    const payout = BigInt(n.payout);
+                    const result = !closed ? "" : payout === 0n ? "lost stake" : payout > BigInt(n.stake) ? `+${near(payout - BigInt(n.stake))}` : "stake back";
+                    return (
+                      <li key={i} style={{ ["--agent" as string]: hueColor(ident) }} data-hire={isHire}>
+                        <span className="who">{short(n.scout)}</span> → {ident && <Identicon cells={ident.cells} palette={ident.palette} size={16} />} <span className="pick">{short(n.agent)}</span>{" "}
+                        <span className="mono muted">on {n.task_ref}</span> <span className="amt">{near(n.stake)}</span>
+                        {result && <span className={`delta ${payout > BigInt(n.stake) ? "up" : payout === 0n ? "down" : ""}`}> {result}</span>}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+              {b.tryout_round && (
+                <li>
+                  <b>Tryout</b>{" "}
+                  <button className="linkish" onClick={() => onRound(b.tryout_round!)}>
+                    round {b.tryout_round}
+                  </button>{" "}
+                  <span className="mono muted">on {b.tryout_task}</span>
+                </li>
+              )}
+              {b.offered && (
+                <li>
+                  <b>Offer</b> {short(b.offered)}
+                </li>
+              )}
+              {job && (
+                <li>
+                  <b>Job</b> #{job.id} <span className="mono muted">{job.task_ref}</span>: {job.score !== null ? `${job.score}/${job.total_tests}` : JOB_STATE[job.status]}
+                  {job.answer_attested && <span className="badge model">attested</span>}
+                </li>
+              )}
+            </ol>
+          </article>
+        );
+      })}
     </div>
   );
 }

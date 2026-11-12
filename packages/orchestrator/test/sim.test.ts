@@ -4,7 +4,7 @@ import { listTaskIds, loadTask, publicView } from "@agent-league/shared";
 import { normalizeCode, runTests } from "@agent-league/verifier";
 import { ROSTER } from "../src/roster.js";
 import { simAnswer } from "../src/sim.js";
-import { favoriteScout, specialistScout, valueScout } from "../src/scouts.js";
+import { closestTask, favoriteScout, specialistScout, valueScout } from "../src/scouts.js";
 
 test("sim answers are real code with agent-specific scores", async () => {
   for (const id of listTaskIds()) {
@@ -40,4 +40,26 @@ test("scripted scouts pick sensibly", async () => {
   assert.equal((await valueScout.decide(task, field)).agent, "delta.league.testnet");
   // cron-next strengths: cipher and delta, both at 10%: alphabetical tie-break.
   assert.equal((await specialistScout.decide(task, field)).agent, "cipher.league.testnet");
+});
+
+test("scripted scouts nominate real agents on curated tryout tasks close to the brief", async () => {
+  const tasks = ["eval-expr", "parse-duration", "semver-satisfies", "cron-next"].map((id, i) => {
+    const t = publicView(loadTask(id));
+    return { id, title: t.title, statement: t.statement, rating: 150_000 + i };
+  });
+  const field = ROSTER.map((config, i) => ({ agent: `${config.id}.league.testnet`, config, rating: 150_000 + i * 100, rounds: 3, odds: 0 }));
+  const brief = { summary: "I need to check which package versions satisfy a semver range like ^1.2.3.", skill: "code.js" };
+  assert.equal(closestTask(brief, tasks).id, "semver-satisfies");
+  for (const s of [favoriteScout, valueScout, specialistScout]) {
+    const picks = await s.nominate!(brief, field, tasks);
+    assert.ok(picks.length >= 1);
+    for (const p of picks) {
+      assert.ok(field.some((f) => f.agent === p.agent), `${s.id}: unknown agent`);
+      assert.equal(p.task, "semver-satisfies");
+      assert.ok(p.reasoning.length > 10);
+    }
+  }
+  // The favorite nominates the top-rated agent; value the runner-up.
+  assert.equal((await favoriteScout.nominate!(brief, field, tasks))[0].agent, field[4].agent);
+  assert.equal((await valueScout.nominate!(brief, field, tasks))[0].agent, field[3].agent);
 });

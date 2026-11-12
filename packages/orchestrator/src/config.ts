@@ -77,6 +77,10 @@ export const config = {
   get disputeWindowSeconds() {
     return Number(env("DISPUTE_WINDOW_SECONDS", "120"));
   },
+  /** Stake a scout puts behind each nomination on a brief. */
+  get scoutStake() {
+    return near(env("SCOUT_STAKE_NEAR", "0.05"));
+  },
   get verifierStake() {
     return near(env("VERIFIER_STAKE_NEAR", "0.2"));
   },

@@ -160,6 +160,43 @@ export interface ConfigView {
   next_job_id: number;
 }
 
+export type BriefStatus = "Scouting" | "Tryout" | "Offered" | "Hired" | "Delivered" | "Failed" | "Declined" | "Cancelled";
+
+export interface BriefView {
+  id: number;
+  client: string;
+  skill: string;
+  summary: string;
+  task_ref: string;
+  tests_hash: string;
+  pass_ppm: number;
+  attested: boolean;
+  budget: string;
+  scout_reward: string;
+  tryout_bounty: string;
+  tryout_subsidy: string;
+  min_stake: string;
+  nominate_until_ms: number;
+  status: BriefStatus;
+  nominations: Array<{ scout: string; agent: string; task_ref: string; stake: string; payout: string }>;
+  tryout_task: string | null;
+  tryout_round: number | null;
+  offered: string | null;
+  offer_until_ms: number;
+  job_id: number | null;
+  created_at_ms: number;
+  closed_at_ms: number | null;
+}
+
+export interface ScoutRecordView {
+  nominated: number;
+  hired: number;
+  delivered: number;
+  failed: number;
+  earned: string;
+  slashed: string;
+}
+
 /** NEAR AI Cloud signature, as the contract takes it. */
 export interface AttestationArg {
   text: string;
@@ -368,6 +405,61 @@ export class LeagueChain {
 
   finalizeJob(caller: string, jobId: number) {
     return this.call<void>(caller, "finalize_job", { job_id: jobId }, 0n, HEAVY_GAS);
+  }
+
+  // ----- briefs -----
+
+  postBrief(client: string, p: { skill: string; summary: string; taskRef: string; testsHash: string; budget: bigint; scoutReward: bigint; tryoutBounty: bigint; tryoutSubsidy: bigint; minStake: bigint; nominateWindowMs: number; tradeWindowMs: number; workWindowMs: number; passPpm?: number; attested?: boolean }) {
+    const total = p.budget + p.scoutReward + p.tryoutBounty + p.tryoutSubsidy;
+    return this.call<number>(client, "post_brief", {
+      skill: p.skill,
+      summary: p.summary,
+      task_ref: p.taskRef,
+      tests_hash: p.testsHash,
+      budget: p.budget.toString(),
+      scout_reward: p.scoutReward.toString(),
+      tryout_bounty: p.tryoutBounty.toString(),
+      tryout_subsidy: p.tryoutSubsidy.toString(),
+      min_stake: p.minStake.toString(),
+      nominate_window_ms: p.nominateWindowMs,
+      trade_window_ms: p.tradeWindowMs,
+      work_window_ms: p.workWindowMs,
+      pass_ppm: p.passPpm ?? null,
+      attested: p.attested ?? false,
+      offer_window_ms: null,
+    }, total);
+  }
+
+  nominate(scout: string, briefId: number, agent: string, taskRef: string, stake: bigint) {
+    return this.call<void>(scout, "nominate", { brief_id: briefId, agent, task_ref: taskRef }, stake);
+  }
+
+  startTryout(caller: string, briefId: number) {
+    return this.call<void>(caller, "start_tryout", { brief_id: briefId }, 0n, HEAVY_GAS);
+  }
+
+  offer(caller: string, briefId: number) {
+    return this.call<void>(caller, "offer", { brief_id: briefId }, 0n, HEAVY_GAS);
+  }
+
+  acceptOffer(client: string, briefId: number) {
+    return this.call<number>(client, "accept_offer", { brief_id: briefId }, 0n, HEAVY_GAS);
+  }
+
+  declineOffer(client: string, briefId: number) {
+    return this.call<void>(client, "decline_offer", { brief_id: briefId }, 0n, HEAVY_GAS);
+  }
+
+  getBrief(briefId: number) {
+    return this.view<BriefView | null>("get_brief", { brief_id: briefId });
+  }
+
+  getBriefs() {
+    return this.view<BriefView[]>("get_briefs", { limit: 20 });
+  }
+
+  getScoutRecord(account: string) {
+    return this.view<ScoutRecordView>("get_scout_record", { account });
   }
 
   // ----- views -----

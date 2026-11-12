@@ -21,6 +21,38 @@ export interface Scout {
   id: string;
   kind: "scripted" | "llm";
   decide(task: TaskPublic, field: ScoutFieldEntry[]): Promise<ScoutDecision>;
+  /** For a client's brief: which agents to put forward, and which curated task to try them on. */
+  nominate?(brief: BriefInfo, field: ScoutFieldEntry[], tasks: TryoutTask[]): Promise<ScoutNomination[]>;
+}
+
+export interface BriefInfo {
+  summary: string;
+  skill: string;
+}
+
+/** A curated task a scout may pick for the tryout. */
+export interface TryoutTask {
+  id: string;
+  title: string;
+  statement: string;
+  /** Difficulty rating, centi-points. */
+  rating: number;
+}
+
+export interface ScoutNomination {
+  agent: string;
+  task: string;
+  reasoning: string;
+  fallback?: { reason: string; reply?: string };
+}
+
+const words = (t: string) => new Set(t.toLowerCase().match(/[a-z]{3,}/g) ?? []);
+
+/** The curated task closest to the brief by shared words; ties go to the harder task. */
+export function closestTask(brief: BriefInfo, tasks: TryoutTask[]): TryoutTask {
+  const want = words(brief.summary);
+  const score = (t: TryoutTask) => [...words(`${t.title} ${t.statement}`)].filter((w) => want.has(w)).length;
+  return [...tasks].sort((a, b) => score(b) - score(a) || b.rating - a.rating || a.id.localeCompare(b.id))[0];
 }
 
 function priorShares(field: ScoutFieldEntry[]): number[] {
@@ -36,6 +68,11 @@ export const favoriteScout: Scout = {
   async decide(_task, field) {
     const best = [...field].sort((a, b) => b.rating - a.rating || a.agent.localeCompare(b.agent))[0];
     return { agent: best.agent, reasoning: `Highest rating in the field (${(best.rating / 100).toFixed(1)}).` };
+  },
+  async nominate(brief, field, tasks) {
+    const t = closestTask(brief, tasks);
+    const best = [...field].sort((a, b) => b.rating - a.rating || a.agent.localeCompare(b.agent))[0];
+    return [{ agent: best.agent, task: t.id, reasoning: `Best rated agent in ${brief.skill} (${(best.rating / 100).toFixed(1)}); ${t.id} is the closest curated task to the brief.` }];
   },
 };
 
@@ -55,6 +92,13 @@ export const valueScout: Scout = {
       reasoning: `Rating implies ${(prior[best] * 100).toFixed(0)}% but the market prices ${(f.odds * 100).toFixed(0)}%: underpriced.`,
     };
   },
+  async nominate(brief, field, tasks) {
+    // The runner-up by rating: the favorite will be nominated anyway, value is in a second option.
+    const ranked = [...field].sort((a, b) => b.rating - a.rating || a.agent.localeCompare(b.agent));
+    const pick = ranked[1] ?? ranked[0];
+    const t = closestTask(brief, tasks);
+    return [{ agent: pick.agent, task: t.id, reasoning: `${pick.config.name} is second by rating and will cost less to back; worth a tryout on ${t.id}.` }];
+  },
 };
 
 /** Backs an agent whose builder lists this task as a strength; ties go to the lower odds. */
@@ -72,6 +116,17 @@ export const specialistScout: Scout = {
           ? `${pick.config.name} lists ${task.id} as a strength and is the cheapest such agent.`
           : `Nobody claims ${task.id}; taking the cheapest agent.`,
     };
+  },
+  async nominate(brief, field, tasks) {
+    // Picks the task first, then every agent whose builder claims it.
+    const t = closestTask(brief, tasks);
+    const fits = field.filter((f) => f.config.strengths.includes(t.id));
+    const picks = fits.length ? fits : [[...field].sort((a, b) => b.rating - a.rating)[0]];
+    return picks.slice(0, 2).map((f) => ({
+      agent: f.agent,
+      task: t.id,
+      reasoning: fits.length ? `${t.id} matches the brief and ${f.config.name} lists it as a strength.` : `${t.id} matches the brief; nobody claims it, so the best rated agent.`,
+    }));
   },
 };
 
@@ -123,6 +178,33 @@ Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three senten
         reasoning: `(model reply unusable, value fallback) ${d.reasoning}`,
         fallback: { reason, reply: text?.slice(0, 600) },
       };
+    },
+    async nominate(brief, field, tasks) {
+      const system = `You are a scout in Agent League. A client needs an AI agent for a task. You put agents forward for a tryout and stake NEAR on each pick:
+if the agent you nominated is hired and delivers, you share the client's scout reward; if it fails, you lose your stake. You also choose the curated tryout task
+that best predicts success on the client's task. Use only the information given.
+Reply with JSON only: {"nominations": [{"agent": "<agent id>", "task": "<task id>", "reasoning": "<one or two sentences>"}]} with one or two nominations.`;
+      const rows = field.map((f) => ({ id: f.config.id, model: f.config.model, claimed_strengths: f.config.strengths, rating: +(f.rating / 100).toFixed(1), rounds_played: f.rounds }));
+      const taskRows = tasks.map((t) => ({ id: t.id, title: t.title, difficulty: +(t.rating / 100).toFixed(1), statement: t.statement.slice(0, 400) }));
+      const user = `Client brief (${brief.skill}): ${brief.summary}\n\nCurated tryout tasks:\n${JSON.stringify(taskRows, null, 2)}\n\nAgents:\n${JSON.stringify(rows, null, 2)}`;
+      let text: string | undefined;
+      let reason: string;
+      try {
+        text = await chatFn(model, system, user);
+        const parsed = findJsonObject(text, "nominations") as { nominations?: Array<{ agent?: string; task?: string; reasoning?: string }> } | null;
+        const out: ScoutNomination[] = [];
+        for (const n of parsed?.nominations ?? []) {
+          const f = field.find((x) => x.config.id === n.agent || x.agent === n.agent);
+          const t = tasks.find((x) => x.id === n.task);
+          if (f && t && typeof n.reasoning === "string" && n.reasoning.trim() && !out.some((o) => o.agent === f.agent)) out.push({ agent: f.agent, task: t.id, reasoning: n.reasoning.trim() });
+        }
+        if (out.length) return out.slice(0, 2);
+        reason = parsed ? "no usable nomination" : "no JSON object with nominations";
+      } catch (e) {
+        reason = `model error: ${e instanceof Error ? e.message : e}`;
+      }
+      const d = await favoriteScout.nominate!(brief, field, tasks);
+      return d.map((x) => ({ ...x, reasoning: `(model reply unusable, favorite fallback) ${x.reasoning}`, fallback: { reason, reply: text?.slice(0, 600) } }));
     },
   };
 }

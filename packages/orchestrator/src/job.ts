@@ -1,9 +1,9 @@
 import { loadTask, roundTag, sha256Tagged } from "@agent-league/shared";
-import { recheck, type Verifier } from "@agent-league/verifier";
+import { recheck, taskIdOf, type Verifier } from "@agent-league/verifier";
 import type { JobView, LeagueChain } from "./chain.js";
 import { config, formatNear } from "./config.js";
 import { attestationArg } from "./nearai.js";
-import { agentAccount, publicConfig, ROSTER } from "./roster.js";
+import { agentAccount, publicConfig, ROSTER, type AgentConfig } from "./roster.js";
 import type { Solver } from "./round.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -62,7 +62,17 @@ export async function runJob(opts: JobOptions): Promise<JobView> {
   const acc = agentAccount(hired, league);
   await chain.takeJob(acc, jobId);
   say(`  ${hired.name} takes the job`);
+  return workJob({ chain, verifier, jobId, agent: hired, solver, say });
+}
 
+/** The hired agent does the job; the verifier scores it; after the dispute window it closes. */
+export async function workJob(o: { chain: LeagueChain; verifier: Verifier; jobId: number; agent: AgentConfig; solver: Solver; say: (l: string) => void }): Promise<JobView> {
+  const { chain, verifier, jobId, solver, say } = o;
+  const hired = o.agent;
+  const league = config.leagueAccount;
+  const acc = agentAccount(hired, league);
+  const posted = (await chain.getJob(jobId))!;
+  const task = loadTask(taskIdOf(posted.task_ref));
   const out = await solver(hired, task.id, roundTag("job", jobId), `job:${jobId}`);
   const body = out.completion ? out.completion.response : out.answer;
   if (solver.attests && !out.signature) throw new Error("the cloud returned no signature for this completion");

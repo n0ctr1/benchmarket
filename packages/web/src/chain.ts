@@ -113,6 +113,33 @@ export interface Job {
   created_at_ms: number;
 }
 
+export interface Brief {
+  id: number;
+  client: string;
+  summary: string;
+  task_ref: string;
+  budget: string;
+  scout_reward: string;
+  tryout_bounty: string;
+  tryout_subsidy: string;
+  status: "Scouting" | "Tryout" | "Offered" | "Hired" | "Delivered" | "Failed" | "Declined" | "Cancelled";
+  nominations: Array<{ scout: string; agent: string; task_ref: string; stake: string; payout: string }>;
+  tryout_task: string | null;
+  tryout_round: number | null;
+  offered: string | null;
+  job_id: number | null;
+  created_at_ms: number;
+}
+
+export interface ScoutRecord {
+  nominated: number;
+  hired: number;
+  delivered: number;
+  failed: number;
+  earned: string;
+  slashed: string;
+}
+
 let rpcId = 0;
 
 async function rpc<T>(method: string, params: unknown): Promise<T> {
@@ -149,6 +176,8 @@ export const getBettors = () => view<Bettor[]>("get_scouts", {});
 export const getPosition = (roundId: number, account: string) =>
   view<Array<{ agent: string; amount: string; bond: string }>>("get_position", { round_id: roundId, account });
 export const getTasks = () => view<Task[]>("get_tasks", { limit: 100 }).catch(() => [] as Task[]);
+export const getBriefs = () => view<Brief[]>("get_briefs", { limit: 10 }).catch(() => [] as Brief[]);
+export const getScoutRecord = (account: string) => view<ScoutRecord>("get_scout_record", { account }).catch(() => null);
 export const getJobs = () => view<Job[]>("get_jobs", { limit: 20 }).catch(() => [] as Job[]);
 
 /** A round counts as finished once its scores are final. */

@@ -42,6 +42,8 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
   const wanted = [
     ...ROSTER.map((a) => ({ id: agentAccount(a, league), balance: near(opts.agentBalance ?? "0.6") })),
     ...ALL_SCOUT_IDS.map((s) => ({ id: `${s}.${league}`, balance: near(opts.scoutBalance ?? "0.4") })),
+    // A client who posts briefs in the demo.
+    { id: `client.${league}`, balance: near("0.1") },
   ];
   for (const w of wanted) {
     if (chain.keys.has(w.id)) {
@@ -62,8 +64,10 @@ export async function upgrade(): Promise<void> {
   const parent = chain.account(league);
   const wasm = WASM_CANDIDATES.find((p) => fs.existsSync(p));
   if (!wasm) throw new Error("build the contract first: npm run build:contract");
-  // A V6 contract reports its params in get_config.
-  const current = await chain.getConfig().then((c) => !!c.params, () => false);
+  // A V7 contract reports next_brief_id; V6 reports params; older ones need an earlier release.
+  const cfg = await chain.getConfig().catch(() => null);
+  if (cfg && !cfg.params) throw new Error("state is older than V6: upgrade with the V6 release first");
+  const current = cfg ? (cfg as { next_brief_id?: number }).next_brief_id !== undefined : false;
   console.log(`deploying ${path.relative(REPO_ROOT, wasm)} (${fs.statSync(wasm).size} bytes)`);
   await parent.deployContract(new Uint8Array(fs.readFileSync(wasm)));
   if (current) {
@@ -71,7 +75,7 @@ export async function upgrade(): Promise<void> {
   } else {
     await parent.callFunction({ contractId: league, methodName: "migrate", args: {}, gas: 300_000_000_000_000n });
     const c = await chain.getConfig();
-    console.log(`migrated to V6: rounds below ${c.first_lmsr_round} kept as parimutuel history, ratings and scouts carried over`);
+    console.log(`migrated to V7: everything kept (rounds from ${c.first_lmsr_round} on LMSR, earlier ones as history); briefs enabled`);
   }
   await configure(chain);
 }
