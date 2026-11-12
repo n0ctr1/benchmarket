@@ -23,10 +23,13 @@ export interface TaskWithTests extends TaskPublic {
   tests: TestCase[];
   /** sha256 of the raw tests.json, committed on chain in create_round. */
   testsHash: string;
+  /** The raw tests.json, published with the report so anyone can check the hash and re-run. */
+  rawTests: string;
   referencePath: string;
 }
 
-export const TASKS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../tasks");
+/** Task pool. A live league keeps hidden tests outside the repository: set LEAGUE_TASKS_DIR. */
+export const TASKS_DIR = process.env.LEAGUE_TASKS_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../tasks");
 
 export function listTaskIds(dir = TASKS_DIR): string[] {
   return fs
@@ -43,6 +46,7 @@ export function loadTask(id: string, dir = TASKS_DIR): TaskWithTests {
     ...task,
     tests: JSON.parse(rawTests) as TestCase[],
     testsHash: sha256Tagged(rawTests),
+    rawTests,
     referencePath: path.join(base, "reference.js"),
   };
 }
