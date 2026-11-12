@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { conflictPrompt, faceCode, parseIdentityReply, renderFace, zeroPrompt, type IdentityChoice } from "@agent-league/shared";
+import { conflictPrompt, faceCode, figureText, parseIdentityReply, zeroPrompt, type IdentityChoice } from "@agent-league/shared";
 import { IDENTITY_DEPOSIT, type LeagueChain } from "./chain.js";
 import { config, DATA_DIR } from "./config.js";
 import { chat, completionSignature, type ChatMessage, type CompletionSignature } from "./nearai.js";
@@ -11,6 +11,8 @@ export interface IdentityAttempt {
   at: number;
   reply?: string;
   choice?: IdentityChoice;
+  /** Face the seed produced, as the contract computed it. */
+  face?: { pattern: number; hue: number };
   rejected?: string;
   completionId?: string;
   signature?: CompletionSignature | null;
@@ -21,7 +23,7 @@ export interface IdentityRecord {
   model: string;
   zeroPromptHash: string;
   attempts: IdentityAttempt[];
-  issued?: { number: number; face: number[]; motto: string; why: string };
+  issued?: { number: number; pattern: number; hue: number; seed: string; motto: string };
 }
 
 const MAX_ATTEMPTS = 4;
@@ -35,9 +37,9 @@ function save(rec: IdentityRecord): void {
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /**
- * The agent picks its own face. Every agent gets the same zero prompt (with its own system
- * prompt as the system message, since the agent is model + prompt). The contract is the judge
- * of uniqueness: a face too close to an issued one is sent back with the list of taken faces.
+ * The agent writes its own seed. Every agent gets the same zero prompt (with its own system
+ * prompt as the system message, since the agent is model + prompt). The contract hashes the
+ * seed into the face and judges uniqueness; a rejected agent rewrites its seed.
  */
 export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say: (l: string) => void = console.log): Promise<IdentityRecord> {
   const league = config.leagueAccount;
@@ -86,17 +88,19 @@ export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say:
       continue;
     }
 
-    const check = await chain.checkFace(choice.face);
+    const check = await chain.checkFace(choice.seed);
+    attempt.face = { pattern: check.pattern, hue: check.hue };
     let reason = check.ok ? null : check.reason ?? "rejected";
     if (!reason) {
       const sig = attempt.signature;
       const proof = `nearai:${reply.id}:${sig?.signature_kind ?? "unsigned"}:${sig ? sha(sig.signature).slice(0, 16) : "-"}`;
       try {
-        const number = Number(await chain.registerIdentity(account, account, choice.face, choice.motto, configHash(agent), proof));
-        rec.issued = { number, face: choice.face, motto: choice.motto, why: choice.why };
+        const number = Number(await chain.registerIdentity(account, account, choice.seed, choice.motto, configHash(agent), proof));
+        rec.issued = { number, pattern: check.pattern, hue: check.hue, seed: choice.seed, motto: choice.motto };
         save(rec);
-        say(`  ${agent.name.padEnd(7)} passport #${number} ${faceCode(choice.face)}  "${choice.motto}"`);
-        for (const l of renderFace(choice.face)) say(`            ${l}`);
+        say(`  ${agent.name.padEnd(7)} passport #${number} ${faceCode(check)}  "${choice.motto}"`);
+        say(`            seed: ${choice.seed}`);
+        for (const l of figureText(check.pattern).slice(0, 7)) say(`            ${l}`);
         return rec;
       } catch (e) {
         // Another agent may have taken a close face between the check and the call; that goes
@@ -112,9 +116,8 @@ export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say:
     }
     attempt.rejected = reason!;
     save(rec);
-    say(`  ${agent.name.padEnd(7)} attempt ${i}: ${faceCode(choice.face)} rejected, ${reason}`);
-    const taken = (await chain.getIdentities()).map((t) => ({ agent: t.agent.split(".")[0], face: t.face }));
-    messages.push({ role: "user", content: conflictPrompt(taken, choice.face, reason!) });
+    say(`  ${agent.name.padEnd(7)} attempt ${i}: ${faceCode(check)} rejected, ${reason}`);
+    messages.push({ role: "user", content: conflictPrompt(reason!) });
   }
   save(rec);
   throw new Error(`${agent.name} could not get a unique face in ${MAX_ATTEMPTS} attempts`);

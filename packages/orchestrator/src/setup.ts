@@ -60,14 +60,15 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
   }
 }
 
-/** Deploys the current wasm over the existing contract and runs `migrate` (V1 -> identities). */
+/** Deploys the current wasm over the existing contract and runs `migrate` (V2 -> identicon passports). */
 export async function upgrade(): Promise<void> {
   const chain = new LeagueChain();
   const league = config.leagueAccount;
   const parent = chain.account(league);
   const wasm = WASM_CANDIDATES.find((p) => fs.existsSync(p));
   if (!wasm) throw new Error("build the contract first: npm run build:contract");
-  const already = await chain.getIdentities().then(() => true, () => false);
+  // A V3 contract already answers check_face for a seed string.
+  const already = await chain.checkFace("probe seed for the upgrade check").then(() => true, () => false);
   console.log(`deploying ${path.relative(REPO_ROOT, wasm)} (${fs.statSync(wasm).size} bytes)`);
   await parent.deployContract(new Uint8Array(fs.readFileSync(wasm)));
   if (already) {
@@ -76,5 +77,5 @@ export async function upgrade(): Promise<void> {
   }
   await parent.callFunction({ contractId: league, methodName: "migrate", args: {}, gas: 300_000_000_000_000n });
   const rounds = await chain.getRounds(50);
-  console.log(`migrated: ${rounds.length} rounds kept, identity registry added`);
+  console.log(`migrated: ${rounds.length} rounds kept, old passports dropped, identicon registry ready`);
 }
