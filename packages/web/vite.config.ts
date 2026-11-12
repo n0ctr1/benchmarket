@@ -49,6 +49,29 @@ function offChain(): Record<string, unknown> {
     out[`rounds/${id}.json`] = { ...log, report: report ? { message: report.message, signatures: report.signatures, totalTests: report.totalTests } : null, agents };
   }
   out["index.json"] = { rounds: ids };
+  // How each agent chose its face: attempts, rejections, reasoning.
+  const idDir = path.join(DATA, "identities");
+  out["identities.json"] = fs.existsSync(idDir)
+    ? Object.fromEntries(
+        fs.readdirSync(idDir).filter((f) => f.endsWith(".json")).map((f) => {
+          const r = JSON.parse(fs.readFileSync(path.join(idDir, f), "utf8"));
+          return [
+            r.agent,
+            {
+              model: r.model,
+              zeroPromptHash: r.zeroPromptHash,
+              why: r.issued?.why ?? null,
+              attempts: (r.attempts ?? []).map((a: any) => ({
+                face: a.choice?.face ?? null,
+                motto: a.choice?.motto ?? null,
+                rejected: a.rejected ?? null,
+                signatureKind: a.signature?.signature_kind ?? null,
+              })),
+            },
+          ];
+        }),
+      )
+    : {};
   return out;
 }
 

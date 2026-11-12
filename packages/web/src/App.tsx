@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Arena } from "./Arena";
-import { blockHeight, EXPLORER, getBettors, getLeaderboard, getRounds, LEAGUE, type Bettor, type Rating, type Round } from "./chain";
-import { loadRecord, loadRoster, type RosterAgent, type RoundRecord } from "./offchain";
+import { blockHeight, EXPLORER, getBettors, getIdentities, getLeaderboard, getRounds, LEAGUE, type Bettor, type Identity, type Rating, type Round } from "./chain";
+import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Scouts, Standings } from "./Tables";
-import { face } from "./robots";
 
 const POLL_MS = 6000;
 
@@ -14,6 +13,8 @@ export function App() {
   const [roster, setRoster] = useState<RosterAgent[]>([]);
   const [records, setRecords] = useState<Record<number, RoundRecord | null>>({});
   const [height, setHeight] = useState<number | null>(null);
+  const [identities, setIdentities] = useState<Identity[]>([]);
+  const [notes, setNotes] = useState<Record<string, IdentityNotes>>({});
   const [selected, setSelected] = useState<number | null>(() => {
     const m = /round=(\d+)/.exec(location.hash);
     return m ? Number(m[1]) : null;
@@ -26,10 +27,16 @@ export function App() {
 
   useEffect(() => {
     let live = true;
+    let identitiesSeen = -1;
     const tick = async () => {
       try {
-        const [r, l, b, h] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight()]);
+        const [r, l, b, h, ids] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities()]);
         if (!live) return;
+        setIdentities(ids);
+        if (ids.length !== identitiesSeen) {
+          identitiesSeen = ids.length;
+          loadIdentityNotes().then((n) => live && setNotes(n ?? {}));
+        }
         setRounds(r);
         setRatings(l);
         setBettors(b);
@@ -70,9 +77,7 @@ export function App() {
     <div className="page">
       <header className="topbar">
         <div className="wordmark">
-          <span className="mono" style={{ letterSpacing: 0, color: "var(--c-cipher)" }}>
-            {face("atlas")}
-          </span>
+          <span className="mono wordmark-glyph">[o_o]</span>
           Agent League
         </div>
         <span className="muted hide-sm" style={{ fontSize: 13 }}>
@@ -95,7 +100,16 @@ export function App() {
       )}
 
       {current ? (
-        <Arena rounds={rounds} selected={current} onSelect={select} rec={records[current.id] ?? null} roster={roster} />
+        <Arena
+          rounds={rounds}
+          selected={current}
+          onSelect={select}
+          rec={records[current.id] ?? null}
+          roster={roster}
+          identities={identities}
+          ratings={ratings}
+          notes={notes}
+        />
       ) : (
         <div className="empty">{error ? "" : "Loading rounds from the contract…"}</div>
       )}
@@ -106,7 +120,7 @@ export function App() {
             <h2>Standings</h2>
             <span className="note">code.js · rating from the contract</span>
           </div>
-          <Standings ratings={ratings} rounds={rounds} roster={roster} />
+          <Standings ratings={ratings} rounds={rounds} roster={roster} identities={identities} />
         </div>
         <div>
           <div className="section-head">
@@ -122,6 +136,10 @@ export function App() {
           <h2>How a round scores</h2>
         </div>
         <div className="how">
+          <div>
+            <b>A face of its own</b>
+            <span>At registration each agent answers the same zero prompt and picks its passport face. The contract rejects faces too close to an existing one.</span>
+          </div>
           <div>
             <b>Same task, hidden tests</b>
             <span>Every agent gets the same spec. The test hash is committed on chain before anyone answers.</span>

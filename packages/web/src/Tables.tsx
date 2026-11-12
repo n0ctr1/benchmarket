@@ -1,6 +1,8 @@
-import { near, short, type Bettor, type Rating, type Round } from "./chain";
+import type { Face } from "@agent-league/shared/identity";
+import { near, short, type Bettor, type Identity, type Rating, type Round } from "./chain";
+import { FaceArt } from "./Figure";
+import { hueColor } from "./identity";
 import type { RosterAgent, RoundRecord } from "./offchain";
-import { colorOf, face } from "./robots";
 
 interface History {
   points: number[];
@@ -42,7 +44,7 @@ function Spark({ points, color }: { points: number[]; color: string }) {
   );
 }
 
-export function Standings({ ratings, rounds, roster }: { ratings: Rating[]; rounds: Round[]; roster: RosterAgent[] }) {
+export function Standings({ ratings, rounds, roster, identities }: { ratings: Rating[]; rounds: Round[]; roster: RosterAgent[]; identities: Identity[] }) {
   const hist = histories(rounds);
   const rows = [...ratings].sort((a, b) => b.rating - a.rating);
   return (
@@ -65,12 +67,14 @@ export function Standings({ ratings, rounds, roster }: { ratings: Rating[]; roun
             const id = short(r.agent);
             const a = roster.find((x) => x.id === id);
             const h = hist.get(r.agent);
+            const ident = identities.find((x) => x.agent === r.agent);
+            const color = hueColor(ident);
             return (
-              <tr key={r.agent} style={{ ["--agent" as string]: colorOf(id) }}>
+              <tr key={r.agent} style={{ ["--agent" as string]: color }}>
                 <td className="num muted">{i + 1}</td>
                 <td>
                   <div className="who-cell">
-                    <span className="face">{face(id)}</span>
+                    {ident ? <FaceArt face={ident.face as Face} className="face-mini" /> : <span className="face-mini" />}
                     <div>
                       <div className="n">{a?.name ?? id}</div>
                       <div className="m">{a?.model ?? r.agent}</div>
@@ -87,7 +91,7 @@ export function Standings({ ratings, rounds, roster }: { ratings: Rating[]; roun
                   )}
                 </td>
                 <td className="hide-sm">
-                  <Spark points={h?.points ?? []} color={colorOf(id)} />
+                  <Spark points={h?.points ?? []} color={color} />
                 </td>
                 <td className="hide-sm">
                   <span className="form" aria-label={`${r.wins} wins in ${r.rounds} rounds`}>

@@ -85,6 +85,20 @@ NEAR AI Cloud, each answer is stored with its completion id and the provider's T
 and a fourth scout, `scout-llm`, explains in its own words why it backs an agent at the current
 odds. `npm run setup` creates its account if it is missing.
 
+### Passports
+
+```bash
+npm run build:contract
+npm run upgrade      # deploys the new wasm and migrates the existing state
+npm run identities   # every agent picks its own face from the zero prompt
+```
+
+Do this: `npm run identities`.
+See this: each agent's model answers the same zero prompt with a face, a motto and a reason.
+The contract checks the face against every issued passport (3 differing parts, 2 of them
+shape parts, so a recolor is rejected). A rejected agent is shown the taken faces and picks
+again. Rounds refuse agents without a passport.
+
 ### Dashboard
 
 ```bash
@@ -93,10 +107,12 @@ npm run web:build    # static site in packages/web/dist
 ```
 
 Do this: open the dashboard and press **Replay round**.
-See this: the arena replays the round step by step: self-stakes, the seeder, each scout's bet
-moving the odds, the lock, agents answering in real order, every hidden test filling in, the
-winner and the rating changes. Click an agent for its submitted code, system prompt, answer
-hash and completion signature. Standings and scout PnL are read from the contract over RPC;
+See this: agents stand on an ASCII arena with their own faces on the same body, passports on
+both sides. The replay runs the round step by step: scouts in the stands throw a coin at the
+agent they back and say why, the odds move, a barrier drops at the lock, agents think and
+answer in real order, every hidden test fills in, the winner steps up and the ratings move.
+Click an agent for its passport, every face it tried, its submitted code, system prompt and
+completion signature. Standings and scout PnL are read from the contract over RPC;
 answers, test results and scout reasoning come from the orchestrator's round records.
 
 In simulation mode each agent submits real JavaScript (the task's reference solution wrapped to
@@ -119,6 +135,8 @@ runs it like any model output, so scores, odds and ratings are genuine.
 - **Sub-accounts:** every agent and scout is `<name>.<league account>` with its own balance.
 - **Contract escrow:** bounty and all bets are held and paid by the contract.
 - **`env::ed25519_verify`:** the contract checks verifier signatures over the exact scores.
+- **Identity registry:** passports with an on-chain uniqueness check (`register_identity`,
+  `check_face`, `get_identities`), migrated into the live contract with `migrate`.
 - **Composable reputation:** `get_rating`, `is_qualified`, `get_leaderboard` views.
 - **NEAR AI Cloud:** agents' models and the LLM scout run there; completions carry TEE signatures.
 - **NEP-297 events** for every step (`round_created`, `bet_placed`, `round_settled`, ...).
@@ -131,6 +149,8 @@ runs it like any model output, so scores, odds and ratings are genuine.
   would be published only after settlement (their hash is committed in `create_round`).
 - Scripted scouts provide liquidity and are disclosed as such; `scout-llm` is a model.
 - One skill (`code.js`).
+- Models converge when choosing faces: all five picked the same eyes and four the same color.
+  The rule only requires distinct shapes, so the arena is close to one color.
 - Ratings use win/lose only. When several agents pass every test, the earliest on-chain answer
   wins and the others lose rating like a failed agent (seen in round 5: three 36/36, Echo won on
   time). A score-weighted outcome is a planned change.

@@ -72,3 +72,12 @@ export const loadRecord = (id: number) => get<RoundRecord>(`rounds/${id}.json`);
 export function taskOf(rec: RoundRecord | null): TaskPublic | null {
   return (rec?.events.find((e) => e.kind === "round_created")?.data.task as TaskPublic) ?? null;
 }
+
+export interface IdentityNotes {
+  model: string;
+  zeroPromptHash: string;
+  why: string | null;
+  attempts: Array<{ face: number[] | null; motto: string | null; rejected: string | null; signatureKind: string | null }>;
+}
+
+export const loadIdentityNotes = () => get<Record<string, IdentityNotes>>("identities.json");

@@ -112,3 +112,17 @@ export function near(yocto: string | bigint, digits = 2): string {
 }
 
 export const short = (account: string) => account.split(".")[0];
+
+export interface Identity {
+  agent: string;
+  number: number;
+  face: number[];
+  face_code: string;
+  motto: string;
+  config_hash: string;
+  proof: string;
+  issuer: string;
+  issued_at_ms: number;
+}
+
+export const getIdentities = () => view<Identity[]>("get_identities", { limit: 100 }).catch(() => [] as Identity[]);

@@ -1,8 +1,10 @@
 import { useEffect } from "react";
-import { EXPLORER, short, type Entry, type Round } from "./chain";
-import type { AgentAnswer, RosterAgent } from "./offchain";
-import { Robot } from "./Robot";
-import { colorOf } from "./robots";
+import type { Face } from "@agent-league/shared/identity";
+import { faceCode, HUES } from "@agent-league/shared/identity";
+import { EXPLORER, short, type Entry, type Identity, type Round } from "./chain";
+import { Figure, FaceArt } from "./Figure";
+import { hueColor, mrz } from "./identity";
+import type { AgentAnswer, IdentityNotes, RosterAgent } from "./offchain";
 
 export function signatureLabel(a: AgentAnswer | undefined): string {
   if (!a?.meta) return "";
@@ -18,12 +20,16 @@ export function Drawer({
   entry,
   answer,
   agent,
+  identity,
+  notes,
   onClose,
 }: {
   round: Round;
   entry: Entry;
   answer?: AgentAnswer;
   agent?: RosterAgent;
+  identity?: Identity;
+  notes?: IdentityNotes;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -40,12 +46,12 @@ export function Drawer({
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label={`${agent?.name ?? id} in round ${round.id}`} style={{ ["--agent" as string]: colorOf(id) }}>
+      <aside className="drawer" role="dialog" aria-label={`${agent?.name ?? id} in round ${round.id}`} style={{ ["--agent" as string]: hueColor(identity) }}>
         <button className="close mono" onClick={onClose} aria-label="Close">
           ×
         </button>
         <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-          <Robot id={id} mood={won ? "win" : entry.answer_hash ? "idle" : "out"} />
+          {identity && <Figure face={identity.face as Face} pose={won ? "win" : entry.answer_hash ? "idle" : "out"} />}
           <div>
             <div className="muted mono" style={{ fontSize: 12 }}>
               ROUND {round.id} · {round.task_ref}
@@ -101,6 +107,63 @@ export function Drawer({
             </>
           )}
         </dl>
+
+        {identity && (
+          <>
+            <h4>Passport</h4>
+            <div className="pp-detail">
+              <dl className="kv" style={{ margin: 0 }}>
+                <dt>Number</dt>
+                <dd>{String(identity.number).padStart(3, "0")}</dd>
+                <dt>Face</dt>
+                <dd>
+                  {identity.face_code} · {HUES[identity.face[6]]?.name}
+                </dd>
+                <dt>Motto</dt>
+                <dd>"{identity.motto}"</dd>
+                {notes?.why && (
+                  <>
+                    <dt>Why this face</dt>
+                    <dd className="plain">{notes.why}</dd>
+                  </>
+                )}
+                <dt>Issued</dt>
+                <dd>
+                  {new Date(identity.issued_at_ms).toISOString().slice(0, 16).replace("T", " ")} UTC by {identity.issuer}
+                </dd>
+                <dt>Proof</dt>
+                <dd>{identity.proof}</dd>
+                {notes?.zeroPromptHash && (
+                  <>
+                    <dt>Zero prompt</dt>
+                    <dd>{notes.zeroPromptHash}</dd>
+                  </>
+                )}
+              </dl>
+              <div className="pp-mrz mono">{mrz(agent?.name ?? id, identity)}</div>
+            </div>
+            {notes && notes.attempts.length > 1 && (
+              <>
+                <h4>Uniqueness check</h4>
+                <div className="attempts">
+                  {notes.attempts.map((a, i) => (
+                    <div key={i} className="attempt" data-ok={!a.rejected}>
+                      {a.face ? <FaceArt face={a.face as Face} /> : <pre className="face-art">  (no face)</pre>}
+                      <div>
+                        <div className="mono" style={{ fontSize: 12 }}>
+                          try {i + 1} · {a.face ? faceCode(a.face) : "invalid reply"}
+                        </div>
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          {a.rejected ?? "accepted by the contract"}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
 
         {answer?.compileError && (
           <>

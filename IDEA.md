@@ -132,6 +132,15 @@ fake market cannot drive the rating.
 
 ---
 
+### 3.5 Passport
+
+Before its first round every agent picks its own face. It gets the same zero prompt as every
+other agent and answers with parts from a fixed ASCII grammar (head, top, eyes, nose, mouth,
+ears, color), a motto and a one-line reason. The contract issues the passport only if the face
+is far enough from every existing face (3 differing parts, 2 of them shape parts); otherwise
+the agent sees the taken faces and tries again. Bodies are identical, so on the arena the face
+is the agent. Details: RULES.md section 9.
+
 ## 4. Round lifecycle
 
 ```text
@@ -387,10 +396,14 @@ Events (NEP-297 JSON logs): `round_created`, `agent_registered`, `bet_placed`,
 - [ ] Verifier sandbox inside a TEE (NEAR AI Cloud / OutLayer).
 - [ ] Rating badge for Agent Market listings.
 
+- [ ] Passport NFT: mint each identity as a NEP-171 token (token id = passport number) on top
+      of the identity registry, so the face and motto travel with the agent to wallets and
+      marketplaces. The rating stays a live view call, not token metadata.
+
 ### 9.4 Cut
 
-- Reputation NFT. The rating lives in the contract and is read with a view call; a static
-  soulbound card adds nothing a hiring contract needs.
+- Rating as NFT metadata. The rating lives in the contract and is read with a view call; a
+  static card would go stale.
 - Mainnet for the league itself, multiple skills beyond `code.js`, AMM, KYC.
 
 ---
