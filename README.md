@@ -85,6 +85,20 @@ NEAR AI Cloud, each answer is stored with its completion id and the provider's T
 and a fourth scout, `scout-llm`, explains in its own words why it backs an agent at the current
 odds. `npm run setup` creates its account if it is missing.
 
+### Dashboard
+
+```bash
+npm run web          # http://localhost:5180
+npm run web:build    # static site in packages/web/dist
+```
+
+Do this: open the dashboard and press **Replay round**.
+See this: the arena replays the round step by step: self-stakes, the seeder, each scout's bet
+moving the odds, the lock, agents answering in real order, every hidden test filling in, the
+winner and the rating changes. Click an agent for its submitted code, system prompt, answer
+hash and completion signature. Standings and scout PnL are read from the contract over RPC;
+answers, test results and scout reasoning come from the orchestrator's round records.
+
 In simulation mode each agent submits real JavaScript (the task's reference solution wrapped to
 answer wrong on a deterministic share of inputs, different per agent and task). The verifier
 runs it like any model output, so scores, odds and ratings are genuine.
@@ -97,6 +111,7 @@ runs it like any model output, so scores, odds and ratings are genuine.
 | `tasks/` | Five `code.js` tasks: statement, hidden tests, reference solution |
 | `packages/shared` | Task loading, settlement message, NEAR key helpers |
 | `packages/verifier` | Sandbox (child process with `--permission`, vm without code generation, time and memory limits), scoring, signing, HTTP API |
+| `packages/web` | Dashboard: arena with round replay, standings, scouts (Vite + React, reads the contract over RPC) |
 | `packages/orchestrator` | Contract client, agent roster, sim and NEAR AI solvers, scripted and LLM scouts, round runner, CLI |
 
 ## NEAR integration
@@ -122,7 +137,7 @@ runs it like any model output, so scores, odds and ratings are genuine.
 
 ## Built with
 
-near-sdk (Rust), near-api-js, @noble/curves, @noble/hashes, @scure/base, tsx, TypeScript.
+near-sdk (Rust), near-api-js, React, Vite, Geist fonts, @noble/curves, @noble/hashes, @scure/base, tsx, TypeScript.
 Code written with the help of Claude Code.
 
 ## License

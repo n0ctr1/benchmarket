@@ -1,0 +1,100 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { defineConfig, type Plugin } from "vite";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const DATA = path.join(ROOT, ".data");
+
+/**
+ * Off-chain round data the contract does not store: scout reasoning, answer code, per-test
+ * results and completion signatures. Served at /data/* in dev and written into the build.
+ */
+function offChain(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const roster = loadRoster();
+  out["roster.json"] = roster;
+  const logsDir = path.join(DATA, "rounds");
+  const ids = fs.existsSync(logsDir)
+    ? fs.readdirSync(logsDir).filter((f) => f.endsWith(".json")).map((f) => Number(f.slice(0, -5))).sort((a, b) => a - b)
+    : [];
+  const statePath = path.join(DATA, "verifier", "verifier-state.json");
+  const state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, "utf8")) : { answers: [], reports: [] };
+  const answers = new Map<number, Array<Record<string, any>>>(state.answers);
+  const reports = new Map<number, Record<string, any>>(state.reports);
+  for (const id of ids) {
+    const log = JSON.parse(fs.readFileSync(path.join(logsDir, `${id}.json`), "utf8"));
+    const report = reports.get(id);
+    // Answers are published only after the round is scored, like the verifier API does.
+    const agents = report
+      ? Object.fromEntries(
+          (answers.get(id) ?? []).map((a) => {
+            const d = report.details?.find((x: any) => x.agent === a.agent);
+            return [
+              a.agent,
+              {
+                code: a.answer,
+                meta: a.meta ?? null,
+                receivedAt: a.receivedAt,
+                passed: d?.run?.passed ?? 0,
+                total: d?.run?.total ?? report.totalTests,
+                compileError: d?.run?.compileError ?? null,
+                tests: (d?.run?.results ?? []).map((r: any) => (r.pass ? 1 : 0)),
+              },
+            ];
+          }),
+        )
+      : {};
+    out[`rounds/${id}.json`] = { ...log, report: report ? { message: report.message, signatures: report.signatures, totalTests: report.totalTests } : null, agents };
+  }
+  out["index.json"] = { rounds: ids };
+  return out;
+}
+
+function loadRoster(): unknown {
+  // The roster is TypeScript; read the fields we need without executing it.
+  const src = fs.readFileSync(path.join(ROOT, "packages/orchestrator/src/roster.ts"), "utf8");
+  const base = /const BASE_PROMPT = `([\s\S]*?)`;/.exec(src)?.[1] ?? "";
+  const blocks = src.split(/\n  \{\n/).slice(1);
+  return blocks.map((b) => {
+    const get = (k: string) => new RegExp(`${k}: "([^"]*)"`).exec(b)?.[1] ?? "";
+    const extra = /systemPrompt:\s*(?:BASE_PROMPT\s*\+\s*)?([\s\S]*?),\n    tools/.exec(b)?.[1] ?? "";
+    const extraText = [...extra.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`)).join("");
+    const strengths = [...(/strengths: \[([^\]]*)\]/.exec(b)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    return { id: get("id"), name: get("name"), model: get("model"), systemPrompt: base + extraText, strengths };
+  });
+}
+
+function dataPlugin(): Plugin {
+  return {
+    name: "agent-league-data",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith("/data/")) return next();
+        const key = req.url.slice("/data/".length).split("?")[0];
+        const data = offChain()[key];
+        if (data === undefined) {
+          res.statusCode = 404;
+          return res.end("not found");
+        }
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(data));
+      });
+    },
+    generateBundle() {
+      for (const [key, data] of Object.entries(offChain())) {
+        this.emitFile({ type: "asset", fileName: `data/${key}`, source: JSON.stringify(data) });
+      }
+    },
+  };
+}
+
+export default defineConfig({
+  plugins: [react(), dataPlugin()],
+  define: {
+    __LEAGUE__: JSON.stringify(process.env.LEAGUE_ACCOUNT ?? "agent-league.testnet"),
+    __RPC__: JSON.stringify(process.env.NEAR_RPC_URL ?? "https://test.rpc.fastnear.com"),
+  },
+  server: { port: 5180 },
+});

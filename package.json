@@ -12,14 +12,16 @@
     "test": "npm run test --workspaces --if-present",
     "test:contract": "cd contract && cargo test",
     "build:contract": "cd contract && cargo near build non-reproducible-wasm",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/web/tsconfig.json --noEmit",
     "verifier": "npm run start -w @agent-league/verifier",
     "verifier:keygen": "npm run keygen -w @agent-league/verifier",
     "setup": "tsx packages/orchestrator/src/cli.ts setup",
     "round": "tsx packages/orchestrator/src/cli.ts round",
     "demo": "tsx packages/orchestrator/src/cli.ts demo",
     "status": "tsx packages/orchestrator/src/cli.ts status",
-    "bench": "tsx packages/orchestrator/src/cli.ts bench"
+    "bench": "tsx packages/orchestrator/src/cli.ts bench",
+    "web": "npm run dev --workspace=packages/web",
+    "web:build": "npm run build --workspace=packages/web"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

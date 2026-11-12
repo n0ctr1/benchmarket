@@ -128,7 +128,8 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
         const { answer, meta } = await solver(a, task.id, salt);
         const stored = verifier.submit(roundId, acc, task.id, answer, meta);
         await chain.submitAnswer(acc, roundId, stored.answerHash);
-        const signed = meta?.signature ? ", TEE-signed completion" : "";
+        const kind = (meta?.signature as { signature_kind?: string } | null | undefined)?.signature_kind;
+        const signed = kind === "provider_tee" ? ", TEE-signed completion" : kind ? `, ${kind}-signed completion` : "";
         const took = typeof meta?.latencyMs === "number" ? ` in ${(meta.latencyMs / 1000).toFixed(1)}s` : "";
         if (meta?.mode === "llm") say(`  ${a.name.padEnd(7)} answered${took}${signed}`);
         note("answer_submitted", { agent: acc, answer_hash: stored.answerHash, meta: meta ?? null });
