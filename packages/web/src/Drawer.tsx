@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { deriveFace, faceCode } from "@agent-league/shared/identity";
-import { EXPLORER, short, type Entry, type Identity, type Round } from "./chain";
+import { near, EXPLORER, short, type Entry, type Identity, type Round } from "./chain";
 import { Figure, Identicon } from "./Figure";
 import { hueColor, mrz } from "./identity";
 import type { AgentAnswer, IdentityNotes, RosterAgent } from "./offchain";
@@ -40,7 +40,7 @@ export function Drawer({
   const id = short(entry.agent);
   const meta = answer?.meta;
   const sig = meta?.signature;
-  const won = round.winner === entry.agent;
+  const won = round.winners.includes(entry.agent);
 
   return (
     <>
@@ -76,7 +76,27 @@ export function Drawer({
           <dt>Rating change</dt>
           <dd>
             {((entry.rating_before) / 100).toFixed(1)} → {((entry.rating_before + entry.rating_delta) / 100).toFixed(1)}
+            {round.market === "lmsr" && round.rated && round.status === "Settled" && (
+              <span className="muted">
+                {" "}
+                (field {fmt(entry.field_delta)}, task {fmt(entry.task_delta)})
+              </span>
+            )}
           </dd>
+          {round.market === "lmsr" && (
+            <>
+              <dt>Attestation</dt>
+              <dd>
+                {entry.attested
+                  ? `verified on chain: NEAR AI signed this exact response${entry.model ? ` from ${entry.model}` : ""}`
+                  : entry.answer_hash
+                    ? "none (plain answer hash)"
+                    : "no answer"}
+              </dd>
+              <dt>Bond</dt>
+              <dd>{near(entry.bond)} NEAR{entry.answer_hash ? " (returned)" : round.status === "Settled" ? " (forfeited)" : ""}</dd>
+            </>
+          )}
           <dt>Config hash</dt>
           <dd>{entry.config_hash}</dd>
           <dt>Answer hash</dt>
@@ -196,4 +216,8 @@ export function Drawer({
       </aside>
     </>
   );
+}
+
+function fmt(centi: number): string {
+  return `${centi >= 0 ? "+" : ""}${(centi / 100).toFixed(1)}`;
 }

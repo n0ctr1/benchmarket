@@ -5,17 +5,18 @@ import { Figure, type Pose } from "./Figure";
 import { hueColor } from "./identity";
 import { taskOf, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Passport, type LiveLine } from "./Passport";
-import { buildReplay, share, type Phase, type Replay } from "./replay";
+import { buildReplay, type Phase, type Replay } from "./replay";
 
 const PHASES: Array<{ id: Phase; label: string; banner: string }> = [
   { id: "market", label: "Market", banner: "MARKET OPEN" },
   { id: "locked", label: "Locked", banner: "MARKET LOCKED" },
   { id: "solving", label: "Solving", banner: "SOLVING" },
   { id: "scored", label: "Scored", banner: "RUNNING HIDDEN TESTS" },
+  { id: "window", label: "Dispute", banner: "DISPUTE WINDOW" },
   { id: "settled", label: "Settled", banner: "FINAL" },
 ];
 
-const STEP_MS: Record<Phase, number> = { market: 1700, locked: 1600, solving: 900, scored: 2400, settled: 0 };
+const STEP_MS: Record<Phase, number> = { market: 1700, locked: 1600, solving: 900, scored: 2400, window: 1800, settled: 0 };
 
 const SCOUT_FACES: Record<string, string> = {
   "scout-fav": "(^.^)",
@@ -142,7 +143,7 @@ export function Arena({
   }, [betNow]);
 
   const task = taskOf(rec);
-  const pool = frame ? Object.values(frame.pools).reduce((a, b) => a + b, 0n) : BigInt(round.total_pool);
+  const pool = frame ? frame.volume : BigInt(round.total_pool);
   const idOf = (acc: string) => identities.find((i) => i.agent === acc);
   const nameOf = (acc: string) => roster.find((r) => r.id === short(acc))?.name ?? short(acc);
   const scouts = [...new Map(bets.map((b) => [b.bettor, b.kind])).entries()];
@@ -161,20 +162,21 @@ export function Arena({
   const view = round.entries.map((e, i) => {
     const ans = rec?.agents[e.agent];
     const total = ans?.total ?? totalTests;
-    const odds = phase === "market" && frame ? share(frame.pools, e.agent) : e.market_ppm / 1e6;
+    const odds = phase === "market" && frame ? frame.odds[e.agent] ?? 0 : e.market_ppm / 1e6;
     const answered = frame?.answered.has(e.agent) ?? !!e.answer_hash;
     const settled = phase === "settled";
-    const won = settled && round.winner === e.agent;
+    const won = settled && round.winners.includes(e.agent);
     const timedOut = !e.answer_hash && (phase === "scored" || settled || (phase === "solving" && lastFrame));
     const pose: Pose = timedOut ? "out" : won ? "win" : settled ? "lose" : phase === "solving" && !answered ? "think" : "idle";
     const tests = ans?.tests ?? (e.score !== null ? Array.from({ length: total }, (_, k) => (k < e.score! ? 1 : 0)) : []);
     const shown = Math.round(tests.length * (settled ? 1 : reveal));
     const passed = tests.slice(0, shown).filter(Boolean).length;
     const latency = ans?.meta?.latencyMs ?? (e.answered_at_ms && round.locked_at_ms ? e.answered_at_ms - round.locked_at_ms : null);
-    const showTests = phase === "scored" || settled;
+    const showTests = phase === "scored" || phase === "window" || settled;
     let live: LiveLine;
     if (settled) live = { score: `${e.score ?? 0}/${total}`, delta: e.rating_delta / 100, state: won ? "winner" : timedOut ? "no answer" : undefined };
     else if (phase === "scored") live = { score: `${passed}/${total}`, state: "testing" };
+    else if (phase === "window") live = { score: `${e.score ?? round.proposal?.scores[i]?.[1] ?? passed}/${total}`, state: round.status === "Disputed" ? "disputed" : "posted" };
     else if (phase === "solving") live = { state: answered ? "answered" : timedOut ? "timed out" : "thinking" };
     else if (phase === "locked") live = { odds: e.p_ppm / 1e6, state: "expected" };
     else live = { odds, state: "market" };
@@ -213,6 +215,9 @@ export function Arena({
             <span className="status" data-s={round.status}>
               {round.status.toUpperCase()}
             </span>
+            {round.market === "lmsr" && <span className="badge" title="Automated market maker (LMSR): prices are win probabilities">LMSR</span>}
+            {round.attested && <span className="badge model" title="Every answer must carry a NEAR AI signature the contract verified">attested</span>}
+            {round.market === "lmsr" && !round.rated && <span className="badge" title="Uncurated task: pays out, moves no rating">unrated</span>}
           </div>
           <h1 className="round-title">
             {task?.title ?? round.task_ref}
@@ -228,7 +233,7 @@ export function Arena({
             </div>
           </div>
           <div className="stat">
-            <div className="k">Pool</div>
+            <div className="k">{round.market === "lmsr" ? "Volume" : "Pool"}</div>
             <div className="v">
               {near(pool)}
               <small>NEAR</small>
@@ -238,6 +243,12 @@ export function Arena({
             <div className="k">Hidden tests</div>
             <div className="v">{totalTests || "—"}</div>
           </div>
+          {round.market === "lmsr" && round.rated && (
+            <div className="stat" title="Task difficulty: an agent rated the same is expected to pass half the tests">
+              <div className="k">Task rating</div>
+              <div className="v">{((round.task_rating_before + round.task_delta) / 100).toFixed(0)}</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -287,7 +298,8 @@ export function Arena({
                 <div key={s} className="scout" data-betting={!!target} ref={(el) => void (el ? scoutRefs.current.set(s, el) : scoutRefs.current.delete(s))}>
                   {target && (
                     <div className="bubble" style={{ ["--agent" as string]: hueColor(idOf(target.agent)) }}>
-                      <b>{nameOf(target.agent)}</b> · {near(target.amount)} NEAR
+                      <b>{nameOf(target.agent)}</b>
+                      {target.amount > 0n && <> · {near(target.amount)} NEAR</>}
                       <span>{clip(target.reasoning ?? "", 120)}</span>
                     </div>
                   )}
@@ -341,7 +353,7 @@ export function Arena({
                   </span>
                   <Figure cells={id?.cells ?? []} palette={id?.palette} pose={id ? v.pose : "out"} seed={v.i + 1} />
                   <span className="podium mono" aria-hidden="true">
-                    {v.won ? "[ #1 ]" : ""}
+                    {v.won ? (round.winners.length > 1 ? "[ =1 ]" : "[ #1 ]") : ""}
                   </span>
                   <span className="plate">{nameOf(v.e.agent)}</span>
                   <span className="tests" aria-label={v.showTests ? `${v.e.score ?? 0} of ${v.total} tests passed` : `${v.total} hidden tests`}>
@@ -365,7 +377,7 @@ export function Arena({
               (N)
             </span>
           )}
-          {confetti > 0 && <Confetti key={confetti} color={hueColor(idOf(round.winner ?? ""))} />}
+          {confetti > 0 && <Confetti key={confetti} color={hueColor(idOf(round.winners[0] ?? ""))} />}
         </div>
 
         <div className="side side-r">{view.slice(half).map(passport)}</div>
@@ -375,7 +387,7 @@ export function Arena({
         <div className="section" style={{ marginTop: 28 }}>
           <div className="section-head">
             <h2>Scouts' calls</h2>
-            <span className="note">Bets in the order they were placed. Each scout saw the odds the earlier bets produced.</span>
+            <span className="note">Purchases in the order they were made. Each scout saw the prices the earlier ones produced.</span>
           </div>
           <div className="booth">
             {bets.map((b, i) => (
@@ -385,7 +397,7 @@ export function Arena({
                   <span className="who">{short(b.bettor)}</span>
                   <span className="arrow">→</span>
                   <span className="pick">{nameOf(b.agent)}</span>
-                  <span className="amt">{near(b.amount)} NEAR</span>
+                  {b.amount > 0n && <span className="amt">{near(b.amount)} NEAR</span>}
                 </div>
                 <p>{b.reasoning}</p>
                 <div style={{ marginTop: 10 }}>

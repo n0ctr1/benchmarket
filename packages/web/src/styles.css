@@ -227,7 +227,10 @@ button {
   letter-spacing: 0.08em;
 }
 
-.status[data-s="Open"] { color: var(--good); }
+.status[data-s="Open"],
+.status[data-s="Trading"] { color: var(--good); }
+.status[data-s="Proposed"] { color: var(--warn, var(--text)); }
+.status[data-s="Disputed"] { color: var(--bad); }
 .status[data-s="Cancelled"] { color: var(--bad); }
 
 .round-title {
@@ -347,7 +350,7 @@ button {
 
 .phases {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -1349,7 +1352,7 @@ th.num {
 
 .how {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1464,7 +1467,7 @@ th.num {
     grid-column: 1;
   }
   .phases {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
   .phase {
     font-size: 10px;

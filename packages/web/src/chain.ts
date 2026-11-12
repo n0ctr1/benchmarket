@@ -5,41 +5,58 @@ export const LEAGUE = __LEAGUE__;
 export const RPC = __RPC__;
 export const EXPLORER = "https://testnet.nearblocks.io";
 
-export type Status = "Open" | "Locked" | "Settled" | "Cancelled";
+export type Status = "Open" | "Trading" | "Locked" | "Proposed" | "Disputed" | "Settled" | "Cancelled";
 
 export interface Entry {
   agent: string;
   builder: string;
   league: "Open" | "Market";
   config_hash: string;
-  pool: string;
+  bond: string;
+  /** Shares sold on this agent (LMSR), or its pool (parimutuel rounds). */
+  shares: string;
   odds_ppm: number;
   p_ppm: number;
   market_ppm: number;
   answer_hash: string | null;
   answered_at_ms: number | null;
+  attested: boolean;
+  model: string | null;
   score: number | null;
   rating_before: number;
   rating_delta: number;
+  field_delta: number;
+  task_delta: number;
 }
 
 export interface Round {
   id: number;
+  market: "lmsr" | "parimutuel";
   manager: string;
   skill: string;
   task_ref: string;
   tests_hash: string;
   bet_deadline_ms: number;
+  answer_deadline_ms: number;
   max_agents: number;
+  attested: boolean;
+  rated: boolean;
   bounty: string;
   status: Status;
   entries: Entry[];
+  liquidity: string;
+  subsidy: string;
   total_pool: string;
   fee: string;
-  net: string;
+  bettors: number;
   payout_mode: "Pending" | "Winners" | "Refund";
+  winners: string[];
   winner: string | null;
   total_tests: number;
+  task_rating_before: number;
+  task_delta: number;
+  proposal: { total_tests: number; scores: Array<[string, number]>; signers: string[]; proposed_at_ms: number; dispute_until_ms: number } | null;
+  dispute: { by: string; bond: string; at_ms: number; overturned: boolean | null } | null;
   created_at_ms: number;
   locked_at_ms: number | null;
   settled_at_ms: number | null;
@@ -53,6 +70,9 @@ export interface Rating {
   wins: number;
   provisional: boolean;
   last_round: number;
+  attested: number;
+  jobs_done: number;
+  jobs_failed: number;
 }
 
 export interface Bettor {
@@ -62,6 +82,35 @@ export interface Bettor {
   pnl: string;
   bets: number;
   wins: number;
+  skill_ppm: number;
+  scored_rounds: number;
+}
+
+export interface Task {
+  task_ref: string;
+  skill: string;
+  curated: boolean;
+  rating: number;
+  rounds: number;
+  jobs: number;
+  saturated: number;
+  retired: boolean;
+}
+
+export interface Job {
+  id: number;
+  poster: string;
+  task_ref: string;
+  budget: string;
+  min_rating: number;
+  pass_ppm: number;
+  status: "Open" | "Taken" | "Answered" | "Proposed" | "Disputed" | "Paid" | "Failed" | "Cancelled";
+  agent: string | null;
+  answer_attested: boolean;
+  score: number | null;
+  total_tests: number;
+  rating_delta: number;
+  created_at_ms: number;
 }
 
 let rpcId = 0;
@@ -98,7 +147,23 @@ export const getRounds = (limit = 50) => view<Round[]>("get_rounds", { limit });
 export const getLeaderboard = (skill: string) => view<Rating[]>("get_leaderboard", { skill });
 export const getBettors = () => view<Bettor[]>("get_scouts", {});
 export const getPosition = (roundId: number, account: string) =>
-  view<Array<{ agent: string; amount: string }>>("get_position", { round_id: roundId, account });
+  view<Array<{ agent: string; amount: string; bond: string }>>("get_position", { round_id: roundId, account });
+export const getTasks = () => view<Task[]>("get_tasks", { limit: 100 }).catch(() => [] as Task[]);
+export const getJobs = () => view<Job[]>("get_jobs", { limit: 20 }).catch(() => [] as Job[]);
+
+/** A round counts as finished once its scores are final. */
+export const isFinal = (r: Round) => r.status === "Settled" || r.status === "Cancelled";
+
+/** LMSR prices from shares: softmax(q / b), as the contract computes them. */
+export function lmsrPrices(shares: bigint[], liquidity: bigint): number[] {
+  if (liquidity === 0n || shares.length === 0) return shares.map(() => 1 / Math.max(1, shares.length));
+  const b = Number(liquidity);
+  const x = shares.map((q) => Number(q) / b);
+  const m = Math.max(...x);
+  const e = x.map((v) => Math.exp(v - m));
+  const sum = e.reduce((a, c) => a + c, 0);
+  return e.map((v) => v / sum);
+}
 
 export const YOCTO = 10n ** 24n;
 

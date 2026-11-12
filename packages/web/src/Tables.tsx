@@ -1,4 +1,4 @@
-import { near, short, type Bettor, type Identity, type Rating, type Round } from "./chain";
+import { near, short, type Bettor, type Identity, type Job, type Rating, type Round, type Task } from "./chain";
 import { Identicon } from "./Figure";
 import { hueColor } from "./identity";
 import type { RosterAgent, RoundRecord } from "./offchain";
@@ -13,11 +13,11 @@ interface History {
 function histories(rounds: Round[]): Map<string, History> {
   const out = new Map<string, History>();
   for (const r of [...rounds].sort((a, b) => a.id - b.id)) {
-    if (r.status !== "Settled") continue;
+    if (r.status !== "Settled" || (r.market === "lmsr" && !r.rated)) continue;
     for (const e of r.entries) {
       const h = out.get(e.agent) ?? { points: [e.rating_before / 100], form: [], last: null };
       h.points.push((e.rating_before + e.rating_delta) / 100);
-      h.form.push(r.winner === e.agent);
+      h.form.push(r.winners.includes(e.agent));
       h.last = e.rating_delta / 100;
       out.set(e.agent, h);
     }
@@ -102,6 +102,13 @@ export function Standings({ ratings, rounds, roster, identities }: { ratings: Ra
                 <td className="num">
                   {r.wins} / {r.rounds}
                   {r.provisional && <div className="muted" style={{ fontSize: 11 }}>provisional</div>}
+                  {(r.attested > 0 || r.jobs_done + r.jobs_failed > 0) && (
+                    <div className="muted" style={{ fontSize: 11 }} title="Rounds and jobs with an answer the contract verified as a NEAR AI completion; paid jobs of all jobs">
+                      {r.attested > 0 && `${r.attested} attested`}
+                      {r.attested > 0 && r.jobs_done + r.jobs_failed > 0 && " · "}
+                      {r.jobs_done + r.jobs_failed > 0 && `jobs ${r.jobs_done}/${r.jobs_done + r.jobs_failed}`}
+                    </div>
+                  )}
                 </td>
               </tr>
             );
@@ -127,13 +134,14 @@ export function Scouts({ bettors, records }: { bettors: Bettor[]; records: Round
     }
   }
   const scouts = bettors.filter((b) => short(b.account).startsWith("scout-"));
-  scouts.sort((a, b) => (BigInt(b.pnl) > BigInt(a.pnl) ? 1 : BigInt(b.pnl) < BigInt(a.pnl) ? -1 : 0));
+  scouts.sort((a, b) => b.skill_ppm - a.skill_ppm || (BigInt(b.pnl) > BigInt(a.pnl) ? 1 : BigInt(b.pnl) < BigInt(a.pnl) ? -1 : 0));
   return (
     <div className="panel">
       <table>
         <thead>
           <tr>
             <th>Scout</th>
+            <th className="num" title="LMSR profit per unit of liquidity: a log-score of forecasting skill that does not grow with bet size">Skill</th>
             <th className="num">PnL</th>
             <th className="num">Hits</th>
           </tr>
@@ -158,6 +166,12 @@ export function Scouts({ bettors, records }: { bettors: Bettor[]; records: Round
                     </div>
                   )}
                 </td>
+                <td className={`num pnl ${s.skill_ppm > 0 ? "up" : s.skill_ppm < 0 ? "down" : ""}`}>
+                  {s.scored_rounds ? `${s.skill_ppm > 0 ? "+" : ""}${(s.skill_ppm / 1e6).toFixed(2)}` : "—"}
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    {s.scored_rounds} LMSR rounds
+                  </div>
+                </td>
                 <td className={`num pnl ${pnl > 0n ? "up" : pnl < 0n ? "down" : ""}`}>
                   {pnl > 0n ? "+" : ""}
                   {near(pnl)}
@@ -173,8 +187,120 @@ export function Scouts({ bettors, records }: { bettors: Bettor[]; records: Round
           })}
           {scouts.length === 0 && (
             <tr>
-              <td colSpan={3} className="empty">
+              <td colSpan={4} className="empty">
                 No scout bets yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Task pool by difficulty: tasks are rated like agents, and retire once everyone solves them. */
+export function Tasks({ tasks }: { tasks: Task[] }) {
+  const rows = [...tasks].sort((a, b) => b.rating - a.rating);
+  return (
+    <div className="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th className="num" title="An agent rated the same is expected to pass half the hidden tests">Difficulty</th>
+            <th className="num">Rounds</th>
+            <th className="num">Jobs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((t) => (
+            <tr key={t.task_ref}>
+              <td>
+                <span className="mono" style={{ fontWeight: 600 }}>
+                  {t.task_ref}
+                </span>{" "}
+                {!t.curated && <span className="badge">uncurated</span>}
+                {t.retired && <span className="badge">retired</span>}
+              </td>
+              <td className="num">
+                <div className="rating">{(t.rating / 100).toFixed(1)}</div>
+              </td>
+              <td className="num">{t.rounds}</td>
+              <td className="num">{t.jobs}</td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={4} className="empty">
+                No tasks yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const JOB_STATE: Record<Job["status"], string> = {
+  Open: "open",
+  Taken: "in progress",
+  Answered: "answered",
+  Proposed: "scored, dispute window",
+  Disputed: "disputed",
+  Paid: "paid",
+  Failed: "failed, refunded",
+  Cancelled: "cancelled",
+};
+
+/** Hiring with escrow: a rating bar to take the job, payment only if hidden tests pass. */
+export function Jobs({ jobs, identities }: { jobs: Job[]; identities: Identity[] }) {
+  return (
+    <div className="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>Job</th>
+            <th>Agent</th>
+            <th className="num">Budget</th>
+            <th className="num">Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((j) => {
+            const ident = j.agent ? identities.find((x) => x.agent === j.agent) : undefined;
+            return (
+              <tr key={j.id} style={{ ["--agent" as string]: hueColor(ident) }}>
+                <td>
+                  <div style={{ fontWeight: 600 }}>
+                    #{j.id} <span className="mono">{j.task_ref}</span>
+                  </div>
+                  <div className="muted" style={{ fontSize: 12 }}>
+                    rating {j.min_rating}+ · pays at {(j.pass_ppm / 1e4).toFixed(0)}% of tests
+                  </div>
+                </td>
+                <td>
+                  <div className="who-cell">
+                    {ident && <Identicon cells={ident.cells} palette={ident.palette} size={24} />}
+                    <span>{j.agent ? short(j.agent) : "—"}</span>
+                    {j.answer_attested && <span className="badge model">attested</span>}
+                  </div>
+                </td>
+                <td className="num">{near(j.budget)}</td>
+                <td className="num">
+                  <div>{j.score !== null ? `${j.score}/${j.total_tests}` : "—"}</div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    {JOB_STATE[j.status]}
+                    {(j.status === "Paid" || j.status === "Failed") && ` · ${j.rating_delta >= 0 ? "+" : ""}${(j.rating_delta / 100).toFixed(1)}`}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+          {jobs.length === 0 && (
+            <tr>
+              <td colSpan={4} className="empty">
+                No jobs posted yet.
               </td>
             </tr>
           )}

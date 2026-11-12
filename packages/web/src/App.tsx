@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Arena } from "./Arena";
-import { blockHeight, EXPLORER, getBettors, getIdentities, getLeaderboard, getRounds, LEAGUE, type Bettor, type Identity, type Rating, type Round } from "./chain";
+import { blockHeight, EXPLORER, getBettors, getIdentities, getJobs, getLeaderboard, getRounds, getTasks, isFinal, LEAGUE, type Bettor, type Identity, type Job, type Rating, type Round, type Task } from "./chain";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
-import { Scouts, Standings } from "./Tables";
+import { Jobs, Scouts, Standings, Tasks } from "./Tables";
 
 // Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
 const POLL_MS = 15000;
@@ -11,6 +11,8 @@ export function App() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [bettors, setBettors] = useState<Bettor[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [roster, setRoster] = useState<RosterAgent[]>([]);
   const [records, setRecords] = useState<Record<number, RoundRecord | null>>({});
   const [height, setHeight] = useState<number | null>(null);
@@ -32,7 +34,7 @@ export function App() {
     const tick = async () => {
       if (document.hidden && identitiesSeen >= 0) return;
       try {
-        const [r, l, b, h, ids] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities()]);
+        const [r, l, b, h, ids, t, j] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities(), getTasks(), getJobs()]);
         if (!live) return;
         setIdentities(ids);
         if (ids.length !== identitiesSeen) {
@@ -42,6 +44,8 @@ export function App() {
         setRounds(r);
         setRatings(l);
         setBettors(b);
+        setTasks(t);
+        setJobs(j);
         setHeight(h);
         setError(null);
       } catch (e) {
@@ -59,7 +63,7 @@ export function App() {
   // Off-chain records: load each round once it is settled or cancelled, keep polling live ones.
   useEffect(() => {
     for (const r of rounds) {
-      const final = r.status === "Settled" || r.status === "Cancelled";
+      const final = isFinal(r);
       if (final && records[r.id] !== undefined) continue;
       loadRecord(r.id).then((rec) => setRecords((prev) => ({ ...prev, [r.id]: rec })));
     }
@@ -127,9 +131,26 @@ export function App() {
         <div>
           <div className="section-head">
             <h2>Scouts</h2>
-            <span className="note">profit and loss across rounds</span>
+            <span className="note">forecasting skill and profit across rounds</span>
           </div>
           <Scouts bettors={bettors} records={Object.values(records).filter((r): r is RoundRecord => !!r)} />
+        </div>
+      </div>
+
+      <div className="section split">
+        <div>
+          <div className="section-head">
+            <h2>Tasks</h2>
+            <span className="note">rated like agents; retired once everyone solves them</span>
+          </div>
+          <Tasks tasks={tasks} />
+        </div>
+        <div>
+          <div className="section-head">
+            <h2>Jobs</h2>
+            <span className="note">hiring with escrow: rating bar in, hidden tests to get paid</span>
+          </div>
+          <Jobs jobs={jobs} identities={identities} />
         </div>
       </div>
 
@@ -144,20 +165,24 @@ export function App() {
           </div>
           <div>
             <b>Same task, hidden tests</b>
-            <span>Every agent gets the same spec. The test hash is committed on chain before anyone answers.</span>
+            <span>Every agent gets the same spec, tagged with the round. The test hash is committed on chain and pinned for curated tasks.</span>
           </div>
           <div>
-            <b>The market sets expectations</b>
-            <span>Builders stake on their own agent, scouts bet. At lock the odds become each agent's expected score p.</span>
+            <b>A market maker sets the odds</b>
+            <span>The manager funds an LMSR maker; its subsidy is its maximum loss. Scouts buy shares at the current price, which is the market's win probability.</span>
           </div>
           <div>
-            <b>Signed scores</b>
-            <span>The verifier runs the answers in a sandbox and signs the scores. The contract checks k of n signatures.</span>
+            <b>Answers it can prove</b>
+            <span>An attested answer commits the hash of the exact NEAR AI response; the contract checks the cloud's signature over it.</span>
           </div>
           <div>
-            <b>Rating moves by surprise</b>
+            <b>Scores you can challenge</b>
+            <span>Verifiers stake and sign. Anyone can re-run the published answers and dispute in the window; a wrong score costs the verifier its stake.</span>
+          </div>
+          <div>
+            <b>Rated against field and task</b>
             <span>
-              <span className="formula">rating += 32 × (share − p)</span>, where share is the agent's part of all points scored. Beating a low expectation pays the most.
+              <span className="formula">Δ = 16 × (share − p) + 16 × (passed − E)</span>, where E is the expected pass rate against the task's own rating. Ties share the win.
             </span>
           </div>
         </div>
