@@ -3,6 +3,7 @@
 //! Rounds, entries, a parimutuel market per round, verifier-signed settlement and
 //! per-skill ratings driven by the market's expected score. The rules live in RULES.md.
 
+pub mod identity;
 pub mod math;
 
 use near_sdk::json_types::{Base64VecU8, U128};
@@ -26,6 +27,7 @@ enum StorageKey {
     Positions,
     Ratings,
     Scouts,
+    Identities,
 }
 
 #[near(serializers = [borsh, json])]
@@ -220,6 +222,43 @@ pub struct ConfigView {
     pub next_round_id: u64,
 }
 
+/// An agent's passport: a face it chose for itself, checked for uniqueness at issue time.
+#[near(serializers = [borsh])]
+#[derive(Clone)]
+pub struct Identity {
+    pub number: u32,
+    pub face: Vec<u8>,
+    pub motto: String,
+    pub config_hash: String,
+    /// Off-chain evidence of how the face was produced (completion id and signature digest).
+    pub proof: String,
+    pub issuer: AccountId,
+    pub issued_at_ms: u64,
+}
+
+#[near(serializers = [json])]
+pub struct IdentityView {
+    pub agent: AccountId,
+    pub number: u32,
+    pub face: Vec<u8>,
+    pub face_code: String,
+    pub motto: String,
+    pub config_hash: String,
+    pub proof: String,
+    pub issuer: AccountId,
+    pub issued_at_ms: u64,
+}
+
+#[near(serializers = [json])]
+pub struct FaceCheck {
+    pub ok: bool,
+    pub reason: Option<String>,
+    /// Closest existing face, if any.
+    pub nearest: Option<AccountId>,
+    pub distance: Option<u8>,
+    pub shape_distance: Option<u8>,
+}
+
 // ---------- Contract ----------
 
 #[near(contract_state)]
@@ -238,7 +277,30 @@ pub struct Contract {
     positions: LookupMap<(u64, AccountId), Position>,
     ratings: IterableMap<RatingKey, Rating>,
     scouts: IterableMap<AccountId, Scout>,
+    identities: IterableMap<AccountId, Identity>,
+    next_identity: u32,
 }
+
+/// State layout before identities were added; read once by `migrate`.
+#[near(serializers = [borsh])]
+struct ContractV1 {
+    owner: AccountId,
+    verifiers: Vec<PublicKey>,
+    threshold: u8,
+    fee_bps: u16,
+    min_pool: u128,
+    min_builder_stake: u128,
+    min_bet: u128,
+    k_factor: u32,
+    next_round_id: u64,
+    rounds: LookupMap<u64, Round>,
+    positions: LookupMap<(u64, AccountId), Position>,
+    ratings: IterableMap<RatingKey, Rating>,
+    scouts: IterableMap<AccountId, Scout>,
+}
+
+/// Storage paid by the agent for its passport.
+pub const IDENTITY_DEPOSIT: u128 = ONE_NEAR / 50;
 
 fn emit(event: &str, data: near_sdk::serde_json::Value) {
     let log = json!({
@@ -248,6 +310,20 @@ fn emit(event: &str, data: near_sdk::serde_json::Value) {
         "data": [data],
     });
     env::log_str(&format!("EVENT_JSON:{log}"));
+}
+
+fn identity_view(agent: &AccountId, id: &Identity) -> IdentityView {
+    IdentityView {
+        agent: agent.clone(),
+        number: id.number,
+        face: id.face.clone(),
+        face_code: identity::face_code(&id.face),
+        motto: id.motto.clone(),
+        config_hash: id.config_hash.clone(),
+        proof: id.proof.clone(),
+        issuer: id.issuer.clone(),
+        issued_at_ms: id.issued_at_ms,
+    }
 }
 
 fn ed25519_bytes(pk: &PublicKey) -> [u8; 32] {
@@ -280,7 +356,115 @@ impl Contract {
             positions: LookupMap::new(StorageKey::Positions),
             ratings: IterableMap::new(StorageKey::Ratings),
             scouts: IterableMap::new(StorageKey::Scouts),
+            identities: IterableMap::new(StorageKey::Identities),
+            next_identity: 1,
         }
+    }
+
+    /// Upgrades V1 state (no identities) in place. Only the contract account can call it.
+    #[private]
+    #[init(ignore_state)]
+    pub fn migrate() -> Self {
+        let old: ContractV1 = env::state_read().expect("no state to migrate");
+        Self {
+            owner: old.owner,
+            verifiers: old.verifiers,
+            threshold: old.threshold,
+            fee_bps: old.fee_bps,
+            min_pool: old.min_pool,
+            min_builder_stake: old.min_builder_stake,
+            min_bet: old.min_bet,
+            k_factor: old.k_factor,
+            next_round_id: old.next_round_id,
+            rounds: old.rounds,
+            positions: old.positions,
+            ratings: old.ratings,
+            scouts: old.scouts,
+            identities: IterableMap::new(StorageKey::Identities),
+            next_identity: 1,
+        }
+    }
+
+    // ----- identities -----
+
+    /// Issues the agent's passport. Called by the agent itself, or by the owner for agents
+    /// that cannot sign (Market League). The face must be far enough from every issued face.
+    #[payable]
+    pub fn register_identity(&mut self, agent: AccountId, face: Vec<u8>, motto: String, config_hash: String, proof: String) -> u32 {
+        let caller = env::predecessor_account_id();
+        require!(caller == agent || caller == self.owner, "only the agent or the owner can issue its identity");
+        require!(env::attached_deposit().as_yoctonear() >= IDENTITY_DEPOSIT, "attach 0.02 NEAR for storage");
+        require!(!self.identities.contains_key(&agent), "identity already issued");
+        require!(proof.len() <= 256 && config_hash.len() <= 128, "proof or config hash too long");
+        if let Err(e) = identity::validate_motto(&motto) {
+            env::panic_str(&e);
+        }
+        let check = self.check_face(face.clone());
+        if !check.ok {
+            env::panic_str(&check.reason.unwrap_or_else(|| "face rejected".into()));
+        }
+        let number = self.next_identity;
+        self.next_identity += 1;
+        let id = Identity {
+            number,
+            face: face.clone(),
+            motto: motto.trim().to_string(),
+            config_hash,
+            proof,
+            issuer: caller,
+            issued_at_ms: env::block_timestamp_ms(),
+        };
+        self.identities.insert(agent.clone(), id);
+        emit(
+            "identity_issued",
+            json!({ "agent": agent, "number": number, "face": face, "face_code": identity::face_code(&face), "motto": motto.trim() }),
+        );
+        number
+    }
+
+    /// Would this face be accepted? Reports the closest existing face either way.
+    pub fn check_face(&self, face: Vec<u8>) -> FaceCheck {
+        if let Err(e) = identity::validate_face(&face) {
+            return FaceCheck { ok: false, reason: Some(e), nearest: None, distance: None, shape_distance: None };
+        }
+        let mut nearest: Option<(AccountId, u8, u8)> = None;
+        let mut clash: Option<AccountId> = None;
+        for (agent, id) in self.identities.iter() {
+            let (all, shape) = identity::distance(&face, &id.face);
+            if nearest.as_ref().map_or(true, |n| (all, shape) < (n.1, n.2)) {
+                nearest = Some((agent.clone(), all, shape));
+            }
+            if clash.is_none() && !identity::distinct_enough(&face, &id.face) {
+                clash = Some(agent.clone());
+            }
+        }
+        let reason = clash.as_ref().map(|a| {
+            format!(
+                "face too close to {a}: needs {} differing slots, {} of them shape slots",
+                identity::MIN_DISTANCE,
+                identity::MIN_SHAPE_DISTANCE
+            )
+        });
+        FaceCheck {
+            ok: clash.is_none(),
+            reason,
+            distance: nearest.as_ref().map(|n| n.1),
+            shape_distance: nearest.as_ref().map(|n| n.2),
+            nearest: nearest.map(|n| n.0),
+        }
+    }
+
+    pub fn get_identity(&self, agent: AccountId) -> Option<IdentityView> {
+        self.identities.get(&agent).map(|id| identity_view(&agent, id))
+    }
+
+    pub fn get_identities(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<IdentityView> {
+        self.identities
+            .iter()
+            .skip(from_index.unwrap_or(0) as usize)
+            .take(limit.unwrap_or(50).min(100) as usize)
+            .map(|(a, id)| identity_view(a, id))
+            .collect()
     }
 
     // ----- owner -----
@@ -381,11 +565,13 @@ impl Contract {
         let builder = env::predecessor_account_id();
         let stake = env::attached_deposit().as_yoctonear();
         let min_stake = self.min_builder_stake;
+        let has_identity = self.identities.contains_key(&agent);
         let round = self.round_mut(round_id);
         require!(round.status == RoundStatus::Open, "round is not open");
         require!(env::block_timestamp_ms() < round.bet_deadline_ms, "registration closed");
         require!((round.entries.len() as u8) < round.max_agents, "round is full");
         require!(round.entries.iter().all(|e| e.agent != agent), "agent already registered");
+        require!(has_identity, "agent has no identity: call register_identity first");
         if builder != round.manager {
             require!(stake >= min_stake, "builder stake below minimum");
         }

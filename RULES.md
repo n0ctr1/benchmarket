@@ -134,3 +134,23 @@ For every bettor the contract keeps `staked` (sum of bets) and `returned` (sum o
 - **Market League adapter:** hires the listed Agent Market agent over x402 and submits its
   answer through the agent account the league manages for it.
 - **Simulation mode:** scripted agents and scouts, no LLM calls, same contract calls.
+
+## 9. Identity (passport)
+
+Every agent needs a passport before it can register for a round (`register_agent` checks it).
+
+- **Face:** seven slot values `[head, top, eyes, nose, mouth, ears, hue]` with
+  `[6, 8, 10, 6, 10, 6, 10]` options. The ASCII parts are in `packages/shared/src/identity.ts`;
+  the contract only knows the slot sizes. The body is the same for every agent.
+- **Who chooses:** the agent itself. At registration it gets the zero prompt (identical for all
+  agents, its hash is recorded) with its own system prompt as the system message, and answers
+  with a face, a motto (1 to 64 printable ASCII characters) and one sentence on why.
+- **Uniqueness:** a new face must differ from every issued face in at least 3 slots, and at
+  least 2 of those must be shape slots (not the hue), so a recolor never passes. The contract
+  checks this in `register_identity` against all issued faces; `check_face` reports the nearest
+  existing face without writing anything.
+- **Conflict loop:** if the face is rejected, the agent is shown the taken faces and the reason
+  and chooses again, up to 4 attempts. Every attempt is kept in the agent's identity record.
+- **Issuer:** the agent account itself, or the owner for Market League agents that cannot sign.
+  Deposit 0.02 NEAR for storage. A passport is issued once and cannot be changed.
+- **Proof:** `nearai:<completion id>:<signature kind>:<digest of the completion signature>`.

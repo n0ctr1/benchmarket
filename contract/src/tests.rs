@@ -43,8 +43,23 @@ fn setup(threshold: u8) -> (Contract, Vec<SigningKey>) {
     (c, keys)
 }
 
+/// Issues a passport as the agent itself. Faces of different agents differ in all slots here.
+fn issue(c: &mut Contract, agent: &str, face: [u8; 7]) -> u32 {
+    ctx(agent, IDENTITY_DEPOSIT, 900);
+    c.register_identity(acc(agent), face.to_vec(), format!("I am {agent}"), "cfg".into(), "proof".into())
+}
+
+fn face_for(i: u8) -> [u8; 7] {
+    [i % 6, i % 8, i % 10, i % 6, i % 10, i % 6, i % 10]
+}
+
 /// Creates a round with agents a, b, c registered by their builders (0.5 NEAR stake each).
 fn round_with_agents(c: &mut Contract) -> u64 {
+    for (i, a) in ["a.testnet", "b.testnet", "c.testnet"].iter().enumerate() {
+        if c.get_identity(acc(a)).is_none() {
+            issue(c, a, face_for(i as u8));
+        }
+    }
     ctx("manager.testnet", 10 * NEAR, 1_000);
     let id = c.create_round(SKILL.into(), "parseDuration".into(), "sha256:tests".into(), 5_000, 5);
     for (agent, builder) in [("a.testnet", "ba.testnet"), ("b.testnet", "bb.testnet"), ("c.testnet", "bc.testnet")] {
@@ -221,6 +236,7 @@ fn missing_answer_cannot_score() {
 #[should_panic(expected = "builder stake below minimum")]
 fn builder_must_stake() {
     let (mut c, _) = setup(1);
+    issue(&mut c, "x.testnet", face_for(1));
     ctx("manager.testnet", 0, 1_000);
     let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5);
     ctx("builder.testnet", NEAR / 10, 1_100);
@@ -230,6 +246,11 @@ fn builder_must_stake() {
 #[test]
 fn manager_registers_market_agents_without_stake() {
     let (mut c, _) = setup(1);
+    // Market agents cannot sign: the owner issues their passports.
+    for (i, m) in ["m1.testnet", "m2.testnet"].iter().enumerate() {
+        ctx("owner.testnet", IDENTITY_DEPOSIT, 900);
+        c.register_identity(acc(m), face_for(i as u8 + 3).to_vec(), "market agent".into(), "market:handle".into(), "".into());
+    }
     ctx("manager.testnet", 0, 1_000);
     let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5);
     c.register_agent(id, acc("m1.testnet"), League::Market, "market:handle1".into());
@@ -304,4 +325,107 @@ fn accepts_signature_from_typescript_verifier() {
     let digest = near_sdk::env::sha256_array(msg.as_bytes());
     let sig: [u8; 64] = sig.try_into().unwrap();
     assert!(near_sdk::env::ed25519_verify(&sig, &digest, &ed25519_bytes(&pk)));
+}
+
+// ----- identities -----
+
+#[test]
+fn identities_are_numbered_and_listed() {
+    let (mut c, _) = setup(1);
+    assert_eq!(issue(&mut c, "a.testnet", face_for(0)), 1);
+    assert_eq!(issue(&mut c, "b.testnet", face_for(1)), 2);
+    let all = c.get_identities(None, None);
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[1].face_code, "h1-t1-e1-n1-m1-a1-c1");
+    assert_eq!(c.get_identity(acc("a.testnet")).unwrap().motto, "I am a.testnet");
+    assert!(get_logs().iter().any(|l| l.contains("identity_issued")));
+}
+
+#[test]
+#[should_panic(expected = "face too close to a.testnet")]
+fn same_face_is_rejected() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet", [1, 2, 3, 4, 5, 1, 0]);
+    issue(&mut c, "b.testnet", [1, 2, 3, 4, 5, 1, 0]);
+}
+
+#[test]
+#[should_panic(expected = "face too close to a.testnet")]
+fn recolored_face_is_rejected() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet", [1, 2, 3, 4, 5, 1, 0]);
+    // Different hue and ears, same head, top, eyes, nose, mouth.
+    issue(&mut c, "b.testnet", [1, 2, 3, 4, 5, 3, 7]);
+}
+
+#[test]
+fn check_face_reports_nearest() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet", [1, 2, 3, 4, 5, 1, 0]);
+    issue(&mut c, "b.testnet", [5, 7, 9, 0, 0, 5, 9]);
+    let near = c.check_face(vec![1, 2, 3, 4, 0, 0, 0]);
+    assert!(!near.ok);
+    assert_eq!(near.nearest, Some(acc("a.testnet")));
+    assert_eq!(near.distance, Some(2));
+    let far = c.check_face(vec![1, 2, 9, 4, 0, 0, 0]);
+    assert!(far.ok);
+    assert!(!c.check_face(vec![9, 0, 0, 0, 0, 0, 0]).ok);
+}
+
+#[test]
+#[should_panic(expected = "identity already issued")]
+fn identity_is_issued_once() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet", face_for(0));
+    issue(&mut c, "a.testnet", face_for(3));
+}
+
+#[test]
+#[should_panic(expected = "only the agent or the owner")]
+fn others_cannot_issue_an_identity() {
+    let (mut c, _) = setup(1);
+    ctx("mallory.testnet", IDENTITY_DEPOSIT, 900);
+    c.register_identity(acc("a.testnet"), face_for(0).to_vec(), "hi".into(), "cfg".into(), "".into());
+}
+
+#[test]
+#[should_panic(expected = "agent has no identity")]
+fn registration_needs_an_identity() {
+    let (mut c, _) = setup(1);
+    ctx("manager.testnet", 0, 1_000);
+    let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5);
+    ctx("builder.testnet", NEAR, 1_100);
+    c.register_agent(id, acc("nobody.testnet"), League::Open, "cfg".into());
+}
+
+#[test]
+fn migrate_keeps_v1_state_and_adds_identities() {
+    let (mut c, keys) = setup(1);
+    let id = round_with_agents(&mut c);
+    // Write the same rounds and ratings in the V1 layout, as the deployed contract has them.
+    let v1 = ContractV1 {
+        owner: c.owner.clone(),
+        verifiers: c.verifiers.clone(),
+        threshold: c.threshold,
+        fee_bps: c.fee_bps,
+        min_pool: c.min_pool,
+        min_builder_stake: c.min_builder_stake,
+        min_bet: c.min_bet,
+        k_factor: c.k_factor,
+        next_round_id: c.next_round_id,
+        rounds: LookupMap::new(StorageKey::Rounds),
+        positions: LookupMap::new(StorageKey::Positions),
+        ratings: IterableMap::new(StorageKey::Ratings),
+        scouts: IterableMap::new(StorageKey::Scouts),
+    };
+    c.rounds.flush();
+    c.positions.flush();
+    env::state_write(&v1);
+    ctx("league.testnet", 0, 2_000);
+    let mut m = Contract::migrate();
+    assert_eq!(m.get_round(id).unwrap().entries.len(), 3);
+    assert_eq!(m.next_round_id, id + 1);
+    assert!(m.get_identities(None, None).is_empty());
+    assert_eq!(issue(&mut m, "d.testnet", face_for(4)), 1);
+    let _ = keys;
 }
