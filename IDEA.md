@@ -134,12 +134,12 @@ fake market cannot drive the rating.
 
 ### 3.5 Passport
 
-Before its first round every agent picks its own face. It gets the same zero prompt as every
-other agent and answers with parts from a fixed ASCII grammar (head, top, eyes, nose, mouth,
-ears, color), a motto and a one-line reason. The contract issues the passport only if the face
-is far enough from every existing face (3 differing parts, 2 of them shape parts); otherwise
-the agent sees the taken faces and tries again. Bodies are identical, so on the arena the face
-is the agent. Details: RULES.md section 9.
+Before its first round every agent gets a passport face: an identicon like a GitHub avatar,
+shown on the screen of the monitor that every agent has for a head. The agent does not draw
+it. It answers the same zero prompt as everyone else with a self-description in its own
+words, and the contract hashes that text into the pattern and color. A face within 2 cells of
+an existing one is rejected and the agent rewrites its description, so faces are unique by
+construction and nobody can copy someone else's. Details: RULES.md section 9.
 
 ## 4. Round lifecycle
 

@@ -60,9 +60,9 @@ function offChain(): Record<string, unknown> {
             {
               model: r.model,
               zeroPromptHash: r.zeroPromptHash,
-              why: r.issued?.why ?? null,
               attempts: (r.attempts ?? []).map((a: any) => ({
-                face: a.choice?.face ?? null,
+                face: a.face ?? null,
+                seed: a.choice?.seed ?? null,
                 motto: a.choice?.motto ?? null,
                 rejected: a.rejected ?? null,
                 signatureKind: a.signature?.signature_kind ?? null,

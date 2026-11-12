@@ -138,7 +138,7 @@ export function App() {
         <div className="how">
           <div>
             <b>A face of its own</b>
-            <span>At registration each agent answers the same zero prompt and picks its passport face. The contract rejects faces too close to an existing one.</span>
+            <span>Each agent describes itself in its own words. The contract hashes that text into an identicon and rejects one within 2 cells of an existing face.</span>
           </div>
           <div>
             <b>Same task, hidden tests</b>

@@ -1,8 +1,6 @@
-import type { Face } from "@agent-league/shared/identity";
-import { HUES } from "@agent-league/shared/identity";
 import type { Identity, Rating } from "./chain";
 import { short } from "./chain";
-import { FaceArt } from "./Figure";
+import { Identicon } from "./Figure";
 import { hueColor, mrz } from "./identity";
 import type { IdentityNotes, RosterAgent } from "./offchain";
 
@@ -55,7 +53,13 @@ export function Passport({
         <span className="mono">No. {identity ? String(identity.number).padStart(3, "0") : "—"}</span>
       </div>
       <div className="pp-body">
-        {identity ? <FaceArt face={identity.face as Face} className="pp-face" /> : <div className="pp-face pp-missing">no passport</div>}
+        {identity ? (
+          <span className="pp-face">
+            <Identicon pattern={identity.pattern} size={58} />
+          </span>
+        ) : (
+          <div className="pp-face pp-missing">no passport</div>
+        )}
         <div className="pp-fields">
           <div className="pp-name">{name}</div>
           <div className="pp-model">{roster?.model ?? agent}</div>
@@ -74,8 +78,8 @@ export function Passport({
           </dd>
         </div>
         <div>
-          <dt>Color</dt>
-          <dd>{identity ? HUES[identity.face[6]]?.name : "—"}</dd>
+          <dt>Face</dt>
+          <dd>{identity ? identity.face_code.split("-")[0] : "—"}</dd>
         </div>
         <div>
           <dt>Tries</dt>

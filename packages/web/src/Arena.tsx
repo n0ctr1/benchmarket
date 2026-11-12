@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Face } from "@agent-league/shared/identity";
 import { near, short, type Identity, type Rating, type Round } from "./chain";
 import { Drawer } from "./Drawer";
 import { Figure, type Pose } from "./Figure";
@@ -24,8 +23,6 @@ const SCOUT_FACES: Record<string, string> = {
   "scout-spec": "(o.O)",
   "scout-llm": "[*_*]",
 };
-
-const UNKNOWN_FACE: Face = [0, 0, 0, 0, 0, 0, 0];
 
 interface Coin {
   key: number;
@@ -342,7 +339,7 @@ export function Arena({
                   <span className="thought mono" data-kind={v.pose === "think" ? "think" : answeredNow ? "sent" : "none"}>
                     {v.pose === "think" ? <Dots /> : answeredNow ? `sent${v.latency ? ` ${(v.latency / 1000).toFixed(0)}s` : ""}` : ""}
                   </span>
-                  <Figure face={(id?.face as Face) ?? UNKNOWN_FACE} pose={v.pose} seed={v.i + 1} />
+                  <Figure pattern={id?.pattern ?? 0} pose={id ? v.pose : "out"} seed={v.i + 1} />
                   <span className="podium mono" aria-hidden="true">
                     {v.won ? "[ #1 ]" : ""}
                   </span>

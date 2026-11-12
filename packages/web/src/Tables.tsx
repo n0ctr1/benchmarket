@@ -1,6 +1,5 @@
-import type { Face } from "@agent-league/shared/identity";
 import { near, short, type Bettor, type Identity, type Rating, type Round } from "./chain";
-import { FaceArt } from "./Figure";
+import { Identicon } from "./Figure";
 import { hueColor } from "./identity";
 import type { RosterAgent, RoundRecord } from "./offchain";
 
@@ -74,7 +73,7 @@ export function Standings({ ratings, rounds, roster, identities }: { ratings: Ra
                 <td className="num muted">{i + 1}</td>
                 <td>
                   <div className="who-cell">
-                    {ident ? <FaceArt face={ident.face as Face} className="face-mini" /> : <span className="face-mini" />}
+                    {ident ? <Identicon pattern={ident.pattern} size={26} /> : <span style={{ width: 26 }} />}
                     <div>
                       <div className="n">{a?.name ?? id}</div>
                       <div className="m">{a?.model ?? r.agent}</div>

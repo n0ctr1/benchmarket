@@ -116,7 +116,9 @@ export const short = (account: string) => account.split(".")[0];
 export interface Identity {
   agent: string;
   number: number;
-  face: number[];
+  seed: string;
+  pattern: number;
+  hue: number;
   face_code: string;
   motto: string;
   config_hash: string;

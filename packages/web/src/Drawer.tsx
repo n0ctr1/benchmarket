@@ -1,8 +1,7 @@
 import { useEffect } from "react";
-import type { Face } from "@agent-league/shared/identity";
-import { faceCode, HUES } from "@agent-league/shared/identity";
+import { faceCode } from "@agent-league/shared/identity";
 import { EXPLORER, short, type Entry, type Identity, type Round } from "./chain";
-import { Figure, FaceArt } from "./Figure";
+import { Figure, Identicon } from "./Figure";
 import { hueColor, mrz } from "./identity";
 import type { AgentAnswer, IdentityNotes, RosterAgent } from "./offchain";
 
@@ -51,7 +50,7 @@ export function Drawer({
           ×
         </button>
         <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-          {identity && <Figure face={identity.face as Face} pose={won ? "win" : entry.answer_hash ? "idle" : "out"} />}
+          {identity && <Figure pattern={identity.pattern} pose={won ? "win" : entry.answer_hash ? "idle" : "out"} />}
           <div>
             <div className="muted mono" style={{ fontSize: 12 }}>
               ROUND {round.id} · {round.task_ref}
@@ -117,16 +116,12 @@ export function Drawer({
                 <dd>{String(identity.number).padStart(3, "0")}</dd>
                 <dt>Face</dt>
                 <dd>
-                  {identity.face_code} · {HUES[identity.face[6]]?.name}
+                  {identity.face_code} · pattern {identity.pattern} · hue {identity.hue}°
                 </dd>
                 <dt>Motto</dt>
                 <dd>"{identity.motto}"</dd>
-                {notes?.why && (
-                  <>
-                    <dt>Why this face</dt>
-                    <dd className="plain">{notes.why}</dd>
-                  </>
-                )}
+                <dt>Seed</dt>
+                <dd className="plain">{identity.seed}</dd>
                 <dt>Issued</dt>
                 <dd>
                   {new Date(identity.issued_at_ms).toISOString().slice(0, 16).replace("T", " ")} UTC by {identity.issuer}
@@ -142,17 +137,24 @@ export function Drawer({
               </dl>
               <div className="pp-mrz mono">{mrz(agent?.name ?? id, identity)}</div>
             </div>
-            {notes && notes.attempts.length > 1 && (
+            {notes && notes.attempts.length > 0 && (
               <>
-                <h4>Uniqueness check</h4>
+                <h4>How the face was made</h4>
                 <div className="attempts">
                   {notes.attempts.map((a, i) => (
                     <div key={i} className="attempt" data-ok={!a.rejected}>
-                      {a.face ? <FaceArt face={a.face as Face} /> : <pre className="face-art">  (no face)</pre>}
+                      {a.face ? (
+                        <span style={{ ["--agent" as string]: `oklch(var(--agent-l) var(--agent-c) ${a.face.hue})` }}>
+                          <Identicon pattern={a.face.pattern} size={34} />
+                        </span>
+                      ) : (
+                        <span className="identicon-empty" />
+                      )}
                       <div>
                         <div className="mono" style={{ fontSize: 12 }}>
                           try {i + 1} · {a.face ? faceCode(a.face) : "invalid reply"}
                         </div>
+                        {a.seed && <div style={{ fontSize: 12.5, margin: "2px 0" }}>{a.seed}</div>}
                         <div className="muted" style={{ fontSize: 12 }}>
                           {a.rejected ?? "accepted by the contract"}
                         </div>

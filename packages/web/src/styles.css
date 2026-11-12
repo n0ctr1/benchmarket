@@ -494,20 +494,12 @@ button {
   padding: 8px 12px 10px;
 }
 
-.face-art {
-  margin: 0;
-  font-family: var(--font-mono);
-  white-space: pre;
-  color: var(--agent);
-  line-height: 1.08;
-}
-
 .pp-face {
-  font-size: 8.5px;
-  padding: 6px 4px;
-  border-radius: 6px;
-  background: var(--bg-sunken);
+  display: inline-flex;
+  padding: 4px;
+  border-radius: 8px;
   border: 1px solid var(--line);
+  background: var(--bg-sunken);
 }
 
 .pp-missing {
@@ -851,7 +843,16 @@ button {
   transition: transform 500ms cubic-bezier(0.2, 0.7, 0.2, 1), opacity 400ms;
 }
 
-.figure-face {
+.figure .bezel {
+  color: var(--text-dim);
+}
+
+.figure .screen {
+  background: color-mix(in oklch, var(--agent) 9%, var(--bg));
+  transition: opacity 90ms;
+}
+
+.figure .px.on {
   color: var(--agent);
 }
 
@@ -859,34 +860,78 @@ button {
   color: var(--text-muted);
 }
 
-.figure[data-pose="think"] .figure-face {
-  animation: bob 900ms ease-in-out infinite;
+.figure[data-flicker="true"] .screen {
+  opacity: 0.55;
+}
+
+/* Thinking: a wave runs across the lit pixels. */
+.figure[data-pose="think"] .px.on {
+  animation: wave 1100ms ease-in-out infinite;
+}
+
+@keyframes wave {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 
 .figure[data-pose="win"] {
   transform: translateY(-14px);
-}
-
-.figure[data-pose="win"] .figure-face {
   animation: hop 800ms ease-in-out 3;
 }
 
+.figure[data-pose="win"] .px.on {
+  text-shadow: 0 0 6px var(--agent);
+  animation: glow 900ms ease-in-out 3;
+}
+
+@keyframes glow {
+  50% { text-shadow: 0 0 12px var(--agent); }
+}
+
 .figure[data-pose="out"] {
-  opacity: 0.3;
+  opacity: 0.4;
+}
+
+.figure[data-pose="out"] .screen {
+  color: var(--text-muted);
+  background: var(--bg);
 }
 
 .figure[data-pose="lose"] {
   opacity: 0.75;
 }
 
-@keyframes bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-1px); }
+@keyframes hop {
+  0%, 100% { transform: translateY(-14px); }
+  40% { transform: translateY(-19px); }
 }
 
-@keyframes hop {
-  0%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-5px); }
+/* Identicon for cards and tables. */
+.identicon {
+  display: inline-grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  gap: 1px;
+  padding: 3px;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--agent) 8%, var(--bg-sunken));
+  flex: none;
+}
+
+.identicon i {
+  border-radius: 1px;
+}
+
+.identicon i[data-on="true"] {
+  background: var(--agent);
+}
+
+.identicon-empty {
+  display: inline-block;
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  border: 1px dashed var(--line-strong);
 }
 
 .podium {
@@ -978,14 +1023,6 @@ button {
   100% { transform: translate(var(--drift), 560px) rotate(200deg); opacity: 0; }
 }
 
-/* small faces */
-
-.face-mini {
-  font-size: 4.6px;
-  line-height: 1.05;
-  min-width: 34px;
-}
-
 .pp-detail {
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1018,16 +1055,12 @@ button {
   border-radius: 8px;
 }
 
-.attempt .face-art {
-  font-size: 6px;
-}
-
 .attempt[data-ok="false"] {
   opacity: 0.7;
 }
 
-.attempt[data-ok="false"] .face-art {
-  color: var(--text-muted);
+.attempt[data-ok="false"] .identicon {
+  filter: grayscale(1);
 }
 
 /* ---------- booth (scout bets) ---------- */
