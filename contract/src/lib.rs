@@ -29,6 +29,7 @@ enum StorageKey {
     Scouts,
     Identities,
     IdentitiesV3,
+    IdentitiesV4,
 }
 
 #[near(serializers = [borsh, json])]
@@ -223,14 +224,14 @@ pub struct ConfigView {
     pub next_round_id: u64,
 }
 
-/// An agent's passport. The face (pattern, hue) is derived on chain from the agent's seed.
+/// An agent's passport. The face (cells, palette) is derived on chain from the agent's seed.
 #[near(serializers = [borsh])]
 #[derive(Clone)]
 pub struct Identity {
     pub number: u32,
     pub seed: String,
-    pub pattern: u16,
-    pub hue: u16,
+    pub cells: Vec<u8>,
+    pub palette: [u16; 3],
     pub motto: String,
     pub config_hash: String,
     /// Off-chain evidence of how the seed was produced (completion id and signature digest).
@@ -239,12 +240,14 @@ pub struct Identity {
     pub issued_at_ms: u64,
 }
 
-/// Passport layout of the first identity release (chosen ASCII parts); dropped by `migrate`.
+/// Passport layout with a 5x5 one-color face; converted by `migrate`.
 #[near(serializers = [borsh])]
 #[derive(Clone)]
-pub struct IdentityV2 {
+pub struct IdentityV3 {
     pub number: u32,
-    pub face: Vec<u8>,
+    pub seed: String,
+    pub pattern: u16,
+    pub hue: u16,
     pub motto: String,
     pub config_hash: String,
     pub proof: String,
@@ -257,8 +260,8 @@ pub struct IdentityView {
     pub agent: AccountId,
     pub number: u32,
     pub seed: String,
-    pub pattern: u16,
-    pub hue: u16,
+    pub cells: Vec<u8>,
+    pub palette: [u16; 3],
     pub face_code: String,
     pub motto: String,
     pub config_hash: String,
@@ -271,8 +274,8 @@ pub struct IdentityView {
 pub struct FaceCheck {
     pub ok: bool,
     pub reason: Option<String>,
-    pub pattern: u16,
-    pub hue: u16,
+    pub cells: Vec<u8>,
+    pub palette: [u16; 3],
     /// Closest existing face, if any, and how many cells apart.
     pub nearest: Option<AccountId>,
     pub distance: Option<u32>,
@@ -300,9 +303,9 @@ pub struct Contract {
     next_identity: u32,
 }
 
-/// State layout of the first identity release; read once by `migrate`.
+/// State layout with 5x5 one-color passports; read once by `migrate`.
 #[near(serializers = [borsh])]
-struct ContractV2 {
+struct ContractV3 {
     owner: AccountId,
     verifiers: Vec<PublicKey>,
     threshold: u8,
@@ -316,7 +319,7 @@ struct ContractV2 {
     positions: LookupMap<(u64, AccountId), Position>,
     ratings: IterableMap<RatingKey, Rating>,
     scouts: IterableMap<AccountId, Scout>,
-    identities: IterableMap<AccountId, IdentityV2>,
+    identities: IterableMap<AccountId, IdentityV3>,
     next_identity: u32,
 }
 
@@ -338,9 +341,9 @@ fn identity_view(agent: &AccountId, id: &Identity) -> IdentityView {
         agent: agent.clone(),
         number: id.number,
         seed: id.seed.clone(),
-        pattern: id.pattern,
-        hue: id.hue,
-        face_code: identity::face_code(id.pattern, id.hue),
+        cells: id.cells.clone(),
+        palette: id.palette,
+        face_code: identity::face_code(&identity::Face { cells: id.cells.clone(), palette: id.palette }),
         motto: id.motto.clone(),
         config_hash: id.config_hash.clone(),
         proof: id.proof.clone(),
@@ -379,17 +382,45 @@ impl Contract {
             positions: LookupMap::new(StorageKey::Positions),
             ratings: IterableMap::new(StorageKey::Ratings),
             scouts: IterableMap::new(StorageKey::Scouts),
-            identities: IterableMap::new(StorageKey::IdentitiesV3),
+            identities: IterableMap::new(StorageKey::IdentitiesV4),
             next_identity: 1,
         }
     }
 
-    /// Upgrades V2 state in place: keeps rounds, positions, ratings and scouts, and drops the
-    /// V2 passports (chosen parts) so agents can be issued identicon passports.
+    /// Upgrades V3 state in place: keeps everything and re-derives every passport face from the
+    /// agent's own seed with the 7x7 three-color derivation. Numbers, seeds and mottos stay.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let mut old: ContractV2 = env::state_read().expect("no state to migrate");
+        let mut old: ContractV3 = env::state_read().expect("no state to migrate");
+        let mut identities: IterableMap<AccountId, Identity> = IterableMap::new(StorageKey::IdentitiesV4);
+        let mut issued: Vec<(AccountId, Vec<u8>)> = Vec::new();
+        let mut list: Vec<(AccountId, IdentityV3)> = old.identities.iter().map(|(a, i)| (a.clone(), i.clone())).collect();
+        list.sort_by_key(|(_, i)| i.number);
+        for (agent, id) in list {
+            let face = identity::derive(&id.seed);
+            if let Err(e) = identity::validate_fill(&face.cells) {
+                env::panic_str(&format!("re-derived face of {agent}: {e}"));
+            }
+            if let Some((other, _)) = issued.iter().find(|(_, c)| identity::cells_apart(c, &face.cells) < identity::MIN_CELLS) {
+                env::panic_str(&format!("re-derived face of {agent} is too close to {other}"));
+            }
+            issued.push((agent.clone(), face.cells.clone()));
+            identities.insert(
+                agent,
+                Identity {
+                    number: id.number,
+                    seed: id.seed,
+                    cells: face.cells,
+                    palette: face.palette,
+                    motto: id.motto,
+                    config_hash: id.config_hash,
+                    proof: id.proof,
+                    issuer: id.issuer,
+                    issued_at_ms: id.issued_at_ms,
+                },
+            );
+        }
         old.identities.clear();
         old.identities.flush();
         Self {
@@ -406,15 +437,15 @@ impl Contract {
             positions: old.positions,
             ratings: old.ratings,
             scouts: old.scouts,
-            identities: IterableMap::new(StorageKey::IdentitiesV3),
-            next_identity: 1,
+            identities,
+            next_identity: old.next_identity,
         }
     }
 
     // ----- identities -----
 
     /// Issues the agent's passport. The face is derived here from `seed`, the agent's own
-    /// self-description, and must be at least `MIN_BITS` cells away from every issued face.
+    /// self-description, and must be at least `MIN_CELLS` cells away from every issued face.
     /// Called by the agent itself, or by the owner for agents that cannot sign (Market League).
     #[payable]
     pub fn register_identity(&mut self, agent: AccountId, seed: String, motto: String, config_hash: String, proof: String) -> u32 {
@@ -432,11 +463,12 @@ impl Contract {
         }
         let number = self.next_identity;
         self.next_identity += 1;
+        let face = identity::Face { cells: check.cells.clone(), palette: check.palette };
         let id = Identity {
             number,
             seed,
-            pattern: check.pattern,
-            hue: check.hue,
+            cells: check.cells,
+            palette: check.palette,
             motto: motto.trim().to_string(),
             config_hash,
             proof,
@@ -449,9 +481,9 @@ impl Contract {
             json!({
                 "agent": agent,
                 "number": number,
-                "pattern": check.pattern,
-                "hue": check.hue,
-                "face_code": identity::face_code(check.pattern, check.hue),
+                "cells": face.cells,
+                "palette": face.palette,
+                "face_code": identity::face_code(&face),
                 "motto": motto.trim(),
             }),
         );
@@ -460,25 +492,33 @@ impl Contract {
 
     /// The face this seed would produce and whether it would be accepted.
     pub fn check_face(&self, seed: String) -> FaceCheck {
-        let (pattern, hue) = if identity::validate_seed(&seed).is_ok() { identity::derive(&seed) } else { (0, 0) };
-        let reject = |reason: String| FaceCheck { ok: false, reason: Some(reason), pattern, hue, nearest: None, distance: None };
-        if let Err(e) = identity::validate_seed(&seed) {
-            return reject(e);
+        let seed_ok = identity::validate_seed(&seed);
+        let face = if seed_ok.is_ok() { identity::derive(&seed) } else { identity::Face { cells: vec![], palette: [0; 3] } };
+        let reject = |reason: String, face: identity::Face| FaceCheck {
+            ok: false,
+            reason: Some(reason),
+            cells: face.cells,
+            palette: face.palette,
+            nearest: None,
+            distance: None,
+        };
+        if let Err(e) = seed_ok {
+            return reject(e, face);
         }
-        if let Err(e) = identity::validate_pattern(pattern) {
-            return reject(e);
+        if let Err(e) = identity::validate_fill(&face.cells) {
+            return reject(e, face);
         }
         let nearest = self
             .identities
             .iter()
-            .map(|(a, id)| (a.clone(), identity::bits_apart(pattern, id.pattern)))
+            .map(|(a, id)| (a.clone(), identity::cells_apart(&face.cells, &id.cells)))
             .min_by_key(|(_, d)| *d);
-        let clash = nearest.as_ref().filter(|(_, d)| *d < identity::MIN_BITS);
+        let clash = nearest.as_ref().filter(|(_, d)| *d < identity::MIN_CELLS);
         FaceCheck {
             ok: clash.is_none(),
-            reason: clash.map(|(a, d)| format!("face too close to {a}: {d} cells apart, needs {}", identity::MIN_BITS)),
-            pattern,
-            hue,
+            reason: clash.map(|(a, d)| format!("face too close to {a}: {d} cells apart, needs {}", identity::MIN_CELLS)),
+            cells: face.cells,
+            palette: face.palette,
             distance: nearest.as_ref().map(|n| n.1),
             nearest: nearest.map(|n| n.0),
         }

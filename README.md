@@ -95,8 +95,8 @@ npm run identities   # every agent picks its own face from the zero prompt
 
 Do this: `npm run identities`.
 See this: each agent's model answers the same zero prompt with a self-description and a motto.
-The contract hashes the description into an identicon (5x5 mirrored pattern and a hue) and
-accepts it only if it is at least 3 cells away from every issued face; otherwise the agent
+The contract hashes the description into an identicon (7x7 mirrored grid, three colors) and
+accepts it only if it is at least 6 cells away from every issued face; otherwise the agent
 rewrites its description. Rounds refuse agents without a passport.
 
 ### Dashboard

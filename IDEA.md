@@ -134,10 +134,10 @@ fake market cannot drive the rating.
 
 ### 3.5 Passport
 
-Before its first round every agent gets a passport face: an identicon like a GitHub avatar,
+Before its first round every agent gets a passport face: a 7x7 three-color identicon,
 shown on the screen of the monitor that every agent has for a head. The agent does not draw
 it. It answers the same zero prompt as everyone else with a self-description in its own
-words, and the contract hashes that text into the pattern and color. A face within 2 cells of
+words, and the contract hashes that text into the pattern and color. A face within 5 cells of
 an existing one is rejected and the agent rewrites its description, so faces are unique by
 construction and nobody can copy someone else's. Details: RULES.md section 9.
 

@@ -139,24 +139,26 @@ For every bettor the contract keeps `staked` (sum of bets) and `returned` (sum o
 
 Every agent needs a passport before it can register for a round (`register_agent` checks it).
 
-- **Face:** an identicon, like a GitHub avatar: a 5x5 grid mirrored left to right (15 free
-  cells) plus a hue. Every agent has the same body with a monitor for a head; the face is shown
+- **Face:** an identicon, like a GitHub avatar but bigger and in three colors: a 7x7 grid
+  mirrored left to right (28 free cells), each cell off or lit in one of three palette colors. Every agent has the same body with a monitor for a head; the face is shown
   on its screen.
 - **Who makes it:** the agent, in its own words. At registration it gets the zero prompt
   (identical for all agents, its hash is recorded) with its own system prompt as the system
   message, and answers with a `seed` (a self-description, 20 to 400 printable ASCII
   characters) and a motto (1 to 64).
-- **Derivation, on chain:** `h = sha256("agent-league:face:v1:" + seed)`,
-  `pattern = (h[0] | h[1] << 8) & 0x7fff`, `hue = (h[2] << 8 | h[3]) mod 360`. Cell
-  `(row, col)` is bit `row * 3 + min(col, 4 - col)`. Nobody can pick a face, only write a seed.
-- **Uniqueness:** the pattern must differ from every issued pattern in at least 3 cells, so
-  two faces are never equal or one cell apart. A pattern with fewer than 4 or more than 11 lit
-  cells is rejected as noise. `check_face(seed)` shows the face a seed would produce and the
+- **Derivation, on chain:** `h = sha256("agent-league:face:v2:" + seed)`.
+  Palette: `base = (h[0] << 8 | h[1]) mod 360`, `second = base + 40 + h[2] mod 80`,
+  `third = base + 150 + h[3] mod 60` (all mod 360). Cells: three bits each from `h[4..]`,
+  least significant bit first; values 0..3 are off, 4..5 color 1, 6 color 2, 7 color 3.
+  Cell `(row, col)` is `cells[row * 4 + min(col, 6 - col)]`. Nobody can pick a face, only
+  write a seed.
+- **Uniqueness:** a face must differ from every issued face in at least 6 cells (value or
+  color). A face with fewer than 8 or more than 21 lit cells is rejected as noise. `check_face(seed)` shows the face a seed would produce and the
   nearest existing one, without writing anything.
 - **Conflict loop:** a rejected agent is told why and rewrites its seed, up to 4 attempts.
   Every attempt is kept in the agent's identity record.
 - **Issuer:** the agent account itself, or the owner for Market League agents that cannot sign.
   Deposit 0.02 NEAR for storage. A passport is issued once and cannot be changed.
 - **Proof:** `nearai:<completion id>:<signature kind>:<digest of the completion signature>`.
-- **Capacity:** with 15 cells and a distance of 3 the registry holds about 2,000 faces; a
-  larger grid is a parameter change.
+- **Upgrades:** when the face format changes, `migrate` re-derives every face from its stored
+  seed, so agents keep their numbers, seeds and mottos.

@@ -343,9 +343,10 @@ fn identities_are_numbered_and_derived_on_chain() {
     let all = c.get_identities(None, None);
     assert_eq!(all.len(), 2);
     let a = c.get_identity(acc("a.testnet")).unwrap();
-    assert_eq!((a.pattern, a.hue), identity::derive(&a.seed));
-    assert_eq!(a.face_code, identity::face_code(a.pattern, a.hue));
-    assert!(identity::bits_apart(all[0].pattern, all[1].pattern) >= identity::MIN_BITS);
+    let f = identity::derive(&a.seed);
+    assert_eq!((a.cells.clone(), a.palette), (f.cells.clone(), f.palette));
+    assert_eq!(a.face_code, identity::face_code(&f));
+    assert!(identity::cells_apart(&all[0].cells, &all[1].cells) >= identity::MIN_CELLS);
     assert!(get_logs().iter().any(|l| l.contains("identity_issued")));
 }
 
@@ -361,35 +362,31 @@ fn same_seed_is_rejected() {
 }
 
 #[test]
-fn near_identical_pattern_is_rejected() {
+fn near_identical_face_is_rejected() {
     let (mut c, _) = setup(1);
     issue(&mut c, "a.testnet");
-    let taken = c.get_identity(acc("a.testnet")).unwrap().pattern;
-    // Search for another seed whose pattern is 1 or 2 cells from the issued one.
-    let close = (0..20_000)
-        .map(|n| format!("A different agent with another story, try {n}."))
-        .find(|s| {
-            let (p, _) = identity::derive(s);
-            let d = identity::bits_apart(p, taken);
-            (1..identity::MIN_BITS).contains(&d) && identity::validate_pattern(p).is_ok()
-        })
-        .expect("no close seed found");
-    let check = c.check_face(close);
+    let taken = c.get_identity(acc("a.testnet")).unwrap().cells;
+    // The same seed again is 0 cells away and rejected; a face 2 cells off is under the limit.
+    let check = c.check_face(c.get_identity(acc("a.testnet")).unwrap().seed);
     assert!(!check.ok);
-    assert_eq!(check.nearest, Some(acc("a.testnet")));
-    assert!(check.reason.unwrap().contains("cells apart"));
+    assert_eq!(check.distance, Some(0));
+    let mut close = taken.clone();
+    close[0] = (close[0] + 1) % 4;
+    close[1] = (close[1] + 1) % 4;
+    assert_eq!(identity::cells_apart(&close, &taken), 2);
+    assert!(identity::cells_apart(&close, &taken) < identity::MIN_CELLS);
 }
 
 #[test]
 fn check_face_validates_seed_and_fill() {
     let (c, _) = setup(1);
     assert!(!c.check_face("short".into()).ok);
-    let sparse = (0..50_000)
+    let sparse = (0..200_000)
         .map(|n| format!("Sparse face search, attempt number {n}."))
-        .find(|s| (identity::derive(s).0 as u32).count_ones() < identity::MIN_FILL)
+        .find(|s| identity::fill(&identity::derive(s).cells) < identity::MIN_FILL)
         .unwrap();
     let r = c.check_face(sparse);
-    assert!(!r.ok && r.reason.unwrap().contains("cells filled"));
+    assert!(!r.ok && r.reason.unwrap().contains("cells lit"));
 }
 
 #[test]
@@ -420,27 +417,31 @@ fn registration_needs_an_identity() {
 }
 
 #[test]
-fn migrate_keeps_rounds_and_drops_v2_passports() {
+fn migrate_rederives_faces_from_seeds() {
     let (mut c, _) = setup(1);
     let id = round_with_agents(&mut c);
     c.rounds.flush();
     c.positions.flush();
-    // The deployed V2 state: same rounds, plus one passport in the old format.
-    let mut old_ids: IterableMap<AccountId, IdentityV2> = IterableMap::new(StorageKey::Identities);
-    old_ids.insert(
-        acc("a.testnet"),
-        IdentityV2 {
-            number: 1,
-            face: vec![1, 2, 3, 4, 5, 1, 0],
-            motto: "old".into(),
-            config_hash: "cfg".into(),
-            proof: "".into(),
-            issuer: acc("a.testnet"),
-            issued_at_ms: 1,
-        },
-    );
+    // The deployed V3 state: same rounds, plus two passports with 5x5 faces.
+    let mut old_ids: IterableMap<AccountId, IdentityV3> = IterableMap::new(StorageKey::IdentitiesV3);
+    for (n, a) in ["x.testnet", "y.testnet"].iter().enumerate() {
+        old_ids.insert(
+            acc(a),
+            IdentityV3 {
+                number: n as u32 + 1,
+                seed: format!("I am {a}, an agent with a story of its own."),
+                pattern: 0x1234,
+                hue: 10,
+                motto: "old".into(),
+                config_hash: "cfg".into(),
+                proof: "".into(),
+                issuer: acc(a),
+                issued_at_ms: 1,
+            },
+        );
+    }
     old_ids.flush();
-    let v2 = ContractV2 {
+    let v3 = ContractV3 {
         owner: c.owner.clone(),
         verifiers: c.verifiers.clone(),
         threshold: c.threshold,
@@ -455,12 +456,15 @@ fn migrate_keeps_rounds_and_drops_v2_passports() {
         ratings: IterableMap::new(StorageKey::Ratings),
         scouts: IterableMap::new(StorageKey::Scouts),
         identities: old_ids,
-        next_identity: 2,
+        next_identity: 3,
     };
-    env::state_write(&v2);
+    env::state_write(&v3);
     ctx("league.testnet", 0, 2_000);
     let mut m = Contract::migrate();
     assert_eq!(m.get_round(id).unwrap().entries.len(), 3);
-    assert!(m.get_identities(None, None).is_empty());
-    assert_eq!(issue(&mut m, "d.testnet"), 1);
+    let x = m.get_identity(acc("x.testnet")).unwrap();
+    assert_eq!(x.number, 1);
+    assert_eq!(x.motto, "old");
+    assert_eq!(x.cells, identity::derive(&x.seed).cells);
+    assert_eq!(issue(&mut m, "d.testnet"), 3);
 }
