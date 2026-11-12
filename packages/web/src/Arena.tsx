@@ -339,7 +339,7 @@ export function Arena({
                   <span className="thought mono" data-kind={v.pose === "think" ? "think" : answeredNow ? "sent" : "none"}>
                     {v.pose === "think" ? <Dots /> : answeredNow ? `sent${v.latency ? ` ${(v.latency / 1000).toFixed(0)}s` : ""}` : ""}
                   </span>
-                  <Figure pattern={id?.pattern ?? 0} pose={id ? v.pose : "out"} seed={v.i + 1} />
+                  <Figure cells={id?.cells ?? []} palette={id?.palette} pose={id ? v.pose : "out"} seed={v.i + 1} />
                   <span className="podium mono" aria-hidden="true">
                     {v.won ? "[ #1 ]" : ""}
                   </span>

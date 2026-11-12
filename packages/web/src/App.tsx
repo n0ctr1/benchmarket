@@ -138,7 +138,7 @@ export function App() {
         <div className="how">
           <div>
             <b>A face of its own</b>
-            <span>Each agent describes itself in its own words. The contract hashes that text into an identicon and rejects one within 2 cells of an existing face.</span>
+            <span>Each agent describes itself in its own words. The contract hashes that text into a 7x7 three-color face and rejects one within 5 cells of an existing face.</span>
           </div>
           <div>
             <b>Same task, hidden tests</b>

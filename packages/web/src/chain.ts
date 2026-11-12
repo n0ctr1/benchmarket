@@ -117,8 +117,8 @@ export interface Identity {
   agent: string;
   number: number;
   seed: string;
-  pattern: number;
-  hue: number;
+  cells: number[];
+  palette: [number, number, number];
   face_code: string;
   motto: string;
   config_hash: string;

@@ -1,5 +1,5 @@
 /**
- * Agent identity: an abstract face, like a GitHub identicon, shown on the screen of a monitor
+ * Agent identity: an abstract face, like a GitHub identicon (7x7, three colors), shown on the screen of a monitor
  * that every agent has for a head. The face is derived from the agent's own self-description
  * (its seed) exactly as contract/src/identity.rs does it, so the contract can compute and
  * check it. No Node dependencies: the dashboard imports this module.
@@ -7,40 +7,54 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
-export const DOMAIN = "agent-league:face:v1:";
-export const CELLS = 15;
-export const MIN_BITS = 3;
-export const MIN_FILL = 4;
-export const MAX_FILL = 11;
+export const DOMAIN = "agent-league:face:v2:";
+export const SIZE = 7;
+export const HALF = 4;
+export const CELLS = SIZE * HALF;
+export const MIN_CELLS = 6;
+export const MIN_FILL = 8;
+export const MAX_FILL = 21;
 export const MIN_SEED = 20;
 export const MAX_SEED = 400;
 export const MAX_MOTTO = 64;
 
+/** `cells[row * 4 + col]`: 0 off, 1..3 palette color. `palette`: three hues in degrees. */
 export interface Face {
-  pattern: number;
-  hue: number;
+  cells: number[];
+  palette: [number, number, number];
 }
 
+function bits(bytes: Uint8Array, pos: number, n: number): number {
+  let v = 0;
+  for (let i = 0; i < n; i++) v |= ((bytes[(pos + i) >> 3] >> ((pos + i) & 7)) & 1) << i;
+  return v;
+}
+
+/** Same derivation as contract/src/identity.rs. */
 export function deriveFace(seed: string): Face {
   const h = sha256(utf8ToBytes(DOMAIN + seed));
-  return { pattern: (h[0] | (h[1] << 8)) & 0x7fff, hue: ((h[2] << 8) | h[3]) % 360 };
+  const base = ((h[0] << 8) | h[1]) % 360;
+  const second = (base + 40 + (h[2] % 80)) % 360;
+  const third = (base + 150 + (h[3] % 60)) % 360;
+  const rest = h.subarray(4);
+  const cells = Array.from({ length: CELLS }, (_, i) => {
+    const v = bits(rest, i * 3, 3);
+    return v <= 3 ? 0 : v <= 5 ? 1 : v === 6 ? 2 : 3;
+  });
+  return { cells, palette: [base, second, third] };
 }
 
-export function popcount(x: number): number {
-  let n = 0;
-  for (let v = x; v; v &= v - 1) n++;
-  return n;
-}
+export const cellsApart = (a: readonly number[], b: readonly number[]) => a.reduce((n, x, i) => n + (x !== b[i] ? 1 : 0), 0);
+export const fillOf = (cells: readonly number[]) => cells.filter((c) => c !== 0).length;
 
-export const bitsApart = (a: number, b: number) => popcount(a ^ b);
-
-/** 5x5 grid; column c reads bit `row * 3 + min(c, 4 - c)`, so it is mirrored like GitHub's. */
-export function faceGrid(pattern: number): boolean[][] {
-  return Array.from({ length: 5 }, (_, r) => Array.from({ length: 5 }, (_, c) => ((pattern >> (r * 3 + Math.min(c, 4 - c))) & 1) === 1));
+/** 7x7 grid of cell values; column c reads column `min(c, 6 - c)` of its row. */
+export function faceGrid(cells: readonly number[] | undefined): number[][] {
+  return Array.from({ length: SIZE }, (_, r) => Array.from({ length: SIZE }, (_, c) => cells?.[r * HALF + Math.min(c, SIZE - 1 - c)] ?? 0));
 }
 
 export function faceCode(f: Face): string {
-  return `${f.pattern.toString(16).padStart(4, "0")}-${String(f.hue).padStart(3, "0")}`;
+  const packed = f.cells.reduce((acc, c, i) => acc + (BigInt(c) << BigInt(i * 2)), 0n);
+  return `${packed.toString(16).padStart(14, "0")}-${String(f.palette[0]).padStart(3, "0")}`;
 }
 
 export function validSeed(s: string): string | null {
@@ -49,9 +63,9 @@ export function validSeed(s: string): string | null {
   return null;
 }
 
-export function validFill(pattern: number): string | null {
-  const n = popcount(pattern);
-  return n < MIN_FILL || n > MAX_FILL ? `pattern has ${n} of ${CELLS} cells filled, needs ${MIN_FILL}..${MAX_FILL}` : null;
+export function validFill(cells: readonly number[]): string | null {
+  const n = fillOf(cells);
+  return n < MIN_FILL || n > MAX_FILL ? `face has ${n} of ${CELLS} cells lit, needs ${MIN_FILL}..${MAX_FILL}` : null;
 }
 
 export function validMotto(m: string): boolean {
@@ -75,22 +89,22 @@ export function cleanSeed(s: string): string {
 
 // ----- the body every agent shares -----
 
-/** Monitor head, 16 wide. The screen rows are drawn by the caller from `faceGrid`. */
-export const MONITOR_TOP = " .------------. ";
-export const MONITOR_BOTTOM = " '------------' ";
+/** Monitor head, 20 wide. The screen rows are drawn by the caller from `faceGrid`. */
+export const MONITOR_TOP = " .----------------. ";
+export const MONITOR_BOTTOM = " '----------------' ";
 export const screenRow = (cells: string) => ` | ${cells} | `;
 export const BODY = [
-  "      |__|      ",
-  "   .--'  '--.   ",
-  "  /|  [==]  |\\  ",
-  " / |  ....  | \\ ",
-  "   |___  ___|   ",
-  "   [__]  [__]   ",
+  "        |__|        ",
+  "    .---'  '---.    ",
+  "   /|   [==]   |\\   ",
+  "  / |   ....   | \\  ",
+  "    |____  ____|    ",
+  "    [__]    [__]    ",
 ];
 
-/** Plain-text figure for terminals: `##` is a lit cell. */
-export function figureText(pattern: number, on = "##", off = "  "): string[] {
-  const rows = faceGrid(pattern).map((r) => screenRow(r.map((c) => (c ? on : off)).join("")));
+/** Plain-text figure for terminals; `glyphs[v]` draws a cell of value v. */
+export function figureText(cells: readonly number[], glyphs = ["  ", "##", "%%", "@@"]): string[] {
+  const rows = faceGrid(cells).map((r) => screenRow(r.map((v) => glyphs[v]).join("")));
   return [MONITOR_TOP, ...rows, MONITOR_BOTTOM, ...BODY];
 }
 
@@ -99,7 +113,7 @@ export function figureText(pattern: number, on = "##", off = "  "): string[] {
 /** The prompt every agent gets at registration, before any task. Identical for all agents. */
 export function zeroPrompt(): string {
   return `You are about to join Agent League, where AI agents compete on the same tasks under hidden tests.
-Before your first round you get a passport. Its face is an abstract 5x5 pattern, like a GitHub avatar,
+Before your first round you get a passport. Its face is an abstract 7x7 pattern in three colors, like a GitHub avatar,
 shown on the screen of the monitor every agent has for a head. The league does not draw it for you:
 it hashes your own words. Whatever you write below becomes your face.
 

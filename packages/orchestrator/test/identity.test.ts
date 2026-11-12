@@ -2,36 +2,40 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { cleanSeed, deriveFace, faceCode, faceGrid, figureText, MIN_BITS, parseIdentityReply, popcount, validFill, validSeed } from "@agent-league/shared";
+import { CELLS, cellsApart, cleanSeed, deriveFace, DOMAIN, faceCode, faceGrid, figureText, MIN_CELLS, parseIdentityReply, validFill, validSeed } from "@agent-league/shared";
 import { REPO_ROOT } from "../src/config.js";
 
 const rust = fs.readFileSync(path.join(REPO_ROOT, "contract/src/identity.rs"), "utf8");
 
 test("derivation matches the contract's test vector", () => {
-  const f = deriveFace("I read the spec twice and test the edges first.");
-  const [p, h] = /EXPECTED_VECTOR: \(u16, u16\) = \((\d+), (\d+)\)/.exec(rust)!.slice(1).map(Number);
-  assert.deepEqual(f, { pattern: p, hue: h });
-  assert.equal(Number(/MIN_BITS: u32 = (\d+)/.exec(rust)![1]), MIN_BITS);
-  assert.ok(rust.includes(`DOMAIN: &str = "agent-league:face:v1:"`));
+  const seed = /VECTOR_SEED: &str = "([^"]+)"/.exec(rust)![1];
+  const code = /VECTOR_CODE: &str = "([^"]+)"/.exec(rust)![1];
+  const f = deriveFace(seed);
+  assert.equal(`${faceCode(f)}/${f.palette[1]}/${f.palette[2]}`, code);
+  assert.equal(Number(/MIN_CELLS: u32 = (\d+)/.exec(rust)![1]), MIN_CELLS);
+  assert.ok(rust.includes(`DOMAIN: &str = "${DOMAIN}"`));
 });
 
-test("grid is mirrored and the figure is 16 wide", () => {
-  for (const pattern of [0, 0x7fff, 0x5471, 12345]) {
-    const g = faceGrid(pattern);
+test("grid is mirrored 7x7 and the figure is 20 wide", () => {
+  for (const s of ["one seed of words here", "another seed, longer and different", "x".repeat(30)]) {
+    const f = deriveFace(s);
+    assert.equal(f.cells.length, CELLS);
+    const g = faceGrid(f.cells);
+    assert.equal(g.length, 7);
     for (const row of g) assert.deepEqual(row, [...row].reverse());
-    assert.equal(g.flat().filter(Boolean).length, [0, 1, 2, 3, 4].reduce((n, r) => n + [0, 1, 2].reduce((m, c) => m + ((pattern >> (r * 3 + c)) & 1) * (c === 2 ? 1 : 2), 0), 0));
-    for (const l of figureText(pattern)) assert.equal(l.length, 16, JSON.stringify(l));
+    for (const l of figureText(f.cells)) assert.equal(l.length, 20, JSON.stringify(l));
+    assert.ok(f.palette.every((h) => h >= 0 && h < 360));
   }
-  assert.equal(popcount(0b1011), 3);
-  assert.equal(faceCode({ pattern: 0x5a3c, hue: 7 }), "5a3c-007");
+  assert.equal(cellsApart([0, 1, 2, 3], [0, 1, 3, 0]), 2);
+  assert.equal(faceCode({ cells: [1, 2, 3], palette: [7, 0, 0] }), "00000000000039-007");
 });
 
 test("seed cleaning and validation", () => {
   assert.equal(cleanSeed("  I’m careful — I read\n the spec.  "), "I'm careful - I read the spec.");
   assert.equal(validSeed("short"), "seed must be 20..400 characters");
   assert.equal(validSeed("A perfectly fine seed of words."), null);
-  assert.ok(validFill(0b111));
-  assert.equal(validFill(0b1111), null);
+  assert.ok(validFill(Array(7).fill(1)));
+  assert.equal(validFill(Array(8).fill(2)), null);
   const r = parseIdentityReply('ok {"seed": "I am a careful agent that reads specs.", "motto": "Edges first."}');
   assert.equal(r.motto, "Edges first.");
   assert.throws(() => parseIdentityReply('{"seed": "tiny", "motto": "x"}'));

@@ -76,7 +76,7 @@ export function taskOf(rec: RoundRecord | null): TaskPublic | null {
 export interface IdentityNotes {
   model: string;
   zeroPromptHash: string;
-  attempts: Array<{ face: { pattern: number; hue: number } | null; seed: string | null; motto: string | null; rejected: string | null; signatureKind: string | null }>;
+  attempts: Array<{ face: { cells: number[]; palette: [number, number, number] } | null; seed: string | null; motto: string | null; rejected: string | null; signatureKind: string | null }>;
 }
 
 export const loadIdentityNotes = () => get<Record<string, IdentityNotes>>("identities.json");

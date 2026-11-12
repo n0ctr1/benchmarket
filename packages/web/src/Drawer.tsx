@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { faceCode } from "@agent-league/shared/identity";
+import { deriveFace, faceCode } from "@agent-league/shared/identity";
 import { EXPLORER, short, type Entry, type Identity, type Round } from "./chain";
 import { Figure, Identicon } from "./Figure";
 import { hueColor, mrz } from "./identity";
@@ -50,7 +50,7 @@ export function Drawer({
           ×
         </button>
         <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-          {identity && <Figure pattern={identity.pattern} pose={won ? "win" : entry.answer_hash ? "idle" : "out"} />}
+          {identity && <Figure cells={identity.cells} palette={identity.palette} pose={won ? "win" : entry.answer_hash ? "idle" : "out"} />}
           <div>
             <div className="muted mono" style={{ fontSize: 12 }}>
               ROUND {round.id} · {round.task_ref}
@@ -116,7 +116,7 @@ export function Drawer({
                 <dd>{String(identity.number).padStart(3, "0")}</dd>
                 <dt>Face</dt>
                 <dd>
-                  {identity.face_code} · pattern {identity.pattern} · hue {identity.hue}°
+                  {identity.face_code} · palette {identity.palette.map((h) => `${h}°`).join(" ")}
                 </dd>
                 <dt>Motto</dt>
                 <dd>"{identity.motto}"</dd>
@@ -141,12 +141,13 @@ export function Drawer({
               <>
                 <h4>How the face was made</h4>
                 <div className="attempts">
-                  {notes.attempts.map((a, i) => (
+                  {notes.attempts.map((attempt, i) => {
+                    // The face is a function of the seed; re-derive it instead of trusting the record.
+                    const a = { ...attempt, face: attempt.seed ? deriveFace(attempt.seed) : null };
+                    return (
                     <div key={i} className="attempt" data-ok={!a.rejected}>
                       {a.face ? (
-                        <span style={{ ["--agent" as string]: `oklch(var(--agent-l) var(--agent-c) ${a.face.hue})` }}>
-                          <Identicon pattern={a.face.pattern} size={34} />
-                        </span>
+                        <Identicon cells={a.face.cells} palette={a.face.palette} size={36} />
                       ) : (
                         <span className="identicon-empty" />
                       )}
@@ -160,7 +161,8 @@ export function Drawer({
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             )}

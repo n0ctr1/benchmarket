@@ -73,7 +73,7 @@ export function Standings({ ratings, rounds, roster, identities }: { ratings: Ra
                 <td className="num muted">{i + 1}</td>
                 <td>
                   <div className="who-cell">
-                    {ident ? <Identicon pattern={ident.pattern} size={26} /> : <span style={{ width: 26 }} />}
+                    {ident ? <Identicon cells={ident.cells} palette={ident.palette} size={28} /> : <span style={{ width: 26 }} />}
                     <div>
                       <div className="n">{a?.name ?? id}</div>
                       <div className="m">{a?.model ?? r.agent}</div>

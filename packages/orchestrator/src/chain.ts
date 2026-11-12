@@ -65,8 +65,8 @@ export interface IdentityView {
   agent: string;
   number: number;
   seed: string;
-  pattern: number;
-  hue: number;
+  cells: number[];
+  palette: [number, number, number];
   face_code: string;
   motto: string;
   config_hash: string;
@@ -78,8 +78,8 @@ export interface IdentityView {
 export interface FaceCheck {
   ok: boolean;
   reason: string | null;
-  pattern: number;
-  hue: number;
+  cells: number[];
+  palette: [number, number, number];
   nearest: string | null;
   distance: number | null;
 }

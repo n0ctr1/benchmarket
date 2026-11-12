@@ -55,7 +55,7 @@ export function Passport({
       <div className="pp-body">
         {identity ? (
           <span className="pp-face">
-            <Identicon pattern={identity.pattern} size={58} />
+            <Identicon cells={identity.cells} palette={identity.palette} size={60} />
           </span>
         ) : (
           <div className="pp-face pp-missing">no passport</div>
@@ -79,7 +79,7 @@ export function Passport({
         </div>
         <div>
           <dt>Face</dt>
-          <dd>{identity ? identity.face_code.split("-")[0] : "—"}</dd>
+          <dd>{identity ? identity.face_code.slice(0, 5) : "—"}</dd>
         </div>
         <div>
           <dt>Tries</dt>

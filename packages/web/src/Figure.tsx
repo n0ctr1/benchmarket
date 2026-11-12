@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { BODY, faceGrid, MONITOR_BOTTOM, MONITOR_TOP } from "@agent-league/shared/identity";
+import { paletteStyle } from "./identity";
 
 export type Pose = "idle" | "think" | "win" | "lose" | "out";
 
-/** The shared body with a monitor for a head; the screen shows the agent's identicon. */
-export function Figure({ pattern, pose, seed = 0 }: { pattern: number; pose: Pose; seed?: number }) {
+/** The shared body with a monitor for a head; the screen shows the agent's 7x7 face. */
+export function Figure({ cells, palette, pose, seed = 0 }: { cells: number[]; palette?: number[]; pose: Pose; seed?: number }) {
   // Occasional flicker, like an old screen.
   const [flicker, setFlicker] = useState(false);
   useEffect(() => {
@@ -19,9 +20,9 @@ export function Figure({ pattern, pose, seed = 0 }: { pattern: number; pose: Pos
     return () => clearTimeout(t);
   }, [pose, seed]);
 
-  const grid = faceGrid(pattern);
+  const grid = faceGrid(cells);
   return (
-    <pre className="figure" data-pose={pose} data-flicker={flicker} aria-hidden="true">
+    <pre className="figure" data-pose={pose} data-flicker={flicker} style={paletteStyle(palette)} aria-hidden="true">
       <span className="bezel">{MONITOR_TOP}</span>
       {"\n"}
       {grid.map((row, r) => (
@@ -29,12 +30,12 @@ export function Figure({ pattern, pose, seed = 0 }: { pattern: number; pose: Pos
           <span className="bezel">{" | "}</span>
           <span className="screen">
             {pose === "out"
-              ? r === 2
-                ? "NO  SIGNAL"
-                : "          "
-              : row.map((on, c) => (
-                  <span key={c} className={on ? "px on" : "px"} style={{ animationDelay: `${(r * 5 + c) * 40}ms` }}>
-                    {on ? "██" : "  "}
+              ? r === 3
+                ? "  NO  SIGNAL  "
+                : "              "
+              : row.map((v, c) => (
+                  <span key={c} className="px" data-v={v} style={{ animationDelay: `${(r * 7 + c) * 30}ms` }}>
+                    {v ? "██" : "  "}
                   </span>
                 ))}
           </span>
@@ -50,13 +51,14 @@ export function Figure({ pattern, pose, seed = 0 }: { pattern: number; pose: Pos
 }
 
 /** Square identicon for cards and tables. */
-export function Identicon({ pattern, size = 60, className }: { pattern: number; size?: number; className?: string }) {
-  const grid = faceGrid(pattern);
+export function Identicon({ cells, palette, size = 60, className }: { cells: number[]; palette?: number[]; size?: number; className?: string }) {
   return (
-    <span className={`identicon ${className ?? ""}`} style={{ width: size, height: size }} aria-hidden="true">
-      {grid.flat().map((on, i) => (
-        <i key={i} data-on={on} />
-      ))}
+    <span className={`identicon ${className ?? ""}`} style={{ width: size, height: size, ...paletteStyle(palette) }} aria-hidden="true">
+      {faceGrid(cells)
+        .flat()
+        .map((v, i) => (
+          <i key={i} data-v={v} />
+        ))}
     </span>
   );
 }

@@ -783,7 +783,7 @@ button {
   gap: 4px;
   align-items: end;
   padding-top: 18px;
-  font-size: clamp(6px, 1.95cqi, 13px);
+  font-size: clamp(5px, 1.6cqi, 12px);
 }
 
 .slot {
@@ -852,8 +852,16 @@ button {
   transition: opacity 90ms;
 }
 
-.figure .px.on {
-  color: var(--agent);
+.figure .px[data-v="1"] {
+  color: var(--p1);
+}
+
+.figure .px[data-v="2"] {
+  color: var(--p2);
+}
+
+.figure .px[data-v="3"] {
+  color: var(--p3);
 }
 
 .figure-body {
@@ -865,7 +873,7 @@ button {
 }
 
 /* Thinking: a wave runs across the lit pixels. */
-.figure[data-pose="think"] .px.on {
+.figure[data-pose="think"] .px:not([data-v="0"]) {
   animation: wave 1100ms ease-in-out infinite;
 }
 
@@ -879,13 +887,13 @@ button {
   animation: hop 800ms ease-in-out 3;
 }
 
-.figure[data-pose="win"] .px.on {
-  text-shadow: 0 0 6px var(--agent);
+.figure[data-pose="win"] .px:not([data-v="0"]) {
+  text-shadow: 0 0 6px currentColor;
   animation: glow 900ms ease-in-out 3;
 }
 
 @keyframes glow {
-  50% { text-shadow: 0 0 12px var(--agent); }
+  50% { text-shadow: 0 0 12px currentColor; }
 }
 
 .figure[data-pose="out"] {
@@ -909,8 +917,8 @@ button {
 /* Identicon for cards and tables. */
 .identicon {
   display: inline-grid;
-  grid-template-columns: repeat(5, 1fr);
-  grid-template-rows: repeat(5, 1fr);
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(7, 1fr);
   gap: 1px;
   padding: 3px;
   border-radius: 5px;
@@ -922,8 +930,16 @@ button {
   border-radius: 1px;
 }
 
-.identicon i[data-on="true"] {
-  background: var(--agent);
+.identicon i[data-v="1"] {
+  background: var(--p1);
+}
+
+.identicon i[data-v="2"] {
+  background: var(--p2);
+}
+
+.identicon i[data-v="3"] {
+  background: var(--p3);
 }
 
 .identicon-empty {

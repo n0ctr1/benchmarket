@@ -12,7 +12,7 @@ export interface IdentityAttempt {
   reply?: string;
   choice?: IdentityChoice;
   /** Face the seed produced, as the contract computed it. */
-  face?: { pattern: number; hue: number };
+  face?: { cells: number[]; palette: [number, number, number] };
   rejected?: string;
   completionId?: string;
   signature?: CompletionSignature | null;
@@ -23,7 +23,7 @@ export interface IdentityRecord {
   model: string;
   zeroPromptHash: string;
   attempts: IdentityAttempt[];
-  issued?: { number: number; pattern: number; hue: number; seed: string; motto: string };
+  issued?: { number: number; cells: number[]; palette: [number, number, number]; seed: string; motto: string };
 }
 
 const MAX_ATTEMPTS = 4;
@@ -89,18 +89,18 @@ export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say:
     }
 
     const check = await chain.checkFace(choice.seed);
-    attempt.face = { pattern: check.pattern, hue: check.hue };
+    attempt.face = { cells: check.cells, palette: check.palette };
     let reason = check.ok ? null : check.reason ?? "rejected";
     if (!reason) {
       const sig = attempt.signature;
       const proof = `nearai:${reply.id}:${sig?.signature_kind ?? "unsigned"}:${sig ? sha(sig.signature).slice(0, 16) : "-"}`;
       try {
         const number = Number(await chain.registerIdentity(account, account, choice.seed, choice.motto, configHash(agent), proof));
-        rec.issued = { number, pattern: check.pattern, hue: check.hue, seed: choice.seed, motto: choice.motto };
+        rec.issued = { number, cells: check.cells, palette: check.palette, seed: choice.seed, motto: choice.motto };
         save(rec);
         say(`  ${agent.name.padEnd(7)} passport #${number} ${faceCode(check)}  "${choice.motto}"`);
         say(`            seed: ${choice.seed}`);
-        for (const l of figureText(check.pattern).slice(0, 7)) say(`            ${l}`);
+        for (const l of figureText(check.cells).slice(0, 9)) say(`            ${l}`);
         return rec;
       } catch (e) {
         // Another agent may have taken a close face between the check and the call; that goes
