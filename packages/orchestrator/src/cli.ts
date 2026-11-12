@@ -180,6 +180,7 @@ async function main(): Promise<void> {
           taskId,
           summary: arg("summary", "I need a function that parses the CSV exports of my shop, quoted fields and all.")!,
           category: arg("category"),
+          confidential: process.argv.includes("--confidential"),
           solver: m.solver ?? simSolver,
           scouts: m.scouts,
           budget: near(arg("budget", "0.2")!),

@@ -117,7 +117,9 @@ export interface Brief {
   id: number;
   client: string;
   summary: string;
-  task_ref: string;
+  category: string | null;
+  confidential: boolean;
+  task_ref: string | null;
   budget: string;
   scout_reward: string;
   tryout_bounty: string;

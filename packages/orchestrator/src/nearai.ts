@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { clientKey, modelX25519, openField, sealField } from "@agent-league/shared";
 import { config } from "./config.js";
 
 /** OpenAI-compatible client for NEAR AI Cloud. */
@@ -119,4 +121,57 @@ export async function attestedSigners(models: string[]): Promise<{ gateway: stri
     }
   }
   return out;
+}
+export interface SealedChat {
+  /** Exact encrypted bodies: NEAR AI signs their hashes. */
+  requestBody: string;
+  responseBody: string;
+  /** The assistant's reply, decrypted. */
+  content: string;
+  signature: CompletionSignature | null;
+  /** The one-time keys that open exactly this exchange (for the verifier). */
+  sealed: { modelPub: string; fieldSecrets: string[]; clientSeed: string };
+  latencyMs: number;
+}
+
+/**
+ * A completion only the model's enclave can read: every message is encrypted to the enclave's key
+ * from a fresh attestation report (nonce checked), the reply comes back encrypted to a one-time
+ * client key. NEAR AI's gateway and operators see ciphertext only.
+ */
+export async function sealedChat(model: string, messages: ChatMessage[], maxTokens = 32000, timeoutMs = 600_000): Promise<SealedChat> {
+  const nonce = randomBytes(32).toString("hex");
+  const rep = await fetch(`${config.nearAiBaseUrl}/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ed25519&nonce=${nonce}&include_tls_fingerprint=false`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!rep.ok) throw new Error(`${model} has no enclave attestation (${rep.status}): it cannot take confidential work`);
+  const report = (await rep.json()) as { model_attestations?: Array<{ model_name?: string; signing_public_key?: string }> };
+  const att = report.model_attestations?.find((a) => a.model_name === model && a.signing_public_key);
+  if (!att || !JSON.stringify(report.model_attestations).includes(nonce)) throw new Error(`no fresh enclave attestation for ${model}`);
+  const modelPub = att.signing_public_key!;
+  const recipient = modelX25519(modelPub);
+  const fields = messages.map((m) => sealField(recipient, m.content));
+  const me = clientKey();
+  const requestBody = JSON.stringify({ model, messages: messages.map((m, i) => ({ role: m.role, content: fields[i].field })), max_tokens: maxTokens });
+  const started = Date.now();
+  const res = await fetch(`${config.nearAiBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { ...headers(), "X-Signing-Algo": "ed25519", "X-Client-Pub-Key": me.pubHex, "X-Model-Pub-Key": modelPub, "X-Encryption-Version": "2" },
+    body: requestBody,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const responseBody = await res.text();
+  if (!res.ok) throw new Error(`NEAR AI ${res.status} for ${model}: ${responseBody.slice(0, 300)}`);
+  const j = JSON.parse(responseBody);
+  const sealedContent = j.choices?.[0]?.message?.content;
+  if (typeof sealedContent !== "string" || !sealedContent) throw new ChatError(`empty completion from ${model}`, j.choices?.[0]?.finish_reason === "length");
+  return {
+    requestBody,
+    responseBody,
+    content: openField(me.x25519Secret, sealedContent),
+    signature: await completionSignature(j.id, model),
+    sealed: { modelPub, fieldSecrets: fields.map((f) => f.secret), clientSeed: me.seed },
+    latencyMs: Date.now() - started,
+  };
 }

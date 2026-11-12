@@ -337,7 +337,15 @@ export function Briefs({ briefs, identities, jobs, onRound }: { briefs: Brief[];
         return (
           <article key={b.id} className="panel brief" data-s={b.status}>
             <div className="brief-head">
-              <span className="mono muted">BRIEF {String(b.id).padStart(2, "0")}</span>
+              <span className="mono muted">
+                BRIEF {String(b.id).padStart(2, "0")}
+                {b.category && ` · ${b.category}`}
+              </span>
+              {b.confidential && (
+                <span className="badge model" title="The task goes end-to-end encrypted into the hired model's enclave only">
+                  confidential
+                </span>
+              )}
               <span className="status" data-s={b.status}>
                 {BRIEF_STATE[b.status]}
               </span>
@@ -381,7 +389,7 @@ export function Briefs({ briefs, identities, jobs, onRound }: { briefs: Brief[];
               )}
               {job && (
                 <li>
-                  <b>Job</b> #{job.id} <span className="mono muted">{job.task_ref}</span>: {job.score !== null ? `${job.score}/${job.total_tests}` : JOB_STATE[job.status]}
+                  <b>Job</b> #{job.id} <span className="mono muted">{b.confidential ? "task sealed to the enclave" : job.task_ref}</span>: {job.score !== null ? `${job.score}/${job.total_tests}` : JOB_STATE[job.status]}
                   {job.answer_attested && <span className="badge model">attested</span>}
                 </li>
               )}

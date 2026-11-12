@@ -5,3 +5,4 @@ export * from "./hash.js";
 export * from "./identity.js";
 export * from "./inference.js";
 export * from "./rpc.js";
+export * from "./e2ee.js";

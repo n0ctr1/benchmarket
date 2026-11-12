@@ -173,6 +173,7 @@ export interface BriefView {
   tests_hash: string | null;
   pass_ppm: number;
   attested: boolean;
+  confidential: boolean;
   budget: string;
   scout_reward: string;
   tryout_bounty: string;
@@ -427,7 +428,7 @@ export class LeagueChain {
 
   // ----- briefs -----
 
-  postBrief(client: string, p: { skill: string; summary: string; category?: string; taskRef?: string; testsHash?: string; budget: bigint; scoutReward: bigint; tryoutBounty: bigint; tryoutSubsidy: bigint; minStake: bigint; nominateWindowMs: number; tradeWindowMs: number; workWindowMs: number; passPpm?: number; attested?: boolean }) {
+  postBrief(client: string, p: { skill: string; summary: string; category?: string; taskRef?: string; testsHash?: string; confidential?: boolean; budget: bigint; scoutReward: bigint; tryoutBounty: bigint; tryoutSubsidy: bigint; minStake: bigint; nominateWindowMs: number; tradeWindowMs: number; workWindowMs: number; passPpm?: number; attested?: boolean }) {
     const total = p.budget + p.scoutReward + p.tryoutBounty + p.tryoutSubsidy;
     return this.call<number>(client, "post_brief", {
       skill: p.skill,
@@ -446,6 +447,7 @@ export class LeagueChain {
       pass_ppm: p.passPpm ?? null,
       attested: p.attested ?? false,
       offer_window_ms: null,
+      confidential: p.confidential ?? false,
     }, total);
   }
 

@@ -3,7 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import {
   checkCompletion,
+  clientKey,
   completionContent,
+  modelX25519,
+  openField,
+  openWithEphemeral,
   DOMAINS,
   loadTask,
   publicKeyOf,
@@ -31,8 +35,39 @@ export interface StoredAnswer {
   request?: string;
   /** The agent's public config (its hash is registered on chain). */
   config?: PublicConfig;
+  /**
+   * A confidential exchange (NEAR AI end-to-end encryption): the enclave key it was sealed to and
+   * the one-time keys that open exactly this exchange, revealed by the client to the verifier.
+   */
+  sealed?: SealedKeys;
   /** Free-form evidence from the runtime, e.g. a NEAR AI Cloud completion signature. */
   meta?: Record<string, unknown>;
+}
+
+export interface SealedKeys {
+  /** The model enclave's ed25519 key (hex) the request fields were encrypted to. */
+  modelPub: string;
+  /** Ephemeral secret (hex) of each request message, in order. */
+  fieldSecrets: string[];
+  /** Seed of the one-time client key the response was encrypted to. */
+  clientSeed: string;
+}
+
+/** Opens a sealed exchange into its plaintext request and response bodies. */
+export function openSealed(request: string, response: string, keys: SealedKeys): { request: string; response: string } {
+  const req = JSON.parse(request) as { messages?: Array<{ role: string; content: string }> };
+  const recipient = modelX25519(keys.modelPub);
+  const messages = (req.messages ?? []).map((m, i) => ({ ...m, content: openWithEphemeral(keys.fieldSecrets[i], recipient, m.content) }));
+  const res = JSON.parse(response) as { choices?: Array<{ message?: { content?: string } }> };
+  const me = clientKey(hexBytes(keys.clientSeed));
+  for (const ch of res.choices ?? []) {
+    if (ch.message?.content) ch.message.content = openField(me.x25519Secret, ch.message.content);
+  }
+  return { request: JSON.stringify({ ...req, messages }), response: JSON.stringify(res) };
+}
+
+function hexBytes(h: string): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(h.match(/../g)!.map((b) => parseInt(b, 16)));
 }
 
 /** What the chain says about one entrant (a subset of the contract's EntryView / JobView). */
@@ -77,6 +112,8 @@ export interface PublishedReport {
   rawTests: string;
   /** For a family task: the seed and the code that turn it into `rawTests`. */
   family?: { seed: string; count: number; generator: string; reference: string; familyHash: string };
+  /** Set for confidential work: answers and tests are not published. */
+  withheld?: boolean;
 }
 
 /** Fresh tests generated for a round or job before it exists, bound to it once created. */
@@ -93,10 +130,19 @@ export function answerCode(entry: ChainEntry, stored: StoredAnswer | undefined, 
   if (entry.answer_hash !== stored.answerHash) return { code: null, check: "delivered answer does not match the hash on chain" };
   if (entry.attested) {
     if (!stored.request) return { code: null, check: "attested answer without its request" };
-    const c = checkCompletion(
-      { request: stored.request, response: stored.answer },
-      { requestHash: entry.request_hash, model: entry.model, configHash: entry.config_hash ?? "", config: stored.config, tag },
-    );
+    let exchange = { request: stored.request, response: stored.answer };
+    let requestHash = entry.request_hash;
+    if (stored.sealed) {
+      // The signature covers the encrypted bodies; check that hash, then read the plaintext.
+      if (requestHash && sha256Tagged(stored.request).slice(7) !== requestHash) return { code: null, check: "request does not match the signed request hash" };
+      try {
+        exchange = openSealed(stored.request, stored.answer, stored.sealed);
+      } catch (e) {
+        return { code: null, check: `the revealed keys do not open the exchange: ${e instanceof Error ? e.message : e}` };
+      }
+      requestHash = null;
+    }
+    const c = checkCompletion(exchange, { requestHash, model: entry.model, configHash: entry.config_hash ?? "", config: stored.config, tag });
     return c.ok ? { code: normalizeCode(c.content!), check: null } : { code: null, check: c.reason ?? "completion check failed" };
   }
   const content = stored.request ? completionContent(stored.answer) ?? stored.answer : stored.answer;
@@ -146,6 +192,8 @@ export class Verifier {
   private reports = new Map<string, ScoreReport>();
   private pending = new Map<string, PreparedTests>();
   private bound = new Map<string, PreparedTests>();
+  /** Rounds or jobs whose task, tests and answers stay private: only scores and hashes are published. */
+  private private = new Set<string>();
 
   constructor(
     private readonly secretKeys: string[],
@@ -166,7 +214,7 @@ export class Verifier {
     taskId: string,
     answer: string,
     meta?: Record<string, unknown>,
-    extra: { request?: string; config?: PublicConfig; kind?: Kind } = {},
+    extra: { request?: string; config?: PublicConfig; kind?: Kind; sealed?: SealedKeys } = {},
   ): StoredAnswer {
     const k = key(extra.kind ?? "round", roundId);
     if (this.reports.has(k)) throw new Error(`${k} already scored`);
@@ -180,6 +228,7 @@ export class Verifier {
       receivedAt: Date.now(),
       ...(extra.request ? { request: extra.request } : {}),
       ...(extra.config ? { config: extra.config } : {}),
+      ...(extra.sealed ? { sealed: extra.sealed } : {}),
       meta,
     };
     round.set(agent, stored);
@@ -198,6 +247,17 @@ export class Verifier {
     this.pending.set(fresh.hash, { taskId, seed, raw: fresh.raw, hash: fresh.hash });
     this.save();
     return fresh.hash;
+  }
+
+  /**
+   * The client's own hidden tests for a job, handed to the verifier privately. Accepted only if
+   * they hash to what the job committed on chain.
+   */
+  provideTests(kind: Kind, id: number, raw: string, committedHash: string, taskId: string): void {
+    if (sha256Tagged(raw) !== committedHash) throw new Error("tests do not match the hash committed on chain");
+    this.bound.set(key(kind, id), { taskId, seed: "", raw, hash: committedHash });
+    this.private.add(key(kind, id));
+    this.save();
   }
 
   /** Binds prepared tests to the round (or job) that committed their hash. */
@@ -221,6 +281,10 @@ export class Verifier {
   published(id: number, kind: Kind = "round"): PublishedReport | undefined {
     const report = this.reports.get(key(kind, id));
     if (!report) return undefined;
+    if (this.private.has(key(kind, id))) {
+      // Confidential: the signed scores only. The client may reveal the rest to arbiters.
+      return { report, answers: [], function: "", rawTests: "", withheld: true };
+    }
     const task = loadTask(report.taskId);
     const fresh = this.bound.get(key(kind, id));
     return {
@@ -288,6 +352,7 @@ export class Verifier {
       reports: [...this.reports],
       pending: [...this.pending],
       bound: [...this.bound],
+      private: [...this.private],
     };
     fs.writeFileSync(f, JSON.stringify(state, null, 2));
   }
@@ -300,6 +365,7 @@ export class Verifier {
       reports: Array<[number | string, ScoreReport]>;
       pending?: Array<[string, PreparedTests]>;
       bound?: Array<[string, PreparedTests]>;
+      private?: string[];
     };
     // Version 1 keyed rounds by number.
     const k = (id: number | string) => (typeof id === "number" ? key("round", id) : id);
@@ -307,5 +373,6 @@ export class Verifier {
     for (const [id, r] of state.reports) this.reports.set(k(id), { ...r, kind: r.kind ?? "round" });
     for (const [h, p] of state.pending ?? []) this.pending.set(h, p);
     for (const [id, p] of state.bound ?? []) this.bound.set(id, p);
+    for (const id of state.private ?? []) this.private.add(id);
   }
 }

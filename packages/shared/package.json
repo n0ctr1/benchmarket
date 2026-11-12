@@ -10,9 +10,11 @@
     "./inference": "./src/inference.ts",
     "./settlement": "./src/settlement.ts",
     "./keys": "./src/keys.ts",
-    "./hash": "./src/hash.ts"
+    "./hash": "./src/hash.ts",
+    "./e2ee": "./src/e2ee.ts"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.4.0",
     "@noble/curves": "^2.0.0",
     "@noble/hashes": "^2.0.0",
     "@scure/base": "^2.0.0"

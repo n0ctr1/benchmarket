@@ -16,8 +16,13 @@ import {
   taskPrompt,
   verifyMessage,
   verifyNearAiSignature,
+  clientKey,
+  modelX25519,
+  sealField,
   type PublicConfig,
 } from "@agent-league/shared";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { createServer, normalizeCode, recheck, runTests, scoreAnswers, Verifier } from "../src/index.js";
 
 const tests = [
@@ -266,4 +271,46 @@ test("NEAR AI signatures verify like the contract checks them (ed25519 gateway, 
   assert.equal(verifyNearAiSignature(gateway), true);
   assert.equal(verifyNearAiSignature(enclave), true);
   assert.equal(verifyNearAiSignature({ ...enclave, text: enclave.text.replace("7d9", "7d8") }), false);
+});
+
+// ----- confidential jobs (NEAR AI end-to-end encryption) -----
+
+test("confidential job: the verifier opens exactly this exchange with the revealed one-time keys", async () => {
+  const v = new Verifier([generateKeyPair().secretKey]);
+  const task = loadTask("parse-duration");
+  const good = fs.readFileSync(task.referencePath, "utf8");
+  // A stand-in model enclave key; the client seals the request to it.
+  const enclaveSeed = new Uint8Array(32).fill(3);
+  const enclavePub = bytesToHex(ed25519.getPublicKey(enclaveSeed));
+  const recipient = modelX25519(enclavePub);
+  const tag = roundTag("job", 6);
+  const sys = sealField(recipient, config.systemPrompt);
+  const usr = sealField(recipient, taskPrompt(publicView(task), tag));
+  const request = JSON.stringify({ model: config.model, messages: [{ role: "system", content: sys.field }, { role: "user", content: usr.field }], max_tokens: 32000 });
+  // The enclave answers sealed to the client's one-time key.
+  const me = clientKey();
+  const reply = sealField(ed25519.utils.toMontgomery(hexToBytes(me.pubHex)), "```js\n" + good + "\n```");
+  const response = JSON.stringify({ id: "x", choices: [{ message: { role: "assistant", content: reply.field } }] });
+  // Nothing readable in what goes on the wire.
+  assert.ok(!request.includes("parseDuration") && !response.includes("parseDuration"));
+  const sealed = { modelPub: enclavePub, fieldSecrets: [sys.secret, usr.secret], clientSeed: me.seed };
+  v.provideTests("job", 6, task.rawTests, task.testsHash, task.id);
+  assert.throws(() => v.provideTests("job", 7, task.rawTests + " ", task.testsHash, task.id), /do not match/);
+  const s = v.submit(6, "a.testnet", task.id, response, {}, { kind: "job", request, config, sealed });
+  const entry = { agent: "a.testnet", answer_hash: s.answerHash, attested: true, request_hash: sha256Tagged(request).slice(7), model: config.model, config_hash: configHash(config) };
+  const r = await v.scoreJob(6, task.id, entry);
+  assert.equal(r.details[0].check, null);
+  assert.equal(r.scores[0][1], r.totalTests);
+  // Published: scores only.
+  const pub = v.published(6, "job")!;
+  assert.equal(pub.withheld, true);
+  assert.equal(pub.answers.length, 0);
+  assert.equal(pub.rawTests, "");
+  // Wrong keys do not open it.
+  const v2 = new Verifier([generateKeyPair().secretKey]);
+  v2.provideTests("job", 6, task.rawTests, task.testsHash, task.id);
+  v2.submit(6, "a.testnet", task.id, response, {}, { kind: "job", request, config, sealed: { ...sealed, fieldSecrets: [usr.secret, sys.secret] } });
+  const r2 = await v2.scoreJob(6, task.id, entry);
+  assert.equal(r2.scores[0][1], 0);
+  assert.match(r2.details[0].check ?? "", /do not open/);
 });
