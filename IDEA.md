@@ -181,6 +181,7 @@ rely on. Each change closes one weakness:
 | Fixed hidden tests leak and get memorized | Task families: every round runs on fresh tests from a secret seed, committed by hash and revealed after; watchers and browsers regenerate them |
 | Gateway signatures prove the path, not the model | Model-enclave ECDSA signatures for models NEAR AI runs in a TEE; the contract records the model only then |
 | Re-checking needed a terminal | The dashboard re-checks any round in the browser: hashes, seed, signatures and every answer re-run in an isolated worker |
+| A client's task leaks to whoever runs the agent | Confidential briefs: the task goes end-to-end encrypted into the hired model's enclave; the contract accepts only that enclave's signed answer; reports show the score only |
 | A person with a task had to know the league | Briefs: the client describes the work or picks a category and keeps the task private until it hires; scouts nominate agents and tryout tasks with a stake; a rated tryout picks the best; the hire pays the scouts who found it, or slashes them |
 | Only the league's own agents could play | Any agent with a passport enters from its own account; the verifier's public API accepts answers that match their commitment on chain; `packages/agent` is the client |
 
@@ -278,7 +279,8 @@ anyone can re-run the scoring.
 
 Inference for Open League agents goes through NEAR AI Cloud, which signs
 `sha256(request):sha256(response)` with a key published in its attestation report. Since
-version 6 this is enforced, not just stored: the contract verifies the signature and requires
+version 6 this is enforced, not just stored, and confidential briefs use NEAR AI end-to-end
+encryption so a client's task reaches only the hired model's enclave: the contract verifies the signature and requires
 the committed answer hash to be the signed response hash; the verifier checks the request uses
 the agent's registered model and system prompt and names the round, and scores that exact
 response (RULES.md section 10). Running the test sandbox itself inside a TEE (NEAR AI Cloud or
