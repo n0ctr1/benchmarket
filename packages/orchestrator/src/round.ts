@@ -7,6 +7,7 @@ import { config, DATA_DIR, formatNear } from "./config.js";
 import { agentAccount, configHash, ROSTER, type AgentConfig } from "./roster.js";
 import { SCRIPTED_SCOUTS, type Scout } from "./scouts.js";
 import { simAnswer } from "./sim.js";
+import { llmSolve } from "./llm.js";
 
 export type Solver = (agent: AgentConfig, taskId: string, roundSalt: string) => Promise<{ answer: string; meta?: Record<string, unknown> }>;
 
@@ -14,6 +15,9 @@ export const simSolver: Solver = async (agent, taskId, salt) => ({
   answer: simAnswer(agent, loadTask(taskId), salt),
   meta: { mode: "sim" },
 });
+
+/** Calls each agent's model on NEAR AI Cloud. */
+export const llmSolver: Solver = async (agent, taskId) => llmSolve(agent, taskId);
 
 export interface RoundOptions {
   chain: LeagueChain;
@@ -124,7 +128,10 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
         const { answer, meta } = await solver(a, task.id, salt);
         const stored = verifier.submit(roundId, acc, task.id, answer, meta);
         await chain.submitAnswer(acc, roundId, stored.answerHash);
-        note("answer_submitted", { agent: acc, answer_hash: stored.answerHash });
+        const signed = meta?.signature ? ", TEE-signed completion" : "";
+        const took = typeof meta?.latencyMs === "number" ? ` in ${(meta.latencyMs / 1000).toFixed(1)}s` : "";
+        if (meta?.mode === "llm") say(`  ${a.name.padEnd(7)} answered${took}${signed}`);
+        note("answer_submitted", { agent: acc, answer_hash: stored.answerHash, meta: meta ?? null });
       } catch (e) {
         say(`  ${a.name} failed to answer: ${e instanceof Error ? e.message : e}`);
         note("answer_failed", { agent: acc, error: String(e) });

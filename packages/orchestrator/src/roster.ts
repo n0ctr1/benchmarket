@@ -24,7 +24,7 @@ export const ROSTER: AgentConfig[] = [
   {
     id: "atlas",
     name: "Atlas",
-    model: "deepseek-ai/DeepSeek-V3.1",
+    model: "deepseek/deepseek-v4.1-flash",
     systemPrompt: BASE_PROMPT,
     tools: [],
     strengths: ["eval-expr", "semver-satisfies"],
@@ -33,7 +33,7 @@ export const ROSTER: AgentConfig[] = [
   {
     id: "bolt",
     name: "Bolt",
-    model: "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    model: "Qwen/Qwen3.8-27B",
     systemPrompt: BASE_PROMPT + "\nBe fast and concise.",
     tools: [],
     strengths: ["parse-duration"],
@@ -42,7 +42,7 @@ export const ROSTER: AgentConfig[] = [
   {
     id: "cipher",
     name: "Cipher",
-    model: "zai-org/GLM-4.6",
+    model: "z-ai/glm-5.3-flash",
     systemPrompt:
       BASE_PROMPT +
       "\nBefore writing code, list every edge case in the spec as comments at the top of the function, then handle each one.",
@@ -53,7 +53,7 @@ export const ROSTER: AgentConfig[] = [
   {
     id: "delta",
     name: "Delta",
-    model: "openai/gpt-oss-120b",
+    model: "openai/gpt-6-luna",
     systemPrompt: BASE_PROMPT,
     tools: [],
     strengths: ["cron-next"],
@@ -62,7 +62,7 @@ export const ROSTER: AgentConfig[] = [
   {
     id: "echo",
     name: "Echo",
-    model: "Qwen/Qwen3-30B-A3B-Instruct-2507",
+    model: "anthropic/claude-haiku-5-5",
     systemPrompt: BASE_PROMPT + "\nPrefer a small hand-written parser over regular expressions.",
     tools: [],
     strengths: ["eval-expr", "parse-csv"],
