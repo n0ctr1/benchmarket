@@ -1563,3 +1563,64 @@ th.num {
 
 .status[data-s="Delivered"] { color: var(--good); }
 .status[data-s="Failed"] { color: var(--bad); }
+
+/* ---------- re-check panel ---------- */
+
+.drawer.verify {
+  width: min(560px, 100vw);
+}
+
+.verify-summary {
+  margin: 12px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.verify-summary[data-state="done"][data-failed="false"] {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+.verify-summary[data-failed="true"],
+.verify-summary[data-state="error"] {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
+.verify-group h4 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.verify-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.verify-group li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 6px;
+  font-size: 13px;
+}
+
+.verify-group li[data-ok="true"] .mark {
+  color: var(--good);
+}
+
+.verify-group li[data-ok="false"] .mark {
+  color: var(--bad);
+}
+
+.verify-group .detail {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

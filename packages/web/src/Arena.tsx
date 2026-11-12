@@ -5,6 +5,7 @@ import { Figure, type Pose } from "./Figure";
 import { hueColor } from "./identity";
 import { taskOf, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Passport, type LiveLine } from "./Passport";
+import { Verify } from "./verify/Verify";
 import { buildReplay, type Phase, type Replay } from "./replay";
 
 const PHASES: Array<{ id: Phase; label: string; banner: string }> = [
@@ -61,6 +62,7 @@ export function Arena({
   const [hover, setHover] = useState<string | null>(null);
   const [coin, setCoin] = useState<Coin | null>(null);
   const [confetti, setConfetti] = useState(0);
+  const [verifying, setVerifying] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const scoutRefs = useRef(new Map<string, HTMLElement>());
   const slotRefs = useRef(new Map<string, HTMLElement>());
@@ -275,6 +277,12 @@ export function Arena({
         <div className="track-label" aria-live="polite">
           {frame?.label}
         </div>
+        {(round.status === "Settled" || round.status === "Proposed" || round.status === "Disputed") && (
+          <button className="play" onClick={() => setVerifying(true)} title="Re-check hashes, signatures and every score in this browser">
+            <span className="glyph">✓</span>
+            Re-check
+          </button>
+        )}
       </div>
 
       <div className="arena-grid">
@@ -408,6 +416,8 @@ export function Arena({
           </div>
         </div>
       )}
+
+      {verifying && <Verify key={round.id} round={round} onClose={() => setVerifying(false)} />}
 
       {openEntry && (
         <Drawer

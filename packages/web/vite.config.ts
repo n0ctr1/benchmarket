@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { createHash } from "node:crypto";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const DATA = path.join(ROOT, ".data");
@@ -21,8 +22,27 @@ function offChain(): Record<string, unknown> {
     : [];
   const statePath = path.join(DATA, "verifier", "verifier-state.json");
   const state = fs.existsSync(statePath) ? JSON.parse(fs.readFileSync(statePath, "utf8")) : { answers: [], reports: [] };
-  const answers = new Map<number, Array<Record<string, any>>>(state.answers);
-  const reports = new Map<number, Record<string, any>>(state.reports);
+  // Version 1 of the state keyed rounds by number, version 2 by "round:<id>" (jobs: "job:<id>").
+  const roundKey = (k: number | string) => (typeof k === "number" ? k : k.startsWith("round:") ? Number(k.slice(6)) : null);
+  const answers = new Map<number, Array<Record<string, any>>>(state.answers.map(([k, v]: [any, any]) => [roundKey(k), v]).filter(([k]: [any]) => k !== null));
+  const reports = new Map<number, Record<string, any>>(state.reports.map(([k, v]: [any, any]) => [roundKey(k), v]).filter(([k]: [any]) => k !== null));
+  // Everything a browser needs to re-check a round: signed report, answers, tests, seed. The same
+  // as the verifier's GET /rounds/:id/report.
+  const bound = new Map<number, Record<string, any>>((state.bound ?? []).map(([k, v]: [any, any]) => [roundKey(k), v]).filter(([k]: [any]) => k !== null));
+  const sha = (t: string) => "sha256:" + createHash("sha256").update(t, "utf8").digest("hex");
+  for (const [id, report] of reports) {
+    const dir = path.join(ROOT, "tasks", report.taskId);
+    if (!fs.existsSync(dir)) continue;
+    const fn = JSON.parse(fs.readFileSync(path.join(dir, "task.json"), "utf8")).function;
+    const fresh = bound.get(id);
+    const pub: Record<string, unknown> = { report, answers: answers.get(id) ?? [], function: fn, rawTests: fresh ? fresh.raw : fs.readFileSync(path.join(dir, "tests.json"), "utf8") };
+    if (fresh && fs.existsSync(path.join(dir, "generator.js"))) {
+      const generator = fs.readFileSync(path.join(ROOT, "tasks", "_rng.js"), "utf8") + "\n" + fs.readFileSync(path.join(dir, "generator.js"), "utf8");
+      const reference = fs.readFileSync(path.join(dir, "reference.js"), "utf8");
+      pub.family = { seed: fresh.seed, count: 24, generator, reference, familyHash: "family:" + sha(generator + "\n" + reference) };
+    }
+    out[`reports/${id}.json`] = pub;
+  }
   for (const id of ids) {
     const log = JSON.parse(fs.readFileSync(path.join(logsDir, `${id}.json`), "utf8"));
     const report = reports.get(id);
