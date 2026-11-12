@@ -1,0 +1,12 @@
+{
+  "id": "cron-next",
+  "skill": "code.js",
+  "function": "cronNext",
+  "title": "Next run time of a cron expression",
+  "statement": "Write a JavaScript function `cronNext(expr, from)` that returns the next time a cron expression fires strictly after `from`.\n\nInput:\n- `from` is a UTC timestamp string in the form produced by `Date.prototype.toISOString` (`YYYY-MM-DDTHH:MM:SS.sssZ`) or the same without milliseconds. All computation is in UTC.\n- `expr` has exactly 5 fields separated by whitespace: minute (0-59), hour (0-23), day of month (1-31), month (1-12), day of week (0-7, where both 0 and 7 mean Sunday).\n- A field is a comma-separated list of elements. An element is `*`, a number `N`, or a range `A-B` with A <= B. `*` and ranges may have a step `/S` with S >= 1 (`*/15`, `10-30/5`); a step after a single number is invalid. Numbers must be inside the field's bounds. No names (`MON`, `JAN`) and no other syntax.\n\nMatching:\n- A minute matches when minute, hour and month match and the day matches.\n- The day-of-month field counts as restricted unless it starts with `*`; the same for day of week. If both are restricted, the day matches when either field matches. Otherwise both must match.\n\nOutput: the first matching minute strictly after `from`, as a string in `toISOString` format with seconds and milliseconds zero (`2026-11-12T10:16:00.000Z`). Return `null` if the expression is invalid, if `from` is invalid, or if there is no match within 5 years (5 * 366 days) after `from`.",
+  "examples": [
+    { "args": ["*/15 * * * *", "2026-11-12T10:15:30.000Z"], "expected": "2026-11-12T10:30:00.000Z" },
+    { "args": ["0 0 29 2 *", "2026-11-12T10:15:30.000Z"], "expected": "2028-02-29T00:00:00.000Z" },
+    { "args": ["0 0 * *", "2026-11-12T10:15:30.000Z"], "expected": null }
+  ]
+}

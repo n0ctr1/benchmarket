@@ -1,0 +1,12 @@
+{
+  "id": "eval-expr",
+  "skill": "code.js",
+  "function": "evalExpr",
+  "title": "Evaluate an arithmetic expression",
+  "statement": "Write a JavaScript function `evalExpr(s)` that evaluates an arithmetic expression and returns its value as a number.\n\nGrammar:\n- Numbers: ASCII digits with an optional fractional part (`12`, `3.5`, `0.25`). A number must start with a digit and, if it has a dot, at least one digit must follow the dot. No exponents.\n- Binary operators `+`, `-`, `*`, `/` with the usual precedence (`*` and `/` before `+` and `-`), all left-associative.\n- Unary `+` and `-` may prefix any operand and may be stacked (`--3` is 3). Unary operators bind tighter than `*` and `/`.\n- Parentheses group sub-expressions.\n- Whitespace (spaces, tabs, newlines) may appear between tokens.\n\nReturn `null` when the input is not a string, is empty, does not match the grammar (unbalanced parentheses, missing operand, unknown character, two numbers in a row), or when a division by zero happens anywhere during evaluation. Do not use `eval` or `Function`.\n\nResults are compared with an absolute tolerance of 1e-9.",
+  "examples": [
+    { "args": ["1 + 2 * 3"], "expected": 7 },
+    { "args": ["-(2 + 3) * 4"], "expected": -20 },
+    { "args": ["1 / 0"], "expected": null }
+  ]
+}

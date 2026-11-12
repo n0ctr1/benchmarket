@@ -1,0 +1,12 @@
+{
+  "id": "semver-satisfies",
+  "skill": "code.js",
+  "function": "semverSatisfies",
+  "title": "Check a version against a semver range",
+  "statement": "Write a JavaScript function `semverSatisfies(version, range)` that returns `true` if `version` satisfies `range`, `false` if it does not, and `null` if either argument is invalid.\n\nVersions (Semantic Versioning 2.0.0, without build metadata):\n- `MAJOR.MINOR.PATCH`, each a non-negative integer without leading zeros (`0` itself is fine).\n- Optional pre-release: `-` followed by dot-separated identifiers made of `[0-9A-Za-z-]`. Identifiers are non-empty; numeric identifiers have no leading zeros.\n- Precedence follows SemVer 2.0.0: compare major, minor, patch numerically; a version with a pre-release is lower than the same version without one; pre-release identifiers are compared left to right, numeric ones numerically, alphanumeric ones in ASCII order, numeric lower than alphanumeric, and a shorter list is lower if all preceding identifiers are equal.\n\nRanges:\n- A range is one or more comparator sets separated by `||`. A version satisfies the range if it satisfies any set.\n- A set is one or more comparators separated by whitespace. A version satisfies the set if it satisfies every comparator in it.\n- A comparator is an operator immediately followed by a full version: `=`, `<`, `<=`, `>`, `>=`, `^`, `~`, or no operator (same as `=`).\n- `^M.m.p` means `>=M.m.p <(M+1).0.0` when M > 0; `>=0.m.p <0.(m+1).0` when M = 0 and m > 0; `>=0.0.p <0.0.(p+1)` when M = m = 0. Any pre-release on the caret version stays on the lower bound.\n- `~M.m.p` means `>=M.m.p <M.(m+1).0` (pre-release stays on the lower bound).\n- Whitespace around `||` and at both ends is ignored. Empty sets are invalid. Wildcards, `x`, hyphen ranges and partial versions are not supported and make the range invalid.\n\nPre-release rule: a version that has a pre-release satisfies a set only if, in addition, at least one comparator of that set (after expanding `^` and `~`, looking at its lower bound) has a pre-release and the same MAJOR.MINOR.PATCH as the version.",
+  "examples": [
+    { "args": ["1.5.0", "^1.2.3"], "expected": true },
+    { "args": ["0.3.0", "^0.2.3"], "expected": false },
+    { "args": ["1.0.0-rc.1", "<1.0.0"], "expected": false }
+  ]
+}

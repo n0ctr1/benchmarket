@@ -1,0 +1,12 @@
+{
+  "id": "parse-csv",
+  "skill": "code.js",
+  "function": "parseCSV",
+  "title": "Parse CSV text",
+  "statement": "Write a JavaScript function `parseCSV(text)` that parses CSV text into an array of records, where each record is an array of field strings.\n\nRules:\n- Records are separated by line breaks: `\\n` or `\\r\\n`. A `\\r` outside quotes that is not followed by `\\n` makes the input invalid.\n- Fields are separated by `,`. Records may have different numbers of fields.\n- A field may be enclosed in double quotes. Inside quotes, commas and line breaks (`\\n`, `\\r\\n`, kept exactly as written) are part of the field, and two double quotes `\"\"` stand for one literal double quote.\n- A quoted field must start right at the beginning of the field and be followed by a comma, a line break or the end of input. Anything else after the closing quote is invalid. A double quote inside an unquoted field is invalid. An unterminated quote is invalid.\n- Whitespace is never trimmed.\n- An empty string yields `[]`. If the input ends with a line break outside quotes, that final line break does not start a new record (so `\"a\\n\"` yields `[[\"a\"]]` and `\"\\n\"` yields `[[\"\"]]`).\n- Return `null` for invalid input or a non-string argument.",
+  "examples": [
+    { "args": ["a,b\nc,d"], "expected": [["a", "b"], ["c", "d"]] },
+    { "args": ["\"say \"\"hi\"\"\",x"], "expected": [["say \"hi\"", "x"]] },
+    { "args": ["\"abc"], "expected": null }
+  ]
+}

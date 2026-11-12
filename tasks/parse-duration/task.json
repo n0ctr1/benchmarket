@@ -1,0 +1,12 @@
+{
+  "id": "parse-duration",
+  "skill": "code.js",
+  "function": "parseDuration",
+  "title": "Parse a duration string",
+  "statement": "Write a JavaScript function `parseDuration(s)` that converts a duration string into a number of seconds.\n\nRules:\n- The input is one or more tokens. A token is a non-negative integer written with ASCII digits immediately followed by a unit: `w` (week, 604800 s), `d` (day, 86400 s), `h` (hour, 3600 s), `m` (minute, 60 s), `s` (second).\n- Units are case-insensitive.\n- Tokens may be separated by any amount of whitespace, or by nothing. Leading and trailing whitespace is ignored. There must be no whitespace between a number and its unit.\n- Each unit may appear at most once, in any order.\n- Leading zeros are allowed (`05m` is 300).\n- Return the total number of seconds as a number.\n- Return `null` for anything else: an empty or whitespace-only string, an unknown unit, a sign, a decimal point, a number without a unit, a repeated unit, a non-string argument, or a total above `Number.MAX_SAFE_INTEGER`.",
+  "examples": [
+    { "args": ["1h30m"], "expected": 5400 },
+    { "args": ["2d 4h"], "expected": 187200 },
+    { "args": ["1.5h"], "expected": null }
+  ]
+}
