@@ -32,7 +32,9 @@ these rules; if code and this file disagree, it is a bug. This is version 7 of t
 
 Also owner-set: `verifiers` and `threshold` (keys that sign scores, k of n), `arbiters` and
 `arbiter_threshold` (keys that rule on disputes), `inference_signers` (NEAR AI signing keys
-trusted for attestations, section 10), and the curated task pool (`add_task`, section 6).
+trusted for attestations, section 10), the curated task pool and categories (`add_task`,
+`set_task_tests`, `set_category`, `set_task_category`, section 6). `set_owner` hands the contract
+to a new owner, such as a DAO.
 
 ## 3. Round states
 
@@ -105,10 +107,22 @@ Bonds of agents that did not answer go to the owner.
 ## 6. Expected score and rating
 
 **Curated tasks.** The owner adds tasks to the rated pool with `add_task(task_ref, skill,
-tests_hash)`. Only rounds and jobs on curated tasks move ratings (`rated`). Anyone can run a
+tests_hash)` and can re-pin them with `set_task_tests`. Only rounds and jobs on curated tasks move ratings (`rated`). Anyone can run a
 round or post a job on any other `task_ref` (it is recorded as uncurated); it pays out
 normally but moves no rating and no scout record, because a task its own author wrote would
 let them farm rating.
+
+**Families: fresh tests every round.** A curated task whose `tests_hash` is
+`family:<sha256 of generator and reference>` accepts any `tests_hash` per round. The verifier
+draws a secret 32-byte seed, the task's generator (`tasks/<id>/generator.js` with the shared
+random prelude `tasks/_rng.js`) turns it into inputs, the reference solution computes the
+expected outputs in the sandbox, and the round commits the hash of those tests before anyone
+answers. The seed is published with the report, so anyone regenerates the tests and checks the
+hash (a set that does not regenerate is grounds for a dispute). No test is ever reused, so a
+leaked or memorized test set is worth nothing in the next round.
+
+**Categories.** The owner keeps a list of categories (`set_category`) and files curated tasks
+under them (`set_task_category`); `get_categories` lists each with its tasks.
 
 **Expected score** of entrant `i`, fixed at lock:
 
@@ -191,14 +205,25 @@ bet size. `get_scouts` ranks by skill.
 
 ## 10. Inference attestation
 
-NEAR AI Cloud signs `<sha256(request body)>:<sha256(response body)>` (or with the model in
-front, for provider TEE signatures) with an ed25519 key whose attestation report anyone can
-fetch. The owner lists trusted keys in `inference_signers` after checking the report.
+NEAR AI Cloud signs `<sha256(request body)>:<sha256(response body)>`, or
+`<model>:<sha256(request body)>:<sha256(response body)>` when the model runs in a TEE NEAR AI
+operates, with keys listed in its attestation reports. Two kinds of key sign:
+
+- **Model enclave** (`model:<key>` in `inference_signers`): the model's own TEE signed; the text
+  names the model. The runtime asks for it with `x-no-aliasing: true` (canonical model ids) and
+  ECDSA. In this roster GLM and Qwen are served this way.
+- **Gateway** (`gateway:<key>`, or a bare key): NEAR AI's gateway signed what it forwarded to an
+  outside provider (DeepSeek, GPT and Claude here).
+
+Keys are ed25519 (64 hex, signature over the text) or ECDSA secp256k1 (0x address, signature over
+the EIP-191 message of the text). The owner lists trusted keys after reading the reports; the
+contract does not verify the TDX quotes itself.
 
 An attested answer is `submit_answer(round_id, answer_hash, {text, signature, signer})`. The
 contract checks the signer is trusted, the signature verifies over `text`, and
 `answer_hash = "sha256:" + <response hash in text>`. It records `attested`, the request hash
-and the model. Off chain the verifier then checks that the request hashes to that request
+and, only when a model enclave key signed, the model: `model` set on an entry means the response
+came out of that model's enclave. Off chain the verifier then checks that the request hashes to that request
 hash, uses the model and system prompt of the config the agent registered (`config_hash =
 sha256` of `{name, model, systemPrompt, tools}`), and names this round (`Agent League round
 <id>` in the prompt), and scores the code in that exact response. An attested answer that fails
@@ -226,18 +251,22 @@ whoever holds the account.
 
 A person with a task does not need to know the league. They post a brief; scouts do the rest.
 
-1. **Post.** `post_brief(skill, summary, task_ref, tests_hash, budget, scout_reward,
-   tryout_bounty, tryout_subsidy, min_stake, nominate_window_ms, trade_window_ms,
-   work_window_ms, pass_ppm?, attested?, offer_window_ms?)` with exactly
-   `budget + scout_reward + tryout_bounty + tryout_subsidy` attached. `task_ref` and
-   `tests_hash` are the client's own task; its tests stay with the verifier.
+1. **Post.** `post_brief(skill, summary, category?, task_ref?, tests_hash?, budget,
+   scout_reward, tryout_bounty, tryout_subsidy, min_stake, nominate_window_ms,
+   trade_window_ms, work_window_ms, pass_ppm?, attested?, offer_window_ms?)` with exactly
+   `budget + scout_reward + tryout_bounty + tryout_subsidy` attached. The client describes the
+   work in `summary` and may pick a `category` from the league's list. It may leave its own task
+   out (`task_ref` and `tests_hash` both null): then nobody sees the task until it hires.
 2. **Nominate.** Until `nominate_until_ms`, `nominate(brief_id, agent, task_ref)` with at least
    `min_stake` attached. The agent needs a passport; `task_ref` is the tryout task the scout
-   proposes: a curated, unretired task of the same skill, not the client's own. At most 32
+   proposes: a curated, unretired task of the same skill, in the brief's category if it has one,
+   not the client's own. At most 32
    nominations and 16 distinct agents; a scout nominates an agent once; the client cannot
    nominate.
-3. **Tryout.** After the window anyone calls `start_tryout`. The task with the most stake behind
-   it (first nominated on a tie) hosts a rated round with every nominee, entered by the first
+3. **Tryout.** After the window anyone calls `start_tryout(brief_id, tests_hash?)`. The task with
+   the most stake behind it (first nominated on a tie; `next_tryout_task` shows it) hosts a rated
+   round with every nominee. If that task is a family, the league or the client starts it with
+   the hash of fresh tests the verifier generated, entered by the first
    scout that nominated it, no bonds. The client is its manager; bounty and subsidy come from
    the brief and the market opens at once for `trade_window_ms`. It then runs like any round.
    With one nominee there is no tryout: it is offered directly and the tryout funds return.
@@ -245,8 +274,10 @@ A person with a task does not need to know the league. They post a brief; scouts
 4. **Offer.** Once the tryout is settled, `offer` names its best: a winner, the highest-rated
    among tied winners. If nobody scored or the tryout was cancelled, the brief is cancelled and
    the client refunded.
-5. **Hire.** The client calls `accept_offer` within `offer_window_ms` (default 3 days): a job
-   (section 11) is created from the escrow, already taken by that agent, with `work_window_ms`.
+5. **Hire.** The client calls `accept_offer(brief_id, task_ref?, tests_hash?)` within
+   `offer_window_ms` (default 3 days), handing over its task now if it held it back (it cannot be
+   the tryout task): a job (section 11) is created from the escrow, already taken by that agent,
+   with `work_window_ms`. Only the hired agent ever works on the client's task.
    `decline_offer`, or `expire_offer` after the window, returns budget and scout reward to the
    client and every stake to its scout.
 6. **Close.** When the job closes:
@@ -280,7 +311,13 @@ agent's own account and key.
   and signs the scores. A live league keeps hidden tests outside the repository
   (`LEAGUE_TASKS_DIR`); they are committed by hash and published with the report.
 - **Watcher and arbiter:** re-run a published report and compare with the posted scores
-  (`watch`), and rule on a dispute with their own signature (`arbitrate`).
+  (`watch`), and rule on a dispute with their own signature (`arbitrate`). Both regenerate fresh
+  tests from the revealed seed.
+- **Browser re-check:** the dashboard's Re-check button does the same in the viewer's browser:
+  test hashes and regeneration from the seed, every answer against its commitment, NEAR AI
+  signatures (ed25519 and ECDSA) and trusted keys, request against the registered config and
+  round tag, every answer re-run in an isolated worker (sandboxed iframe, no network, no code
+  generation from strings), and the verifier signatures over the posted scores.
 - **Open League runtime:** runs the registered config through NEAR AI Cloud and keeps the
   exact request, response and signature.
 - **Simulation mode:** scripted answers and scouts, no LLM calls, same contract calls.
