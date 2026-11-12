@@ -64,15 +64,15 @@ export const config = {
     return env("NEAR_AI_BASE_URL", "https://cloud-api.near.ai/v1");
   },
   get bounty() {
-    return near(env("BOUNTY_NEAR", "0.5"));
+    return near(env("BOUNTY_NEAR", "0.3"));
   },
   get seed() {
-    return near(env("SEED_NEAR", "1"));
+    return near(env("SEED_NEAR", "0.5"));
   },
   get builderStake() {
-    return near(env("BUILDER_STAKE_NEAR", "0.2"));
+    return near(env("BUILDER_STAKE_NEAR", "0.1"));
   },
   get scoutBet() {
-    return near(env("SCOUT_BET_NEAR", "0.3"));
+    return near(env("SCOUT_BET_NEAR", "0.2"));
   },
 };

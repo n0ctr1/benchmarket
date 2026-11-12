@@ -29,7 +29,7 @@ async function leaderboard(chain: LeagueChain): Promise<void> {
     console.log(`  ${r.agent.split(".")[0].padEnd(8)} ${(r.rating / 100).toFixed(1).padStart(7)}  rounds ${r.rounds}  wins ${r.wins}${r.provisional ? "  (provisional)" : ""}`);
   }
   const scouts = await chain.getScouts();
-  console.log("\nscouts by PnL");
+  console.log("\nbettors by PnL (scouts, builders, seeder)");
   for (const s of scouts) {
     console.log(`  ${s.account.split(".")[0].padEnd(12)} pnl ${(Number(BigInt(s.pnl)) / 1e24).toFixed(3)} NEAR  bets ${s.bets}  wins ${s.wins}`);
   }

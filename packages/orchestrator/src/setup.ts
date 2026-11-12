@@ -36,7 +36,7 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
     await parent.callFunction({
       contractId: league,
       methodName: "set_params",
-      args: { min_pool: near(3).toString(), min_builder_stake: config.builderStake.toString(), min_bet: near("0.01").toString() },
+      args: { min_pool: near("1.5").toString(), min_builder_stake: config.builderStake.toString(), min_bet: near("0.01").toString() },
     });
     console.log("contract deployed and initialized");
   } else {

@@ -61,7 +61,8 @@ export interface ScoutView {
   wins: number;
 }
 
-const GAS = teraToGas("100");
+const GAS = teraToGas("30");
+const HEAVY_GAS = teraToGas("150");
 
 /** Thin typed wrapper around the league contract. */
 export class LeagueChain {
@@ -84,18 +85,19 @@ export class LeagueChain {
     return a;
   }
 
-  private async call<T>(signer: string, methodName: string, args: Record<string, unknown>, deposit: bigint = 0n): Promise<T> {
+  private async call<T>(signer: string, methodName: string, args: Record<string, unknown>, deposit: bigint = 0n, gas = GAS): Promise<T> {
     return (await this.account(signer).callFunction({
       contractId: this.contractId,
       methodName,
       args,
       deposit,
-      gas: GAS,
+      gas,
     })) as T;
   }
 
   private async view<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
-    return (await this.provider.callFunction({ contractId: this.contractId, method, args })) as T;
+    // Optimistic finality: read our own writes right after the transaction executed.
+    return (await this.provider.callFunction({ contractId: this.contractId, method, args, blockQuery: { finality: "optimistic" } })) as T;
   }
 
   // ----- calls -----
@@ -131,7 +133,7 @@ export class LeagueChain {
   }
 
   settle(caller: string, roundId: number, totalTests: number, scores: Array<[string, number]>, signatures: string[]) {
-    return this.call<void>(caller, "settle", { round_id: roundId, total_tests: totalTests, scores, signatures });
+    return this.call<void>(caller, "settle", { round_id: roundId, total_tests: totalTests, scores, signatures }, 0n, HEAVY_GAS);
   }
 
   claim(caller: string, roundId: number) {
@@ -162,6 +164,21 @@ export class LeagueChain {
 
   getPosition(roundId: number, account: string) {
     return this.view<Array<{ agent: string; amount: string }>>("get_position", { round_id: roundId, account });
+  }
+
+  /** Available (spendable) balance of an account, yoctoNEAR. */
+  async available(id: string): Promise<bigint> {
+    const s = await this.account(id).getState();
+    return BigInt(s.balance.available);
+  }
+
+  /** Tops `to` up from `from` so it has at least `min` available. Returns the amount sent. */
+  async topUp(from: string, to: string, min: bigint): Promise<bigint> {
+    const have = await this.available(to);
+    if (have >= min) return 0n;
+    const amount = min - have;
+    await this.account(from).transfer({ receiverId: to, amount });
+    return amount;
   }
 
   getConfig() {

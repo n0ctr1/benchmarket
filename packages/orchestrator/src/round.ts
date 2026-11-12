@@ -71,7 +71,14 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   say(`round ${roundId}: ${task.title} (${task.id}), bounty ${formatNear(config.bounty)} NEAR`);
   note("round_created", { task: publicView(task) });
 
-  // 2. Agents register themselves and stake on themselves.
+  // 2. Agents register themselves and stake on themselves. The league tops up agents and scouts
+  // that ran low, so a demo can run many rounds from one faucet account.
+  const reserve = 0.05;
+  for (const id of [...agents.map((a) => agentAccount(a, league)), ...scouts.map((s) => `${s.id}.${league}`)]) {
+    const need = id.startsWith("scout") ? config.scoutBet : config.builderStake;
+    const sent = await chain.topUp(league, id, need + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
+    if (sent > 0n) say(`  topped up ${id.split(".")[0]} with ${formatNear(sent)} NEAR`);
+  }
   for (const a of agents) {
     const acc = agentAccount(a, league);
     await chain.registerAgent(acc, roundId, acc, "Open", configHash(a), config.builderStake);
