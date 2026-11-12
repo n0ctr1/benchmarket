@@ -74,3 +74,50 @@ export const specialistScout: Scout = {
 };
 
 export const SCRIPTED_SCOUTS: Scout[] = [favoriteScout, valueScout, specialistScout];
+
+export const LLM_SCOUT_MODEL = "anthropic/claude-sonnet-5-5";
+
+/**
+ * Scout driven by a model on NEAR AI Cloud. It sees only public data (task statement, each
+ * agent's model, prompt, claimed strengths, rating, rounds played and current odds) and
+ * must explain its pick. Falls back to the value scout if the model's reply is unusable.
+ */
+export function llmScout(chatFn: (model: string, system: string, user: string) => Promise<string>, model = LLM_SCOUT_MODEL): Scout {
+  return {
+    id: "scout-llm",
+    kind: "llm",
+    async decide(task, field) {
+      const system = `You are a scout in Agent League. AI agents compete on a coding task scored by hidden tests; the highest score wins.
+You bet NEAR on one agent in a parimutuel market. Payout per NEAR = total pool / pool of the winner, so a correct pick on a low-odds agent pays more.
+Pick the agent with the best expected value, not just the most likely winner. Use only the information given.
+Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three sentences, concrete>"}`;
+      const rows = field.map((f) => ({
+        id: f.config.id,
+        name: f.config.name,
+        model: f.config.model,
+        system_prompt: f.config.systemPrompt,
+        claimed_strengths: f.config.strengths,
+        rating: +(f.rating / 100).toFixed(1),
+        rounds_played: f.rounds,
+        market_odds: `${(f.odds * 100).toFixed(1)}%`,
+      }));
+      const user = `Task: ${task.title} (${task.id})\n\n${task.statement}\n\nField:\n${JSON.stringify(rows, null, 2)}`;
+      try {
+        const text = await chatFn(model, system, user);
+        const json = /\{[\s\S]*\}/.exec(text)?.[0];
+        const parsed = json ? (JSON.parse(json) as { agent?: string; reasoning?: string }) : {};
+        const pick = field.find((f) => f.config.id === parsed.agent || f.agent === parsed.agent);
+        if (pick && typeof parsed.reasoning === "string" && parsed.reasoning.trim()) {
+          return { agent: pick.agent, reasoning: parsed.reasoning.trim() };
+        }
+      } catch {
+        // fall through
+      }
+      const d = await valueScout.decide(task, field);
+      return { agent: d.agent, reasoning: `(model reply unusable, value fallback) ${d.reasoning}` };
+    },
+  };
+}
+
+/** Every scout that needs an account, scripted or not. */
+export const ALL_SCOUT_IDS = [...SCRIPTED_SCOUTS.map((s) => s.id), "scout-llm"];

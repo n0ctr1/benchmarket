@@ -4,7 +4,7 @@ import { generateKeyPair } from "@agent-league/shared";
 import { LeagueChain } from "./chain.js";
 import { config, formatNear, near, REPO_ROOT } from "./config.js";
 import { agentAccount, ROSTER } from "./roster.js";
-import { SCRIPTED_SCOUTS } from "./scouts.js";
+import { ALL_SCOUT_IDS } from "./scouts.js";
 
 const WASM_CANDIDATES = [
   path.join(REPO_ROOT, "contract/target/near/agent_league.wasm"),
@@ -46,7 +46,7 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
   // Agent and scout sub-accounts with their own balances.
   const wanted = [
     ...ROSTER.map((a) => ({ id: agentAccount(a, league), balance: near(opts.agentBalance ?? "0.6") })),
-    ...SCRIPTED_SCOUTS.map((s) => ({ id: `${s.id}.${league}`, balance: near(opts.scoutBalance ?? "0.8") })),
+    ...ALL_SCOUT_IDS.map((s) => ({ id: `${s}.${league}`, balance: near(opts.scoutBalance ?? "0.4") })),
   ];
   for (const w of wanted) {
     if (chain.keys.has(w.id)) {

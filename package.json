@@ -18,7 +18,8 @@
     "setup": "tsx packages/orchestrator/src/cli.ts setup",
     "round": "tsx packages/orchestrator/src/cli.ts round",
     "demo": "tsx packages/orchestrator/src/cli.ts demo",
-    "status": "tsx packages/orchestrator/src/cli.ts status"
+    "status": "tsx packages/orchestrator/src/cli.ts status",
+    "bench": "tsx packages/orchestrator/src/cli.ts bench"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

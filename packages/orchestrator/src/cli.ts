@@ -1,8 +1,14 @@
 import { listTaskIds } from "@agent-league/shared";
-import { createServer, Verifier } from "@agent-league/verifier";
+import { createServer, normalizeCode, runTests, Verifier } from "@agent-league/verifier";
+import { loadTask } from "@agent-league/shared";
+import fs from "node:fs";
+import { llmSolve } from "./llm.js";
+import { ROSTER } from "./roster.js";
 import { LeagueChain } from "./chain.js";
 import { config, DATA_DIR } from "./config.js";
-import { runRound } from "./round.js";
+import { llmSolver, runRound, type RoundOptions } from "./round.js";
+import { llmScout, SCRIPTED_SCOUTS } from "./scouts.js";
+import { scoutChat } from "./llm.js";
 import { setup } from "./setup.js";
 import path from "node:path";
 
@@ -22,6 +28,13 @@ async function withVerifier<T>(fn: (v: Verifier) => Promise<T>): Promise<T> {
   }
 }
 
+/** `--llm`: real models on NEAR AI Cloud for agents, plus an LLM scout next to the scripted ones. */
+function mode(): Pick<RoundOptions, "solver" | "scouts"> {
+  if (!process.argv.includes("--llm")) return {};
+  if (!config.nearAiApiKey) throw new Error("--llm needs NEAR_AI_API_KEY in .env");
+  return { solver: llmSolver, scouts: [...SCRIPTED_SCOUTS, llmScout(scoutChat)] };
+}
+
 async function leaderboard(chain: LeagueChain): Promise<void> {
   const rows = await chain.getLeaderboard("code.js");
   console.log("\nleaderboard code.js");
@@ -35,6 +48,34 @@ async function leaderboard(chain: LeagueChain): Promise<void> {
   }
 }
 
+/** Offline: every agent's real model on every task, scored by the sandbox. No chain, no NEAR. */
+async function bench(taskIds: string[]): Promise<void> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const taskId of taskIds) {
+    const task = loadTask(taskId);
+    console.log(`\n${taskId} (${task.tests.length} hidden tests)`);
+    const only = arg("agents")?.split(",");
+    await Promise.all(
+      ROSTER.filter((a) => !only || only.includes(a.id)).map(async (a) => {
+        try {
+          const { answer, meta } = await llmSolve(a, taskId);
+          const r = await runTests(normalizeCode(answer), task.function, task.tests);
+          console.log(`  ${a.name.padEnd(7)} ${String(r.passed).padStart(2)}/${r.total}  ${a.model}${r.compileError ? "  compile error" : ""}${meta.signature ? "  signed" : ""}`);
+          (out[taskId] ??= {})[a.id] = { passed: r.passed, total: r.total, model: a.model, signed: !!meta.signature };
+        } catch (e) {
+          console.log(`  ${a.name.padEnd(7)} failed: ${e instanceof Error ? e.message : e}`);
+          (out[taskId] ??= {})[a.id] = { error: String(e) };
+        }
+      }),
+    );
+  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const file = path.join(DATA_DIR, "bench.json");
+  const prev = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+  for (const [t, rows] of Object.entries(out)) prev[t] = { ...(prev[t] ?? {}), ...rows };
+  fs.writeFileSync(file, JSON.stringify(prev, null, 2));
+}
+
 async function main(): Promise<void> {
   const cmd = process.argv[2];
   const chain = new LeagueChain();
@@ -44,7 +85,7 @@ async function main(): Promise<void> {
       break;
     case "round": {
       const taskId = arg("task", "parse-duration")!;
-      await withVerifier((verifier) => runRound({ chain, verifier, taskId, marketSeconds: Number(arg("market-seconds", "20")) }));
+      await withVerifier((verifier) => runRound({ chain, verifier, taskId, ...mode(), marketSeconds: Number(arg("market-seconds", "20")) }));
       await leaderboard(chain);
       break;
     }
@@ -53,18 +94,21 @@ async function main(): Promise<void> {
       const tasks = listTaskIds();
       await withVerifier(async (verifier) => {
         for (let i = 0; i < n; i++) {
-          await runRound({ chain, verifier, taskId: tasks[i % tasks.length], marketSeconds: Number(arg("market-seconds", "20")) });
+          await runRound({ chain, verifier, taskId: tasks[(i + Number(arg("offset", "0"))) % tasks.length], ...mode(), marketSeconds: Number(arg("market-seconds", "20")) });
           console.log("");
         }
       });
       await leaderboard(chain);
       break;
     }
+    case "bench":
+      await bench(arg("task") ? [arg("task")!] : listTaskIds());
+      break;
     case "status":
       await leaderboard(chain);
       break;
     default:
-      console.log("usage: league <setup|round|demo|status> [--task id] [--rounds n] [--market-seconds s]");
+      console.log("usage: league <setup|round|demo|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm]");
       process.exit(cmd ? 1 : 0);
   }
 }

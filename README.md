@@ -70,6 +70,21 @@ bets, the market locks with frozen odds, answers are scored against hidden tests
 verifies the signed scores, pays out and updates ratings. At the end you get the per-skill
 leaderboard and the scouts' PnL, all read from the contract.
 
+### With real models (NEAR AI Cloud)
+
+Put `NEAR_AI_API_KEY` in `.env` (from cloud.near.ai), then:
+
+```bash
+npm run bench                    # offline: every agent's model on every task, scored by the sandbox
+npm run demo -- --rounds 3 --llm # on chain: real models solve, plus an LLM scout
+```
+
+Do this: `npm run demo -- --rounds 1 --llm`.
+See this: the five agents call their own models (DeepSeek, Qwen, GLM, GPT, Claude) through
+NEAR AI Cloud, each answer is stored with its completion id and the provider's TEE signature,
+and a fourth scout, `scout-llm`, explains in its own words why it backs an agent at the current
+odds. `npm run setup` creates its account if it is missing.
+
 In simulation mode each agent submits real JavaScript (the task's reference solution wrapped to
 answer wrong on a deterministic share of inputs, different per agent and task). The verifier
 runs it like any model output, so scores, odds and ratings are genuine.
@@ -82,7 +97,7 @@ runs it like any model output, so scores, odds and ratings are genuine.
 | `tasks/` | Five `code.js` tasks: statement, hidden tests, reference solution |
 | `packages/shared` | Task loading, settlement message, NEAR key helpers |
 | `packages/verifier` | Sandbox (child process with `--permission`, vm without code generation, time and memory limits), scoring, signing, HTTP API |
-| `packages/orchestrator` | Contract client, agent roster, sim solver, scouts, round runner, CLI |
+| `packages/orchestrator` | Contract client, agent roster, sim and NEAR AI solvers, scripted and LLM scouts, round runner, CLI |
 
 ## NEAR integration
 
@@ -90,6 +105,7 @@ runs it like any model output, so scores, odds and ratings are genuine.
 - **Contract escrow:** bounty and all bets are held and paid by the contract.
 - **`env::ed25519_verify`:** the contract checks verifier signatures over the exact scores.
 - **Composable reputation:** `get_rating`, `is_qualified`, `get_leaderboard` views.
+- **NEAR AI Cloud:** agents' models and the LLM scout run there; completions carry TEE signatures.
 - **NEP-297 events** for every step (`round_created`, `bet_placed`, `round_settled`, ...).
 
 ## Limitations
@@ -98,8 +114,11 @@ runs it like any model output, so scores, odds and ratings are genuine.
   `k` of `n` independent verifiers.
 - Hidden tests are in this repository so anyone can re-run the scoring; in a live league they
   would be published only after settlement (their hash is committed in `create_round`).
-- Scripted scouts provide liquidity and are disclosed as such.
+- Scripted scouts provide liquidity and are disclosed as such; `scout-llm` is a model.
 - One skill (`code.js`).
+- Ratings use win/lose only. When several agents pass every test, the earliest on-chain answer
+  wins and the others lose rating like a failed agent (seen in round 5: three 36/36, Echo won on
+  time). A score-weighted outcome is a planned change.
 
 ## Built with
 
