@@ -42,24 +42,20 @@ pub fn prior_odds_ppm(ratings_centi: &[i64]) -> Vec<u64> {
         .collect()
 }
 
-/// Expected score `p_i = w * market_i + (1 - w) * prior_i`, `w = min(1, total / min_pool)`.
-pub fn blended_odds_ppm(pools: &[u128], ratings_centi: &[i64], min_pool: u128) -> Vec<u64> {
-    let market = market_odds_ppm(pools);
-    let prior = prior_odds_ppm(ratings_centi);
-    let total: u128 = pools.iter().sum();
-    let w_ppm: u128 = if min_pool == 0 || total >= min_pool {
-        PPM as u128
-    } else {
-        total * PPM as u128 / min_pool
-    };
+/// Expected score `p_i = w * market_i + (1 - w) * prior_i`, `w = min(1, volume / min_pool)`.
+pub fn blend_ppm(market: &[u64], prior: &[u64], volume: u128, min_pool: u128) -> Vec<u64> {
+    let w_ppm: u128 = if min_pool == 0 || volume >= min_pool { PPM as u128 } else { volume * PPM as u128 / min_pool };
     market
         .iter()
         .zip(prior.iter())
-        .map(|(m, p)| {
-            let v = (w_ppm * *m as u128 + (PPM as u128 - w_ppm) * *p as u128) / PPM as u128;
-            v as u64
-        })
+        .map(|(m, p)| ((w_ppm * *m as u128 + (PPM as u128 - w_ppm) * *p as u128) / PPM as u128) as u64)
         .collect()
+}
+
+/// Parimutuel form used by rounds settled before the LMSR market: pools are the market.
+pub fn blended_odds_ppm(pools: &[u128], ratings_centi: &[i64], min_pool: u128) -> Vec<u64> {
+    let total: u128 = pools.iter().sum();
+    blend_ppm(&market_odds_ppm(pools), &prior_odds_ppm(ratings_centi), total, min_pool)
 }
 
 /// Rating deltas in centi-points for one settled round with a winner.
@@ -89,33 +85,119 @@ pub fn rating_deltas(p_ppm: &[u64], scores: &[u32], absorber: usize, k_factor: u
     deltas
 }
 
-/// Index of the winner: highest score, then earliest answer, then smallest account id.
-/// Returns `None` when the highest score is 0.
-pub fn pick_winner(scores: &[u32], answered_at_ms: &[Option<u64>], ids: &[&str]) -> Option<usize> {
-    let mut best: Option<usize> = None;
-    for i in 0..scores.len() {
-        if scores[i] == 0 {
-            continue;
-        }
-        best = match best {
-            None => Some(i),
-            Some(b) => {
-                let key_i = (scores[i], std::cmp::Reverse(answered_at_ms[i].unwrap_or(u64::MAX)), std::cmp::Reverse(ids[i]));
-                let key_b = (scores[b], std::cmp::Reverse(answered_at_ms[b].unwrap_or(u64::MAX)), std::cmp::Reverse(ids[b]));
-                if key_i > key_b {
-                    Some(i)
-                } else {
-                    Some(b)
-                }
-            }
-        };
+/// Indices of every entrant with the highest score, in entry order. Empty when the highest
+/// score is 0. Ties are not broken: tied winners share the bounty and the market pays each of
+/// them a share of a unit.
+pub fn winners(scores: &[u32]) -> Vec<usize> {
+    let best = scores.iter().copied().max().unwrap_or(0);
+    if best == 0 {
+        return vec![];
     }
-    best
+    (0..scores.len()).filter(|i| scores[*i] == best).collect()
+}
+
+/// Expected pass rate of an agent against a task, ppm: `1 / (1 + 10^((T - R) / 400))`.
+pub fn expected_vs_task_ppm(agent_centi: i64, task_centi: i64) -> u64 {
+    let e = 1.0 / (1.0 + 10f64.powf((task_centi - agent_centi) as f64 / 40_000.0));
+    (e * PPM as f64).round() as u64
+}
+
+/// Rating change against the task: `k * (passed / total - expected)` per agent, rounded toward
+/// zero, and minus their sum for the task, so agents and tasks together stay zero-sum.
+pub fn task_deltas(agent_centi: &[i64], task_centi: i64, scores: &[u32], total: u32, k: u32) -> (Vec<i64>, i64) {
+    let k_centi = k as i128 * 100;
+    let deltas: Vec<i64> = agent_centi
+        .iter()
+        .zip(scores.iter())
+        .map(|(r, s)| {
+            let a_ppm = if total == 0 { 0 } else { *s as i128 * PPM as i128 / total as i128 };
+            let e_ppm = expected_vs_task_ppm(*r, task_centi) as i128;
+            (k_centi * (a_ppm - e_ppm) / PPM as i128) as i64
+        })
+        .collect();
+    let task = -deltas.iter().sum::<i64>();
+    (deltas, task)
 }
 
 /// Market fee for a pool.
 pub fn fee(total: u128, fee_bps: u16) -> u128 {
     total * fee_bps as u128 / 10_000
+}
+
+// ----- LMSR market maker -----
+//
+// Prices `p_i = exp(q_i / b) / sum_j exp(q_j / b)` where `q_i` is the number of shares sold on
+// entrant i (one share pays 1 yoctoNEAR if i wins). The cost of the market is
+// `C(q) = b * ln(sum_j exp(q_j / b))`; the maker's worst-case loss is `b * ln(n)`, which the
+// manager deposits as the subsidy. Floats are deterministic on NEAR; every result is rounded
+// against the trader, so the maker never owes more than it holds.
+
+/// Liquidity parameter for a subsidy over `n` entrants: `b = subsidy / ln(n)`, rounded down.
+pub fn lmsr_b(subsidy: u128, n: usize) -> u128 {
+    if n < 2 || subsidy == 0 {
+        return 0;
+    }
+    (subsidy as f64 / (n as f64).ln() * (1.0 - 1e-9)) as u128
+}
+
+fn lmsr_probs(shares: &[u128], b: u128) -> Vec<f64> {
+    let n = shares.len();
+    if n == 0 {
+        return vec![];
+    }
+    if b == 0 {
+        return vec![1.0 / n as f64; n];
+    }
+    let x: Vec<f64> = shares.iter().map(|q| *q as f64 / b as f64).collect();
+    let m = x.iter().cloned().fold(f64::MIN, f64::max);
+    let e: Vec<f64> = x.iter().map(|v| (v - m).exp()).collect();
+    let s: f64 = e.iter().sum();
+    e.iter().map(|v| v / s).collect()
+}
+
+/// Current prices in ppm (uniform when there is no liquidity).
+pub fn lmsr_prices_ppm(shares: &[u128], b: u128) -> Vec<u64> {
+    lmsr_probs(shares, b).iter().map(|p| (p * PPM as f64).round() as u64).collect()
+}
+
+/// Shares of entrant `i` that `spend` buys: `b * ln(1 + expm1(spend / b) / p_i)`, rounded down
+/// with a small safety margin for float error.
+pub fn lmsr_buy(shares: &[u128], b: u128, i: usize, spend: u128) -> u128 {
+    if b == 0 || spend == 0 {
+        return 0;
+    }
+    let bf = b as f64;
+    let x: Vec<f64> = shares.iter().map(|q| *q as f64 / bf).collect();
+    let m = x.iter().cloned().fold(f64::MIN, f64::max);
+    // ln(1 / p_i) = logsumexp(x) - x_i
+    let lse = m + x.iter().map(|v| (v - m).exp()).sum::<f64>().ln();
+    let l = lse - x[i];
+    let z = spend as f64 / bf;
+    let log_expm1 = if z > 30.0 { z } else { z.exp_m1().ln() };
+    let y = log_expm1 + l;
+    let softplus = if y > 30.0 { y } else { y.exp().ln_1p() };
+    let d = softplus * bf * (1.0 - 1e-9);
+    if d.is_finite() && d > 0.0 {
+        d as u128
+    } else {
+        0
+    }
+}
+
+/// Cost function `C(q)` in yoctoNEAR, for tests and views.
+pub fn lmsr_cost(shares: &[u128], b: u128) -> f64 {
+    let bf = b as f64;
+    let x: Vec<f64> = shares.iter().map(|q| *q as f64 / bf).collect();
+    let m = x.iter().cloned().fold(f64::MIN, f64::max);
+    bf * (m + x.iter().map(|v| (v - m).exp()).sum::<f64>().ln())
+}
+
+/// Gross payout of a position: one unit per share on a winner, split evenly between tied winners.
+pub fn position_payout(shares: &[u128], winners: &[usize]) -> u128 {
+    if winners.is_empty() {
+        return 0;
+    }
+    winners.iter().map(|w| shares.get(*w).copied().unwrap_or(0)).sum::<u128>() / winners.len() as u128
 }
 
 uint::construct_uint! {
@@ -137,10 +219,16 @@ pub fn payout(position_on_winner: u128, pool_of_winner: u128, net: u128) -> u128
     mul_div(position_on_winner, net, pool_of_winner)
 }
 
-/// Message the verifiers sign (before hashing).
+/// Message the verifiers sign (before hashing) for a round.
 pub fn settlement_message(round_id: u64, total_tests: u32, scores: &[(&str, u32)]) -> String {
+    signed_message("agent-league:v1", round_id, total_tests, scores)
+}
+
+/// Messages for arbiters (`agent-league:arbiter:v1`) and jobs (`agent-league:job:v1`,
+/// `agent-league:job-arbiter:v1`) share the round format with another domain.
+pub fn signed_message(domain: &str, id: u64, total_tests: u32, scores: &[(&str, u32)]) -> String {
     let body: Vec<String> = scores.iter().map(|(a, s)| format!("{a}={s}")).collect();
-    format!("agent-league:v1:{round_id}:{total_tests}:{}", body.join(","))
+    format!("{domain}:{id}:{total_tests}:{}", body.join(","))
 }
 
 #[cfg(test)]
@@ -194,16 +282,63 @@ mod tests {
     }
 
     #[test]
-    fn winner_tie_breaks() {
-        let ids = ["b.near", "a.near", "c.near"];
-        // Highest score wins.
-        assert_eq!(pick_winner(&[10, 12, 3], &[Some(1), Some(2), Some(3)], &ids), Some(1));
-        // Same score: earlier answer.
-        assert_eq!(pick_winner(&[12, 12, 3], &[Some(1), Some(2), Some(3)], &ids), Some(0));
-        // Same score and time: smaller account id.
-        assert_eq!(pick_winner(&[12, 12, 3], &[Some(5), Some(5), Some(3)], &ids), Some(1));
-        // All zero: no winner.
-        assert_eq!(pick_winner(&[0, 0, 0], &[None, None, None], &ids), None);
+    fn ties_are_shared_not_broken() {
+        assert_eq!(winners(&[10, 12, 3]), vec![1]);
+        assert_eq!(winners(&[12, 12, 3]), vec![0, 1]);
+        assert_eq!(winners(&[0, 0, 0]), Vec::<usize>::new());
+        assert_eq!(position_payout(&[9, 6, 1], &[0, 1]), 7);
+        assert_eq!(position_payout(&[9, 6, 1], &[]), 0);
+    }
+
+    #[test]
+    fn task_rating_is_zero_sum_and_saturates() {
+        // Equal ratings: expected pass rate 50%.
+        assert_eq!(expected_vs_task_ppm(150_000, 150_000), 500_000);
+        // 400 points stronger than the task: 10/11.
+        assert_eq!(expected_vs_task_ppm(190_000, 150_000), 909_091);
+        let (d, t) = task_deltas(&[150_000, 150_000, 150_000], 150_000, &[20, 10, 0], 20, 16);
+        assert_eq!(d, vec![800, 0, -800]);
+        assert_eq!(t, 0);
+        // Everyone solves everything: agents gain, the task loses what they gained.
+        let (d, t) = task_deltas(&[150_000, 160_000], 150_000, &[20, 20], 20, 16);
+        assert!(d[0] > d[1] && d[1] > 0);
+        assert_eq!(t, -(d[0] + d[1]));
+        // A single agent can be rated: no field needed.
+        let (d, _) = task_deltas(&[150_000], 170_000, &[15], 20, 16);
+        assert!(d[0] > 0);
+    }
+
+    #[test]
+    fn lmsr_prices_buys_and_bounded_loss() {
+        let subsidy = 10 * NEAR;
+        let b = lmsr_b(subsidy, 4);
+        let mut q = vec![0u128; 4];
+        assert_eq!(lmsr_prices_ppm(&q, b), vec![250_000; 4]);
+        // Cost of the empty market is b ln n, at most the subsidy.
+        assert!(lmsr_cost(&q, b) <= subsidy as f64);
+        let mut spent = 0u128;
+        for (i, amount) in [(0usize, 3 * NEAR), (1, NEAR), (0, 5 * NEAR), (2, NEAR / 100), (0, 40 * NEAR)] {
+            let before = lmsr_prices_ppm(&q, b)[i];
+            let d = lmsr_buy(&q, b, i, amount);
+            // A buy costs exactly what the cost function says (up to the safety margin).
+            let mut q2 = q.clone();
+            q2[i] += d;
+            let paid = lmsr_cost(&q2, b) - lmsr_cost(&q, b);
+            assert!(paid <= amount as f64 && paid > amount as f64 * 0.999_999, "{paid} vs {amount}");
+            // Each share costs less than a unit, and the price moves up.
+            assert!(d > amount);
+            q = q2;
+            spent += amount;
+            assert!(lmsr_prices_ppm(&q, b)[i] > before);
+        }
+        // Whoever wins, the maker can pay every share from subsidy + collected.
+        for w in 0..4 {
+            assert!(q[w] <= subsidy + spent, "outcome {w}: {} > {}", q[w], subsidy + spent);
+        }
+        let p = lmsr_prices_ppm(&q, b);
+        assert!((p.iter().sum::<u64>() as i64 - 1_000_000).abs() <= 2);
+        // No liquidity, no shares.
+        assert_eq!(lmsr_buy(&[0, 0], 0, 0, NEAR), 0);
     }
 
     #[test]
@@ -224,5 +359,6 @@ mod tests {
     fn message_format() {
         let m = settlement_message(7, 20, &[("a.testnet", 20), ("b.testnet", 3)]);
         assert_eq!(m, "agent-league:v1:7:20:a.testnet=20,b.testnet=3");
+        assert_eq!(signed_message("agent-league:job:v1", 4, 9, &[("x.near", 9)]), "agent-league:job:v1:4:9:x.near=9");
     }
 }
