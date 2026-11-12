@@ -15,6 +15,7 @@ import {
   signedMessage,
   taskPrompt,
   verifyMessage,
+  verifyNearAiSignature,
   type PublicConfig,
 } from "@agent-league/shared";
 import { createServer, normalizeCode, recheck, runTests, scoreAnswers, Verifier } from "../src/index.js";
@@ -222,4 +223,47 @@ test("open entry: the server accepts an answer only if it matches the commitment
   } finally {
     server.close();
   }
+});
+
+// ----- fresh tests per round -----
+
+test("family tasks get fresh tests per round; watchers regenerate them from the seed", async () => {
+  const v = new Verifier([generateKeyPair().secretKey]);
+  const task = loadTask("eval-expr");
+  assert.ok(task.familyHash?.startsWith("family:sha256:"));
+  const h1 = await v.prepareTests("eval-expr");
+  const h2 = await v.prepareTests("eval-expr");
+  assert.notEqual(h1, h2, "a new seed every time");
+  v.bindTests("round", 9, h1);
+  const good = fs.readFileSync(task.referencePath, "utf8");
+  const a = v.submit(9, "a.testnet", "eval-expr", good);
+  const entries = [{ agent: "a.testnet", answer_hash: a.answerHash }];
+  const r = await v.score(9, "eval-expr", entries);
+  assert.equal(r.testsHash, h1);
+  assert.equal(r.scores[0][1], r.totalTests);
+  const pub = v.published(9)!;
+  assert.equal(sha256Tagged(pub.rawTests), h1);
+  assert.ok(pub.family && pub.family.seed.length === 64);
+  const ok = await recheck(pub, { id: 9, tests_hash: h1, entries, proposal: { total_tests: r.totalTests, scores: r.scores } });
+  assert.equal(ok.ok, true, ok.problems.join("; "));
+  // Tests that were not generated from the seed are caught.
+  const forged = { ...pub, family: { ...pub.family, seed: "00".repeat(32) } };
+  const bad = await recheck(forged, { id: 9, tests_hash: h1, entries, proposal: { total_tests: r.totalTests, scores: r.scores } });
+  assert.ok(bad.problems.some((p) => /regenerate/.test(p)));
+});
+
+test("NEAR AI signatures verify like the contract checks them (ed25519 gateway, ECDSA model enclave)", () => {
+  const gateway = {
+    text: "ed12232d4055873a813ccdb6da40c818b64cd5367b223f8ced7cc1a437034d85:c3ab0df85ed4b729076352f92d719772f3b7621a31aa6b549aafe6189638cf1d",
+    signature: "f72bb8505169c56230c3eaff6e1a8f0b1516a69cb9d27b596ec037113428310138cf6f1366058e52eda4211734c090e9711617aeaba58987e0286df9729e0401",
+    signing_address: "40599fb284f43953bb356b09080fd803c960fc10285ad90eca462ca711ad4acb",
+  };
+  const enclave = {
+    text: "z-ai/glm-5.3-flash:7d948ea65843e5895371355867545313ff2b8ceb12c16674eba1a9f96f568d03:3539d3009b9e81f56db30373f34cd5b4886399d7c752ad9808f715fe9bc39d26",
+    signature: "0x44cdcfe83cacc9c01d9221852d81d68fe8ea49262c82a5536eab3dc5b445f0d50aab1b4c0952ec2e4b3f4a8fa99588da4d1d78dba683ad6b90788f06fce918361c",
+    signing_address: "0x3b753b4406613c5e70ae640508632b600424fa0c",
+  };
+  assert.equal(verifyNearAiSignature(gateway), true);
+  assert.equal(verifyNearAiSignature(enclave), true);
+  assert.equal(verifyNearAiSignature({ ...enclave, text: enclave.text.replace("7d9", "7d8") }), false);
 });

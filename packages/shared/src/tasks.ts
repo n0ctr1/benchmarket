@@ -26,6 +26,10 @@ export interface TaskWithTests extends TaskPublic {
   /** The raw tests.json, published with the report so anyone can check the hash and re-run. */
   rawTests: string;
   referencePath: string;
+  /** Source of the seeded test generator (with the shared random prelude), if the task is a family. */
+  generator?: string;
+  /** `family:` + hash of generator and reference: what a curated family pins on chain. */
+  familyHash?: string;
 }
 
 /** Task pool. A live league keeps hidden tests outside the repository: set LEAGUE_TASKS_DIR. */
@@ -48,10 +52,19 @@ export function loadTask(id: string, dir = TASKS_DIR): TaskWithTests {
     testsHash: sha256Tagged(rawTests),
     rawTests,
     referencePath: path.join(base, "reference.js"),
+    ...family(base, dir),
   };
 }
 
 export function publicView(task: TaskWithTests): TaskPublic {
   const { id, skill, function: fn, title, statement, examples } = task;
   return { id, skill, function: fn, title, statement, examples };
+}
+
+function family(base: string, dir: string): { generator?: string; familyHash?: string } {
+  const gen = path.join(base, "generator.js");
+  if (!fs.existsSync(gen)) return {};
+  const generator = fs.readFileSync(path.join(dir, "_rng.js"), "utf8") + "\n" + fs.readFileSync(gen, "utf8");
+  const reference = fs.readFileSync(path.join(base, "reference.js"), "utf8");
+  return { generator, familyHash: "family:" + sha256Tagged(generator + "\n" + reference) };
 }

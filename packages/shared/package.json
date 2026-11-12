@@ -6,7 +6,11 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./identity": "./src/identity.ts"
+    "./identity": "./src/identity.ts",
+    "./inference": "./src/inference.ts",
+    "./settlement": "./src/settlement.ts",
+    "./keys": "./src/keys.ts",
+    "./hash": "./src/hash.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.0.0",

@@ -55,11 +55,18 @@ export function sameValue(got: unknown, expected: unknown, tol = 1e-9): boolean 
   return got === expected;
 }
 
-/** Runs `fn` from `code` against `tests` in an isolated child process and scores it. */
-export async function runTests(code: string, fn: string, tests: TestCase[], opts: SandboxOptions = {}): Promise<RunResult> {
+export interface RawRun {
+  compileError: string | null;
+  /** Per input: the serialized output, or null with an error. Empty when the run crashed. */
+  results: Array<{ output: string | null; error: string | null; ms: number }>;
+  wallMs: number;
+}
+
+/** Runs `fn` from `code` on each input in the isolated child process; returns raw outputs. */
+export async function runRaw(code: string, fn: string, inputs: unknown[][], opts: SandboxOptions = {}): Promise<RawRun> {
   if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(fn)) throw new Error(`bad function name ${fn}`);
   const perTestMs = opts.perTestMs ?? 2000;
-  const totalMs = opts.totalMs ?? perTestMs * tests.length + 3000;
+  const totalMs = opts.totalMs ?? perTestMs * inputs.length + 3000;
   const memoryMb = opts.memoryMb ?? 128;
   const started = performance.now();
 
@@ -73,17 +80,26 @@ export async function runTests(code: string, fn: string, tests: TestCase[], opts
   child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
   child.stderr.setEncoding("utf8").on("data", (d) => (stderr += d));
   const timer = setTimeout(() => child.kill("SIGKILL"), totalMs);
-  child.stdin.end(JSON.stringify({ code, fn, inputs: tests.map((t) => t.args), perTestMs }));
+  child.stdin.end(JSON.stringify({ code, fn, inputs, perTestMs }));
   const exitCode: number | null = await new Promise((resolve) => child.on("close", resolve));
   clearTimeout(timer);
   const wallMs = performance.now() - started;
 
-  let parsed: { compileError: string | null; results: Array<{ output: string | null; error: string | null; ms: number }> };
   try {
-    parsed = JSON.parse(stdout);
+    const parsed = JSON.parse(stdout) as { compileError: string | null; results: RawRun["results"] };
+    return { compileError: parsed.compileError, results: parsed.results, wallMs };
   } catch {
     const reason = exitCode === null ? "killed: time or memory limit" : `runner crashed (exit ${exitCode}): ${stderr.slice(0, 200)}`;
-    return { passed: 0, total: tests.length, compileError: reason, results: [], wallMs };
+    return { compileError: reason, results: [], wallMs };
+  }
+}
+
+/** Runs `fn` from `code` against `tests` in an isolated child process and scores it. */
+export async function runTests(code: string, fn: string, tests: TestCase[], opts: SandboxOptions = {}): Promise<RunResult> {
+  const parsed = await runRaw(code, fn, tests.map((t) => t.args), opts);
+  const wallMs = parsed.wallMs;
+  if (parsed.results.length === 0 && parsed.compileError) {
+    return { passed: 0, total: tests.length, compileError: parsed.compileError, results: [], wallMs };
   }
 
   const results: TestResult[] = tests.map((t, i) => {

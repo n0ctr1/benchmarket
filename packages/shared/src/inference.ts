@@ -6,9 +6,17 @@
  * off-chain half the verifier runs: the request must be that agent's config on this round's
  * prompt, and the scored code is the content of that very response. No Node dependencies.
  */
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import type { TaskPublic } from "./tasks.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+/** The public part of a task (same shape as `TaskPublic` in tasks.ts, kept here so browsers need no Node types). */
+interface TaskPublic {
+  function: string;
+  statement: string;
+  examples: Array<{ args: unknown[]; expected: unknown }>;
+}
 
 export interface PublicConfig {
   name: string;
@@ -89,4 +97,32 @@ export function checkCompletion(
   const content = completionContent(c.response);
   if (content === null) return { ok: false, reason: "response has no assistant content" };
   return { ok: true, content };
+}
+
+/** NEAR AI Cloud's signature over a completion, as `/v1/signature/{id}` returns it. */
+export interface NearAiSignature {
+  text: string;
+  signature: string;
+  signing_address: string;
+}
+
+/**
+ * Checks a NEAR AI signature the way the contract does: ed25519 over the text (key as 64 hex), or
+ * ECDSA secp256k1 over the EIP-191 message (signer as a 0x address).
+ */
+export function verifyNearAiSignature(s: NearAiSignature): boolean {
+  try {
+    const signer = s.signing_address.toLowerCase();
+    if (signer.startsWith("0x")) {
+      const sig = hexToBytes(s.signature.replace(/^0x/, ""));
+      if (sig.length !== 65) return false;
+      const v = sig[64] >= 27 ? sig[64] - 27 : sig[64];
+      const msg = utf8ToBytes(`\x19Ethereum Signed Message:\n${s.text.length}${s.text}`);
+      const pub = secp256k1.Signature.fromBytes(sig.slice(0, 64), "compact").addRecoveryBit(v).recoverPublicKey(keccak_256(msg)).toBytes(false);
+      return "0x" + bytesToHex(keccak_256(pub.slice(1)).slice(12)) === signer;
+    }
+    return ed25519.verify(hexToBytes(s.signature), utf8ToBytes(s.text), hexToBytes(signer));
+  } catch {
+    return false;
+  }
 }

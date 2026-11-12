@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -15,6 +16,7 @@ import {
   type TestCase,
 } from "@agent-league/shared";
 import { normalizeCode, runTests, type RunResult, type SandboxOptions } from "./sandbox.js";
+import { FRESH_TESTS, generateTests } from "./families.js";
 
 export type Kind = "round" | "job";
 
@@ -73,6 +75,16 @@ export interface PublishedReport {
   answers: StoredAnswer[];
   function: string;
   rawTests: string;
+  /** For a family task: the seed and the code that turn it into `rawTests`. */
+  family?: { seed: string; count: number; generator: string; reference: string; familyHash: string };
+}
+
+/** Fresh tests generated for a round or job before it exists, bound to it once created. */
+interface PreparedTests {
+  taskId: string;
+  seed: string;
+  raw: string;
+  hash: string;
 }
 
 /** The code to run for one entrant, or why there is none. */
@@ -132,6 +144,8 @@ const key = (kind: Kind, id: number) => `${kind}:${id}`;
 export class Verifier {
   private answers = new Map<string, Map<string, StoredAnswer>>();
   private reports = new Map<string, ScoreReport>();
+  private pending = new Map<string, PreparedTests>();
+  private bound = new Map<string, PreparedTests>();
 
   constructor(
     private readonly secretKeys: string[],
@@ -174,6 +188,27 @@ export class Verifier {
     return stored;
   }
 
+  /**
+   * Generates fresh hidden tests for a family task from a new secret seed and returns their hash,
+   * to be committed on chain. The seed stays secret until the report is published.
+   */
+  async prepareTests(taskId: string): Promise<string> {
+    const seed = randomBytes(32).toString("hex");
+    const fresh = await generateTests(loadTask(taskId), seed);
+    this.pending.set(fresh.hash, { taskId, seed, raw: fresh.raw, hash: fresh.hash });
+    this.save();
+    return fresh.hash;
+  }
+
+  /** Binds prepared tests to the round (or job) that committed their hash. */
+  bindTests(kind: Kind, id: number, hash: string): void {
+    const p = this.pending.get(hash);
+    if (!p) throw new Error(`no prepared tests with hash ${hash}`);
+    this.pending.delete(hash);
+    this.bound.set(key(kind, id), p);
+    this.save();
+  }
+
   getAnswer(roundId: number, agent: string, kind: Kind = "round"): StoredAnswer | undefined {
     return this.answers.get(key(kind, roundId))?.get(agent);
   }
@@ -187,7 +222,16 @@ export class Verifier {
     const report = this.reports.get(key(kind, id));
     if (!report) return undefined;
     const task = loadTask(report.taskId);
-    return { report, answers: [...(this.answers.get(key(kind, id))?.values() ?? [])], function: task.function, rawTests: task.rawTests };
+    const fresh = this.bound.get(key(kind, id));
+    return {
+      report,
+      answers: [...(this.answers.get(key(kind, id))?.values() ?? [])],
+      function: task.function,
+      rawTests: fresh ? fresh.raw : task.rawTests,
+      ...(fresh && task.generator
+        ? { family: { seed: fresh.seed, count: FRESH_TESTS, generator: task.generator, reference: fs.readFileSync(task.referencePath, "utf8"), familyHash: task.familyHash! } }
+        : {}),
+    };
   }
 
   /**
@@ -207,16 +251,18 @@ export class Verifier {
     const existing = this.reports.get(key(kind, id));
     if (existing) return existing;
     const task = loadTask(taskId);
+    const fresh = this.bound.get(key(kind, id));
+    const tests = fresh ? (JSON.parse(fresh.raw) as TestCase[]) : task.tests;
     const answers = this.answers.get(key(kind, id)) ?? new Map<string, StoredAnswer>();
-    const details = await scoreAnswers(task.function, task.tests, entries, answers, roundTag(kind, id), this.sandbox);
+    const details = await scoreAnswers(task.function, tests, entries, answers, roundTag(kind, id), this.sandbox);
     const scores: Array<[string, number]> = details.map((d) => [d.agent, d.score]);
-    const { message, signatures } = signScores(this.secretKeys, kind === "round" ? DOMAINS.round : DOMAINS.job, id, task.tests.length, scores);
+    const { message, signatures } = signScores(this.secretKeys, kind === "round" ? DOMAINS.round : DOMAINS.job, id, tests.length, scores);
     const report: ScoreReport = {
       kind,
       roundId: id,
       taskId,
-      testsHash: task.testsHash,
-      totalTests: task.tests.length,
+      testsHash: fresh ? fresh.hash : task.testsHash,
+      totalTests: tests.length,
       scores,
       details,
       message,
@@ -240,6 +286,8 @@ export class Verifier {
       version: 2,
       answers: [...this.answers].map(([id, m]) => [id, [...m.values()]]),
       reports: [...this.reports],
+      pending: [...this.pending],
+      bound: [...this.bound],
     };
     fs.writeFileSync(f, JSON.stringify(state, null, 2));
   }
@@ -250,10 +298,14 @@ export class Verifier {
     const state = JSON.parse(fs.readFileSync(f, "utf8")) as {
       answers: Array<[number | string, StoredAnswer[]]>;
       reports: Array<[number | string, ScoreReport]>;
+      pending?: Array<[string, PreparedTests]>;
+      bound?: Array<[string, PreparedTests]>;
     };
     // Version 1 keyed rounds by number.
     const k = (id: number | string) => (typeof id === "number" ? key("round", id) : id);
     for (const [id, list] of state.answers) this.answers.set(k(id), new Map(list.map((a) => [a.agent, a])));
     for (const [id, r] of state.reports) this.reports.set(k(id), { ...r, kind: r.kind ?? "round" });
+    for (const [h, p] of state.pending ?? []) this.pending.set(h, p);
+    for (const [id, p] of state.bound ?? []) this.bound.set(id, p);
   }
 }
