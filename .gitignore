@@ -1,0 +1,22 @@
+# Rust
+target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.key
+*-credentials.json
+.near-credentials/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
