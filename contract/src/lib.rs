@@ -474,7 +474,7 @@ impl Contract {
         let manager = round.manager.clone();
         emit("round_cancelled", json!({ "round_id": round_id }));
         if bounty > 0 {
-            Promise::new(manager).transfer(NearToken::from_yoctonear(bounty));
+            Promise::new(manager).transfer(NearToken::from_yoctonear(bounty)).detach();
         }
     }
 
@@ -656,7 +656,7 @@ impl Contract {
         );
         self.rounds.insert(round_id, round);
         for (to, amount) in transfers {
-            Promise::new(to).transfer(NearToken::from_yoctonear(amount));
+            Promise::new(to).transfer(NearToken::from_yoctonear(amount)).detach();
         }
     }
 
@@ -695,7 +695,7 @@ impl Contract {
         }
         emit("payout_claimed", json!({ "round_id": round_id, "account": caller, "amount": U128(amount) }));
         if amount > 0 {
-            Promise::new(caller).transfer(NearToken::from_yoctonear(amount));
+            Promise::new(caller).transfer(NearToken::from_yoctonear(amount)).detach();
         }
         U128(amount)
     }
