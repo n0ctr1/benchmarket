@@ -1,0 +1,24 @@
+{
+  "name": "agent-league",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "test:contract": "cd contract && cargo test",
+    "build:contract": "cd contract && cargo near build non-reproducible-wasm",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verifier": "npm run start -w @agent-league/verifier",
+    "verifier:keygen": "npm run keygen -w @agent-league/verifier"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0"
+  }
+}
