@@ -905,6 +905,7 @@ fn post_brief(c: &mut Contract) -> u64 {
         Some(900_000),
         None,
         None,
+        None,
     )
 }
 
@@ -1079,7 +1080,7 @@ fn category_brief(c: &mut Contract) -> u64 {
         }
     }
     ctx(CLIENT, 3 * NEAR + NEAR + NEAR / 2 + NEAR, 3_000_000);
-    c.post_brief(SKILL.into(), "Parse my shop exports.".into(), Some("parsing".into()), None, None, U128(3 * NEAR), U128(NEAR), U128(NEAR / 2), U128(NEAR), U128(NEAR / 10), 600_000, 600_000, 3_600_000, None, None, None)
+    c.post_brief(SKILL.into(), "Parse my shop exports.".into(), Some("parsing".into()), None, None, U128(3 * NEAR), U128(NEAR), U128(NEAR / 2), U128(NEAR), U128(NEAR / 10), 600_000, 600_000, 3_600_000, None, None, None, None)
 }
 
 #[test]
@@ -1186,6 +1187,63 @@ fn model_enclave_attestation_records_the_model() {
     assert_eq!(e.model.as_deref(), Some("z-ai/glm-5.3-flash"));
 }
 
+const ENCLAVE_SIGNER: &str = "0x3b753b4406613c5e70ae640508632b600424fa0c";
+
+fn enclave_attestation() -> Attestation {
+    Attestation {
+        text: "z-ai/glm-5.3-flash:7d948ea65843e5895371355867545313ff2b8ceb12c16674eba1a9f96f568d03:3539d3009b9e81f56db30373f34cd5b4886399d7c752ad9808f715fe9bc39d26".into(),
+        signature: "0x44cdcfe83cacc9c01d9221852d81d68fe8ea49262c82a5536eab3dc5b445f0d50aab1b4c0952ec2e4b3f4a8fa99588da4d1d78dba683ad6b90788f06fce918361c".into(),
+        signer: ENCLAVE_SIGNER.into(),
+    }
+}
+
+/// A confidential job, accepted, ready for the client's answer.
+fn confidential_job(c: &mut Contract) -> u64 {
+    ctx("owner.testnet", 0, 1_000);
+    c.set_inference_signers(vec![format!("model:{ENCLAVE_SIGNER}"), ATT_SIGNER.into()]);
+    issue(c, "a.testnet");
+    ctx(CLIENT, 3 * NEAR + NEAR + NEAR / 2 + NEAR, 3_000_000);
+    let id = c.post_brief(SKILL.into(), "Private work.".into(), None, None, None, U128(3 * NEAR), U128(NEAR), U128(NEAR / 2), U128(NEAR), U128(NEAR / 10), 600_000, 600_000, 3_600_000, None, None, None, Some(true));
+    nominate(c, id, "s1.testnet", "a.testnet", "t1", NEAR);
+    ctx("anyone.testnet", 0, 3_600_000);
+    c.start_tryout(id, None);
+    ctx(CLIENT, 0, 3_700_000);
+    c.accept_offer(id, Some("secret-task".into()), Some("sha256:secret".into()))
+}
+
+#[test]
+fn confidential_job_is_committed_by_the_client_with_an_enclave_signature() {
+    let (mut c, _) = setup(1);
+    let job = confidential_job(&mut c);
+    assert!(c.get_job(job).unwrap().attested);
+    ctx(CLIENT, 0, 3_800_000);
+    c.submit_job(job, "sha256:3539d3009b9e81f56db30373f34cd5b4886399d7c752ad9808f715fe9bc39d26".into(), Some(enclave_attestation()));
+    let j = c.get_job(job).unwrap();
+    assert_eq!(j.status, JobStatus::Answered);
+    assert_eq!(j.model.as_deref(), Some("z-ai/glm-5.3-flash"));
+}
+
+#[test]
+#[should_panic(expected = "needs a model-enclave attestation")]
+fn confidential_job_refuses_a_gateway_signature() {
+    let (mut c, _) = setup(1);
+    let job = confidential_job(&mut c);
+    ctx(CLIENT, 0, 3_800_000);
+    c.submit_job(job, ATT_HASH.into(), Some(attestation()));
+}
+
+#[test]
+#[should_panic(expected = "only the agent that took the job")]
+fn ordinary_job_is_not_answered_by_the_poster() {
+    let (mut c, keys) = setup(1);
+    veteran(&mut c, &keys);
+    let job = post(&mut c, 0);
+    ctx("a.testnet", 0, 2_000_100);
+    c.take_job(job);
+    ctx("client.testnet", 0, 2_000_200);
+    c.submit_job(job, "sha256:x".into(), None);
+}
+
 #[test]
 fn owner_can_hand_over_to_a_dao() {
     let (mut c, _) = setup(1);
@@ -1208,7 +1266,7 @@ fn client_cannot_nominate() {
 fn brief_escrow_must_match() {
     let (mut c, _) = setup(1);
     ctx(CLIENT, NEAR, 3_000_000);
-    c.post_brief(SKILL.into(), "x".into(), None, Some("client-csv".into()), Some("h".into()), U128(3 * NEAR), U128(0), U128(0), U128(0), U128(NEAR / 10), 600_000, 600_000, 600_000, None, None, None);
+    c.post_brief(SKILL.into(), "x".into(), None, Some("client-csv".into()), Some("h".into()), U128(3 * NEAR), U128(0), U128(0), U128(0), U128(NEAR / 10), 600_000, 600_000, 600_000, None, None, None, None);
 }
 
 /// Signature produced by the TypeScript verifier (packages/shared signMessage) for seed [7; 32].

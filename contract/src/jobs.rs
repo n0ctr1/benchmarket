@@ -223,9 +223,18 @@ impl Contract {
         let caller = env::predecessor_account_id();
         require!(!answer_hash.is_empty() && answer_hash.len() <= 128, "bad answer hash");
         let proof = attestation.map(|a| attest::verify(&a, &self.inference_signers).unwrap_or_else(|e| env::panic_str(&e)));
+        // A confidential hire is run by the client on the agent's public config, so the client
+        // commits the answer; only a model-enclave signature proves the enclave produced it.
+        let confidential = self.job_brief.get(&job_id).and_then(|b| self.briefs.get(b)).map_or(false, |b| b.confidential);
         let job = self.job_mut(job_id);
         require!(job.status == JobStatus::Taken, "job is not taken");
-        require!(job.agent.as_ref() == Some(&caller), "only the agent that took the job");
+        require!(
+            job.agent.as_ref() == Some(&caller) || (confidential && job.poster == caller),
+            "only the agent that took the job"
+        );
+        if confidential {
+            require!(proof.as_ref().map_or(false, |p| p.model.is_some()), "a confidential job needs a model-enclave attestation");
+        }
         require!(env::block_timestamp_ms() <= job.deadline_ms, "work window passed");
         match &proof {
             Some(p) => {

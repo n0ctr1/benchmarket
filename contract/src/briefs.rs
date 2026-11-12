@@ -68,6 +68,10 @@ pub struct Brief {
     pub tests_hash: Option<String>,
     pub pass_ppm: u32,
     pub attested: bool,
+    /// Confidential: the task goes end-to-end encrypted to the hired agent's model enclave and
+    /// nowhere else. The client runs the hire's public config itself and commits the answer; it
+    /// must carry a model-enclave signature.
+    pub confidential: bool,
     pub budget: u128,
     pub scout_reward: u128,
     pub tryout_bounty: u128,
@@ -121,6 +125,7 @@ pub struct BriefView {
     pub tests_hash: Option<String>,
     pub pass_ppm: u32,
     pub attested: bool,
+    pub confidential: bool,
     pub budget: U128,
     pub scout_reward: U128,
     pub tryout_bounty: U128,
@@ -169,6 +174,7 @@ impl Contract {
         pass_ppm: Option<u32>,
         attested: Option<bool>,
         offer_window_ms: Option<u64>,
+        confidential: Option<bool>,
     ) -> u64 {
         let deposit = env::attached_deposit().as_yoctonear();
         let total = budget.0 + scout_reward.0 + tryout_bounty.0 + tryout_subsidy.0;
@@ -203,7 +209,8 @@ impl Contract {
             task_ref,
             tests_hash,
             pass_ppm: pass,
-            attested: attested.unwrap_or(false),
+            attested: attested.unwrap_or(false) || confidential.unwrap_or(false),
+            confidential: confidential.unwrap_or(false),
             budget: budget.0,
             scout_reward: scout_reward.0,
             tryout_bounty: tryout_bounty.0,
@@ -643,6 +650,7 @@ fn brief_view(b: &Brief) -> BriefView {
         tests_hash: b.tests_hash.clone(),
         pass_ppm: b.pass_ppm,
         attested: b.attested,
+        confidential: b.confidential,
         budget: U128(b.budget),
         scout_reward: U128(b.scout_reward),
         tryout_bounty: U128(b.tryout_bounty),
