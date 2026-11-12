@@ -60,15 +60,15 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
   }
 }
 
-/** Deploys the current wasm over the existing contract and runs `migrate` (V3 -> 7x7 three-color faces). */
+/** Deploys the current wasm over the existing contract and runs `migrate` (V4 -> packed face index). */
 export async function upgrade(): Promise<void> {
   const chain = new LeagueChain();
   const league = config.leagueAccount;
   const parent = chain.account(league);
   const wasm = WASM_CANDIDATES.find((p) => fs.existsSync(p));
   if (!wasm) throw new Error("build the contract first: npm run build:contract");
-  // A V4 contract reports `cells` from check_face.
-  const already = await chain.checkFace("probe seed for the upgrade check").then((r) => Array.isArray(r.cells), () => false);
+  // A V5 contract has the face index and answers face_count.
+  const already = await chain.faceCount().then(() => true, () => false);
   console.log(`deploying ${path.relative(REPO_ROOT, wasm)} (${fs.statSync(wasm).size} bytes)`);
   await parent.deployContract(new Uint8Array(fs.readFileSync(wasm)));
   if (already) {
@@ -78,5 +78,5 @@ export async function upgrade(): Promise<void> {
   await parent.callFunction({ contractId: league, methodName: "migrate", args: {}, gas: 300_000_000_000_000n });
   const rounds = await chain.getRounds(50);
   const ids = await chain.getIdentities();
-  console.log(`migrated: ${rounds.length} rounds kept, ${ids.length} passports re-derived from their seeds`);
+  console.log(`migrated: ${rounds.length} rounds kept, ${ids.length} passports, ${await chain.faceCount()} faces in the index`);
 }

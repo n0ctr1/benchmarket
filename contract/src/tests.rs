@@ -417,31 +417,14 @@ fn registration_needs_an_identity() {
 }
 
 #[test]
-fn migrate_rederives_faces_from_seeds() {
+fn migrate_builds_the_face_index() {
     let (mut c, _) = setup(1);
     let id = round_with_agents(&mut c);
+    // The deployed V4 state: the same rounds and passports, no face index yet.
     c.rounds.flush();
     c.positions.flush();
-    // The deployed V3 state: same rounds, plus two passports with 5x5 faces.
-    let mut old_ids: IterableMap<AccountId, IdentityV3> = IterableMap::new(StorageKey::IdentitiesV3);
-    for (n, a) in ["x.testnet", "y.testnet"].iter().enumerate() {
-        old_ids.insert(
-            acc(a),
-            IdentityV3 {
-                number: n as u32 + 1,
-                seed: format!("I am {a}, an agent with a story of its own."),
-                pattern: 0x1234,
-                hue: 10,
-                motto: "old".into(),
-                config_hash: "cfg".into(),
-                proof: "".into(),
-                issuer: acc(a),
-                issued_at_ms: 1,
-            },
-        );
-    }
-    old_ids.flush();
-    let v3 = ContractV3 {
+    c.identities.flush();
+    let v4 = ContractV4 {
         owner: c.owner.clone(),
         verifiers: c.verifiers.clone(),
         threshold: c.threshold,
@@ -455,16 +438,82 @@ fn migrate_rederives_faces_from_seeds() {
         positions: LookupMap::new(StorageKey::Positions),
         ratings: IterableMap::new(StorageKey::Ratings),
         scouts: IterableMap::new(StorageKey::Scouts),
-        identities: old_ids,
-        next_identity: 3,
+        identities: std::mem::replace(&mut c.identities, IterableMap::new(StorageKey::IdentitiesV4)),
+        next_identity: c.next_identity,
     };
-    env::state_write(&v3);
+    env::state_write(&v4);
     ctx("league.testnet", 0, 2_000);
     let mut m = Contract::migrate();
     assert_eq!(m.get_round(id).unwrap().entries.len(), 3);
-    let x = m.get_identity(acc("x.testnet")).unwrap();
-    assert_eq!(x.number, 1);
-    assert_eq!(x.motto, "old");
-    assert_eq!(x.cells, identity::derive(&x.seed).cells);
-    assert_eq!(issue(&mut m, "d.testnet"), 3);
+    assert_eq!(m.get_identities(None, None).len(), 3);
+    assert_eq!(m.face_count(), 3);
+    // The index knows the old faces: reusing a seed is rejected and names its owner.
+    let a = m.get_identity(acc("a.testnet")).unwrap();
+    let check = m.check_face(a.seed);
+    assert!(!check.ok);
+    assert_eq!(check.nearest, Some(acc("a.testnet")));
+    assert_eq!(issue(&mut m, "d.testnet"), 4);
+}
+
+/// Fills the face index directly with `n` random valid faces, as if `n` passports existed.
+fn fill_index(c: &mut Contract, n: u32) {
+    // Setup only: lift the gas limit so filling is not counted against the measured calls.
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("league.testnet")).prepaid_gas(near_sdk::Gas::from_tgas(10_000_000));
+    testing_env!(b.build());
+    let mut number = c.next_identity;
+    let mut i = 0u64;
+    while number < c.next_identity + n {
+        i += 1;
+        if i % 4_000 == 0 {
+            // The mock caps a context at 300 Tgas; start a fresh one now and then.
+            c.face_pages.flush();
+            testing_env!(b.build());
+        }
+        let cells = identity::derive(&format!("filler agent {i} with a long enough seed")).cells;
+        if identity::validate_fill(&cells).is_ok() {
+            c.index_face(identity::pack(&cells), number, acc(&format!("f{number}.testnet")));
+            number += 1;
+        }
+    }
+    c.next_identity = number;
+    c.face_pages.flush();
+}
+
+#[test]
+fn face_check_gas_scales_with_the_index() {
+    // Host-side gas (storage reads and writes, hashing) of check_face and register_identity as
+    // the registry grows. Wasm execution is not metered in unit tests; see RULES.md for the
+    // estimate of that part.
+    for n in [1_000u32, 10_000, 50_000] {
+        // Each size in its own thread: the mocked storage is per thread.
+        std::thread::spawn(move || measure(n)).join().unwrap();
+    }
+}
+
+fn measure(n: u32) {
+    let (mut c, _) = setup(1);
+    fill_index(&mut c, n);
+    let seed = seed_for(&c, "probe.testnet");
+    c.identities.flush();
+    env::state_write(&c);
+    std::mem::forget(c);
+    // A fresh contract object, as on chain: nothing cached, every page is read from storage.
+    ctx("probe.testnet", IDENTITY_DEPOSIT, 900);
+    let fresh: Contract = env::state_read().unwrap();
+    let before = env::used_gas().as_gas();
+    let check = fresh.check_face(seed.clone());
+    let view = env::used_gas().as_gas() - before;
+    assert!(check.ok);
+    std::mem::forget(fresh);
+    ctx("probe.testnet", IDENTITY_DEPOSIT, 900);
+    let mut fresh: Contract = env::state_read().unwrap();
+    let before = env::used_gas().as_gas();
+    fresh.register_identity(acc("probe.testnet"), seed, "probe".into(), "cfg".into(), "".into());
+    fresh.face_pages.flush();
+    fresh.identities.flush();
+    fresh.agent_by_number.flush();
+    let call = env::used_gas().as_gas() - before;
+    std::mem::forget(fresh);
+    println!("faces {n:>6}: check_face {:.2} Tgas, register_identity {:.2} Tgas (host side)", view as f64 / 1e12, call as f64 / 1e12);
 }

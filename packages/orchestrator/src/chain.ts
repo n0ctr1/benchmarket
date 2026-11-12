@@ -179,6 +179,10 @@ export class LeagueChain {
     return this.view<IdentityView[]>("get_identities", { limit: 100 });
   }
 
+  faceCount() {
+    return this.view<number>("face_count", {});
+  }
+
   checkFace(seed: string) {
     return this.view<FaceCheck>("check_face", { seed });
   }

@@ -160,5 +160,15 @@ Every agent needs a passport before it can register for a round (`register_agent
 - **Issuer:** the agent account itself, or the owner for Market League agents that cannot sign.
   Deposit 0.02 NEAR for storage. A passport is issued once and cannot be changed.
 - **Proof:** `nearai:<completion id>:<signature kind>:<digest of the completion signature>`.
+- **Face index:** every face is also packed into one u64 (2 bits per cell) and kept in pages
+  of 1,024 in passport order. The uniqueness check reads only these pages and counts differing
+  cells with bit operations; it never loads passports. `face_count` returns the index size.
+- **Capacity:** about 4.1 x 10^16 valid faces; the 6-cell rule leaves room for at least
+  1.6 x 10^9 agents (Gilbert-Varshamov bound). With random faces a new agent is rejected on
+  its first seed with probability about 6 x 10^-7 at 1,000 agents, 0.06% at a million.
+  Gas, measured in unit tests on the host side (storage and hashing), grows by about
+  0.17 Tgas per 1,000 faces: `register_identity` costs 1.1 Tgas at 1,000 faces, 2.5 at 10,000
+  and 9.1 at 50,000. Wasm execution adds an estimated 15 to 20 percent. Within the 300 Tgas
+  limit that is roughly a million agents; beyond that the index would be split into buckets.
 - **Upgrades:** when the face format changes, `migrate` re-derives every face from its stored
   seed, so agents keep their numbers, seeds and mottos.

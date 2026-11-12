@@ -55,6 +55,22 @@ pub fn derive(seed: &str) -> Face {
     Face { cells, palette: [base, second, third] }
 }
 
+/// Faces per storage page of the face index.
+pub const PAGE: usize = 1024;
+
+/// Two bits per cell, cell `i` at bits `2i..2i+1` (same packing as `face_code`).
+pub fn pack(cells: &[u8]) -> u64 {
+    cells.iter().enumerate().map(|(i, c)| (*c as u64 & 3) << (i * 2)).sum()
+}
+
+const LOW_BITS: u64 = 0x0055_5555_5555_5555; // bit 0 of each of the 28 cells
+
+/// Number of cells whose value differs, on packed faces.
+pub fn packed_apart(a: u64, b: u64) -> u32 {
+    let x = a ^ b;
+    ((x | (x >> 1)) & LOW_BITS).count_ones()
+}
+
 pub fn cells_apart(a: &[u8], b: &[u8]) -> u32 {
     a.iter().zip(b.iter()).filter(|(x, y)| x != y).count() as u32
 }
@@ -120,6 +136,18 @@ mod tests {
         assert_eq!(f.cells.len(), CELLS);
         assert!(f.cells.iter().all(|c| *c <= 3));
         assert_eq!(format!("{}/{}/{}", face_code(&f), f.palette[1], f.palette[2]), VECTOR_CODE);
+    }
+
+    #[test]
+    fn packed_distance_matches_cell_distance() {
+        testing_env!(VMContextBuilder::new().build());
+        let faces: Vec<Vec<u8>> = (0..200).map(|i| derive(&format!("seed number {i} for packing")).cells).collect();
+        for a in &faces {
+            for b in faces.iter().take(40) {
+                assert_eq!(packed_apart(pack(a), pack(b)), cells_apart(a, b));
+            }
+        }
+        assert_eq!(packed_apart(pack(&[3; 28]), 0), 28);
     }
 
     #[test]

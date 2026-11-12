@@ -8,7 +8,7 @@ pub mod math;
 
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde_json::json;
-use near_sdk::store::{IterableMap, LookupMap};
+use near_sdk::store::{IterableMap, LookupMap, Vector};
 use near_sdk::{
     env, near, require, AccountId, BorshStorageKey, CurveType, NearToken, PanicOnDefault, Promise,
     PublicKey,
@@ -30,6 +30,8 @@ enum StorageKey {
     Identities,
     IdentitiesV3,
     IdentitiesV4,
+    FacePages,
+    AgentByNumber,
 }
 
 #[near(serializers = [borsh, json])]
@@ -240,21 +242,6 @@ pub struct Identity {
     pub issued_at_ms: u64,
 }
 
-/// Passport layout with a 5x5 one-color face; converted by `migrate`.
-#[near(serializers = [borsh])]
-#[derive(Clone)]
-pub struct IdentityV3 {
-    pub number: u32,
-    pub seed: String,
-    pub pattern: u16,
-    pub hue: u16,
-    pub motto: String,
-    pub config_hash: String,
-    pub proof: String,
-    pub issuer: AccountId,
-    pub issued_at_ms: u64,
-}
-
 #[near(serializers = [json])]
 pub struct IdentityView {
     pub agent: AccountId,
@@ -301,11 +288,15 @@ pub struct Contract {
     scouts: IterableMap<AccountId, Scout>,
     identities: IterableMap<AccountId, Identity>,
     next_identity: u32,
+    /// Every issued face packed into a u64, in passport order, `PAGE` faces per storage entry.
+    /// The uniqueness check reads these pages instead of every passport.
+    face_pages: Vector<Vec<u64>>,
+    agent_by_number: LookupMap<u32, AccountId>,
 }
 
-/// State layout with 5x5 one-color passports; read once by `migrate`.
+/// State layout before the face index; read once by `migrate`.
 #[near(serializers = [borsh])]
-struct ContractV3 {
+struct ContractV4 {
     owner: AccountId,
     verifiers: Vec<PublicKey>,
     threshold: u8,
@@ -319,7 +310,7 @@ struct ContractV3 {
     positions: LookupMap<(u64, AccountId), Position>,
     ratings: IterableMap<RatingKey, Rating>,
     scouts: IterableMap<AccountId, Scout>,
-    identities: IterableMap<AccountId, IdentityV3>,
+    identities: IterableMap<AccountId, Identity>,
     next_identity: u32,
 }
 
@@ -384,46 +375,20 @@ impl Contract {
             scouts: IterableMap::new(StorageKey::Scouts),
             identities: IterableMap::new(StorageKey::IdentitiesV4),
             next_identity: 1,
+            face_pages: Vector::new(StorageKey::FacePages),
+            agent_by_number: LookupMap::new(StorageKey::AgentByNumber),
         }
     }
 
-    /// Upgrades V3 state in place: keeps everything and re-derives every passport face from the
-    /// agent's own seed with the 7x7 three-color derivation. Numbers, seeds and mottos stay.
+    /// Upgrades V4 state in place: keeps everything and builds the packed face index from the
+    /// issued passports, in passport order.
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let mut old: ContractV3 = env::state_read().expect("no state to migrate");
-        let mut identities: IterableMap<AccountId, Identity> = IterableMap::new(StorageKey::IdentitiesV4);
-        let mut issued: Vec<(AccountId, Vec<u8>)> = Vec::new();
-        let mut list: Vec<(AccountId, IdentityV3)> = old.identities.iter().map(|(a, i)| (a.clone(), i.clone())).collect();
-        list.sort_by_key(|(_, i)| i.number);
-        for (agent, id) in list {
-            let face = identity::derive(&id.seed);
-            if let Err(e) = identity::validate_fill(&face.cells) {
-                env::panic_str(&format!("re-derived face of {agent}: {e}"));
-            }
-            if let Some((other, _)) = issued.iter().find(|(_, c)| identity::cells_apart(c, &face.cells) < identity::MIN_CELLS) {
-                env::panic_str(&format!("re-derived face of {agent} is too close to {other}"));
-            }
-            issued.push((agent.clone(), face.cells.clone()));
-            identities.insert(
-                agent,
-                Identity {
-                    number: id.number,
-                    seed: id.seed,
-                    cells: face.cells,
-                    palette: face.palette,
-                    motto: id.motto,
-                    config_hash: id.config_hash,
-                    proof: id.proof,
-                    issuer: id.issuer,
-                    issued_at_ms: id.issued_at_ms,
-                },
-            );
-        }
-        old.identities.clear();
-        old.identities.flush();
-        Self {
+        let old: ContractV4 = env::state_read().expect("no state to migrate");
+        let mut list: Vec<(AccountId, u32, Vec<u8>)> = old.identities.iter().map(|(a, i)| (a.clone(), i.number, i.cells.clone())).collect();
+        list.sort_by_key(|(_, n, _)| *n);
+        let mut c = Self {
             owner: old.owner,
             verifiers: old.verifiers,
             threshold: old.threshold,
@@ -437,9 +402,43 @@ impl Contract {
             positions: old.positions,
             ratings: old.ratings,
             scouts: old.scouts,
-            identities,
+            identities: old.identities,
             next_identity: old.next_identity,
+            face_pages: Vector::new(StorageKey::FacePages),
+            agent_by_number: LookupMap::new(StorageKey::AgentByNumber),
+        };
+        for (agent, number, cells) in list {
+            c.index_face(identity::pack(&cells), number, agent);
         }
+        c
+    }
+
+    fn index_face(&mut self, packed: u64, number: u32, agent: AccountId) {
+        let len = self.face_pages.len();
+        match self.face_pages.get_mut(len.wrapping_sub(1)) {
+            Some(page) if page.len() < identity::PAGE => page.push(packed),
+            _ => self.face_pages.push(vec![packed]),
+        }
+        self.agent_by_number.insert(number, agent);
+    }
+
+    /// Closest issued face: (passport number, cells apart). Stops early on an exact repeat.
+    fn nearest_face(&self, packed: u64) -> Option<(u32, u32)> {
+        let mut best: Option<(u32, u32)> = None;
+        let mut number = 0u32;
+        for page in self.face_pages.iter() {
+            for f in page {
+                number += 1;
+                let d = identity::packed_apart(packed, *f);
+                if best.map_or(true, |(_, b)| d < b) {
+                    best = Some((number, d));
+                    if d == 0 {
+                        return best;
+                    }
+                }
+            }
+        }
+        best
     }
 
     // ----- identities -----
@@ -476,6 +475,7 @@ impl Contract {
             issued_at_ms: env::block_timestamp_ms(),
         };
         self.identities.insert(agent.clone(), id);
+        self.index_face(identity::pack(&face.cells), number, agent.clone());
         emit(
             "identity_issued",
             json!({
@@ -509,10 +509,8 @@ impl Contract {
             return reject(e, face);
         }
         let nearest = self
-            .identities
-            .iter()
-            .map(|(a, id)| (a.clone(), identity::cells_apart(&face.cells, &id.cells)))
-            .min_by_key(|(_, d)| *d);
+            .nearest_face(identity::pack(&face.cells))
+            .and_then(|(n, d)| self.agent_by_number.get(&n).map(|a| (a.clone(), d)));
         let clash = nearest.as_ref().filter(|(_, d)| *d < identity::MIN_CELLS);
         FaceCheck {
             ok: clash.is_none(),
@@ -522,6 +520,11 @@ impl Contract {
             distance: nearest.as_ref().map(|n| n.1),
             nearest: nearest.map(|n| n.0),
         }
+    }
+
+    /// Number of faces in the uniqueness index (equals the number of issued passports).
+    pub fn face_count(&self) -> u32 {
+        self.face_pages.iter().map(|p| p.len() as u32).sum()
     }
 
     pub fn get_identity(&self, agent: AccountId) -> Option<IdentityView> {

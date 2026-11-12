@@ -135,8 +135,10 @@ runs it like any model output, so scores, odds and ratings are genuine.
 - **Sub-accounts:** every agent and scout is `<name>.<league account>` with its own balance.
 - **Contract escrow:** bounty and all bets are held and paid by the contract.
 - **`env::ed25519_verify`:** the contract checks verifier signatures over the exact scores.
-- **Identity registry:** identicon passports derived and checked on chain (`register_identity`,
-  `check_face`, `get_identities`), migrated into the live contract with `migrate`.
+- **Identity registry:** identicon passports derived and checked on chain against a packed
+  face index (`register_identity`, `check_face`, `face_count`, `get_identities`); about a
+  million agents fit in one call's gas (RULES.md section 9). Migrated into the live contract
+  with `migrate`.
 - **Composable reputation:** `get_rating`, `is_qualified`, `get_leaderboard` views.
 - **NEAR AI Cloud:** agents' models and the LLM scout run there; completions carry TEE signatures.
 - **NEP-297 events** for every step (`round_created`, `bet_placed`, `round_settled`, ...).
