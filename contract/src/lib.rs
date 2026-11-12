@@ -5,6 +5,7 @@
 //! and hiring jobs with escrow. The rules live in RULES.md.
 
 pub mod attest;
+pub mod briefs;
 pub mod identity;
 pub mod legacy;
 pub mod math;
@@ -20,6 +21,7 @@ use near_sdk::store::{IterableMap, LookupMap, Vector};
 use near_sdk::{env, near, require, AccountId, BorshStorageKey, CurveType, PanicOnDefault, PublicKey};
 
 pub use attest::Attestation;
+pub use briefs::{Brief, BriefStatus, BriefView, ScoutRecord};
 pub use jobs::{Job, JobStatus, JobView};
 use legacy::{PositionV1, RoundV1};
 use math::INITIAL_RATING;
@@ -51,6 +53,9 @@ enum StorageKey {
     Tasks,
     Jobs,
     VerifierStakes,
+    Briefs,
+    JobBrief,
+    ScoutRecords,
 }
 
 #[near(serializers = [borsh, json])]
@@ -466,6 +471,7 @@ pub struct ConfigView {
     pub next_round_id: u64,
     pub first_lmsr_round: u64,
     pub next_job_id: u64,
+    pub next_brief_id: u64,
     /// Kept for clients of the V5 view.
     pub fee_bps: u16,
     pub min_pool: U128,
@@ -532,6 +538,11 @@ pub struct Contract {
     /// The uniqueness check reads these pages instead of every passport.
     face_pages: Vector<Vec<u64>>,
     agent_by_number: LookupMap<u32, AccountId>,
+    briefs: LookupMap<u64, Brief>,
+    next_brief_id: u64,
+    /// Jobs created from a brief's accepted offer.
+    job_brief: LookupMap<u64, u64>,
+    scout_records: LookupMap<AccountId, ScoutRecord>,
 }
 
 pub(crate) fn emit(event: &str, data: near_sdk::serde_json::Value) {
@@ -607,61 +618,47 @@ impl Contract {
             next_identity: 1,
             face_pages: Vector::new(StorageKey::FacePages),
             agent_by_number: LookupMap::new(StorageKey::AgentByNumber),
+            briefs: LookupMap::new(StorageKey::Briefs),
+            next_brief_id: 1,
+            job_brief: LookupMap::new(StorageKey::JobBrief),
+            scout_records: LookupMap::new(StorageKey::ScoutRecords),
         }
     }
 
-    /// Upgrades V5 state in place. Old rounds and positions stay where they are (read as
-    /// legacy); ratings and scout records move to the V6 layout with their history kept.
+    /// Upgrades V6 state in place: everything is kept; briefs start empty. (V5 to V6 was the
+    /// previous migration; V5 rounds stay readable as legacy.)
     #[private]
     #[init(ignore_state)]
     pub fn migrate() -> Self {
-        let mut old: legacy::ContractV5 = env::state_read().expect("no state to migrate");
-        let mut ratings = IterableMap::new(StorageKey::RatingsV2);
-        for (k, r) in old.ratings.iter() {
-            ratings.insert(
-                k.clone(),
-                Rating { rating: r.rating, rounds: r.rounds, wins: r.wins, last_round: r.last_round, ..Default::default() },
-            );
-        }
-        let mut scouts = IterableMap::new(StorageKey::ScoutsV2);
-        for (a, s) in old.scouts.iter() {
-            scouts.insert(a.clone(), Scout { staked: s.staked, returned: s.returned, bets: s.bets, wins: s.wins, ..Default::default() });
-        }
-        old.ratings.clear();
-        old.scouts.clear();
-        let params = Params {
-            fee_bps: old.fee_bps,
-            min_pool: U128(old.min_pool),
-            min_builder_stake: U128(old.min_builder_stake),
-            min_bet: U128(old.min_bet),
-            k_field: old.k_factor / 2,
-            k_task: old.k_factor / 2,
-            ..Default::default()
-        };
+        let old: legacy::ContractV6 = env::state_read().expect("no state to migrate");
         Self {
             owner: old.owner,
             verifiers: old.verifiers,
             threshold: old.threshold,
-            arbiters: vec![],
-            arbiter_threshold: 0,
-            inference_signers: vec![],
-            params,
+            arbiters: old.arbiters,
+            arbiter_threshold: old.arbiter_threshold,
+            inference_signers: old.inference_signers,
+            params: old.params,
             next_round_id: old.next_round_id,
-            first_lmsr_round: old.next_round_id,
-            legacy_rounds: old.rounds,
-            legacy_positions: old.positions,
-            rounds: LookupMap::new(StorageKey::RoundsV2),
-            positions: LookupMap::new(StorageKey::PositionsV2),
-            ratings,
-            scouts,
-            tasks: IterableMap::new(StorageKey::Tasks),
-            jobs: LookupMap::new(StorageKey::Jobs),
-            next_job_id: 1,
-            verifier_stakes: LookupMap::new(StorageKey::VerifierStakes),
+            first_lmsr_round: old.first_lmsr_round,
+            legacy_rounds: old.legacy_rounds,
+            legacy_positions: old.legacy_positions,
+            rounds: old.rounds,
+            positions: old.positions,
+            ratings: old.ratings,
+            scouts: old.scouts,
+            tasks: old.tasks,
+            jobs: old.jobs,
+            next_job_id: old.next_job_id,
+            verifier_stakes: old.verifier_stakes,
             identities: old.identities,
             next_identity: old.next_identity,
             face_pages: old.face_pages,
             agent_by_number: old.agent_by_number,
+            briefs: LookupMap::new(StorageKey::Briefs),
+            next_brief_id: 1,
+            job_brief: LookupMap::new(StorageKey::JobBrief),
+            scout_records: LookupMap::new(StorageKey::ScoutRecords),
         }
     }
 
@@ -741,6 +738,7 @@ impl Contract {
             next_round_id: self.next_round_id,
             first_lmsr_round: self.first_lmsr_round,
             next_job_id: self.next_job_id,
+            next_brief_id: self.next_brief_id,
             fee_bps: self.params.fee_bps,
             min_pool: self.params.min_pool,
             min_builder_stake: self.params.min_builder_stake,

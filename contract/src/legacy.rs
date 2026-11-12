@@ -5,7 +5,7 @@
 use near_sdk::store::{IterableMap, LookupMap, Vector};
 use near_sdk::{near, AccountId, PublicKey};
 
-use crate::{Identity, League, PayoutMode, RatingKey};
+use crate::{Identity, Job, League, Params, PayoutMode, Position, Rating, RatingKey, Round, Scout, TaskRecord, VerifierStake};
 
 #[near(serializers = [borsh])]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -113,4 +113,32 @@ pub fn legacy_claim_amount(round: &RoundV1, pos: &PositionV1) -> u128 {
         }
         PayoutMode::Pending => near_sdk::env::panic_str("round not finished"),
     }
+}
+
+/// The deployed V6 state (before briefs); read once by `migrate`.
+#[near(serializers = [borsh])]
+pub struct ContractV6 {
+    pub owner: AccountId,
+    pub verifiers: Vec<PublicKey>,
+    pub threshold: u8,
+    pub arbiters: Vec<PublicKey>,
+    pub arbiter_threshold: u8,
+    pub inference_signers: Vec<String>,
+    pub params: Params,
+    pub next_round_id: u64,
+    pub first_lmsr_round: u64,
+    pub legacy_rounds: LookupMap<u64, RoundV1>,
+    pub legacy_positions: LookupMap<(u64, AccountId), PositionV1>,
+    pub rounds: LookupMap<u64, Round>,
+    pub positions: LookupMap<(u64, AccountId), Position>,
+    pub ratings: IterableMap<RatingKey, Rating>,
+    pub scouts: IterableMap<AccountId, Scout>,
+    pub tasks: IterableMap<String, TaskRecord>,
+    pub jobs: LookupMap<u64, Job>,
+    pub next_job_id: u64,
+    pub verifier_stakes: LookupMap<PublicKey, VerifierStake>,
+    pub identities: IterableMap<AccountId, Identity>,
+    pub next_identity: u32,
+    pub face_pages: Vector<Vec<u64>>,
+    pub agent_by_number: LookupMap<u32, AccountId>,
 }

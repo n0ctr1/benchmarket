@@ -1,5 +1,4 @@
 use super::*;
-use crate::legacy::{ContractV5, EntryV1, PositionV1, RatingV1, RoundStatusV1, RoundV1, ScoutV1};
 use ed25519_dalek::{Signer, SigningKey};
 use near_sdk::json_types::Base64VecU8;
 use near_sdk::test_utils::{get_logs, VMContextBuilder};
@@ -821,99 +820,264 @@ fn poster_cancels_an_untaken_job() {
 // ----- migration -----
 
 #[test]
-fn migrate_keeps_v5_rounds_ratings_and_claims() {
-    ctx("owner.testnet", 0, 1_000);
-    let mut v5 = ContractV5 {
-        owner: acc("owner.testnet"),
-        verifiers: vec![near_pk(&key(1))],
-        threshold: 1,
-        fee_bps: 200,
-        min_pool: 10 * NEAR,
-        min_builder_stake: NEAR / 2,
-        min_bet: NEAR / 100,
-        k_factor: 32,
-        next_round_id: 11,
-        rounds: near_sdk::store::LookupMap::new(StorageKey::Rounds),
-        positions: near_sdk::store::LookupMap::new(StorageKey::Positions),
-        ratings: IterableMap::new(StorageKey::Ratings),
-        scouts: IterableMap::new(StorageKey::Scouts),
-        identities: IterableMap::new(StorageKey::IdentitiesV4),
-        next_identity: 1,
-        face_pages: Vector::new(StorageKey::FacePages),
-        agent_by_number: LookupMap::new(StorageKey::AgentByNumber),
+fn migrate_v6_keeps_everything_and_adds_briefs() {
+    let (mut c, keys) = setup(1);
+    let id = round_with_agents(&mut c);
+    lock(&mut c, id);
+    answer_all(&mut c, id);
+    settle_now(&mut c, &keys, id, 10, [9, 3, 0]);
+    let job = post(&mut c, 0);
+    let before = c.get_rating(acc("a.testnet"), SKILL.into()).rating;
+    // Write the V6 layout (everything but the brief fields) and migrate.
+    let v6 = legacy::ContractV6 {
+        owner: c.owner.clone(),
+        verifiers: c.verifiers.clone(),
+        threshold: c.threshold,
+        arbiters: c.arbiters.clone(),
+        arbiter_threshold: c.arbiter_threshold,
+        inference_signers: c.inference_signers.clone(),
+        params: c.params.clone(),
+        next_round_id: c.next_round_id,
+        first_lmsr_round: c.first_lmsr_round,
+        legacy_rounds: std::mem::replace(&mut c.legacy_rounds, LookupMap::new(StorageKey::Rounds)),
+        legacy_positions: std::mem::replace(&mut c.legacy_positions, LookupMap::new(StorageKey::Positions)),
+        rounds: std::mem::replace(&mut c.rounds, LookupMap::new(StorageKey::RoundsV2)),
+        positions: std::mem::replace(&mut c.positions, LookupMap::new(StorageKey::PositionsV2)),
+        ratings: std::mem::replace(&mut c.ratings, IterableMap::new(StorageKey::RatingsV2)),
+        scouts: std::mem::replace(&mut c.scouts, IterableMap::new(StorageKey::ScoutsV2)),
+        tasks: std::mem::replace(&mut c.tasks, IterableMap::new(StorageKey::Tasks)),
+        jobs: std::mem::replace(&mut c.jobs, LookupMap::new(StorageKey::Jobs)),
+        next_job_id: c.next_job_id,
+        verifier_stakes: std::mem::replace(&mut c.verifier_stakes, LookupMap::new(StorageKey::VerifierStakes)),
+        identities: std::mem::replace(&mut c.identities, IterableMap::new(StorageKey::IdentitiesV4)),
+        next_identity: c.next_identity,
+        face_pages: std::mem::replace(&mut c.face_pages, Vector::new(StorageKey::FacePages)),
+        agent_by_number: std::mem::replace(&mut c.agent_by_number, LookupMap::new(StorageKey::AgentByNumber)),
     };
-    let entry = |a: &str, pool: u128, score: u32, delta: i64| EntryV1 {
-        agent: acc(a),
-        builder: acc("bb.testnet"),
-        league: League::Open,
-        config_hash: "cfg".into(),
-        pool,
-        p_ppm: 500_000,
-        market_ppm: 500_000,
-        answer_hash: Some("h".into()),
-        answered_at_ms: Some(1),
-        score: Some(score),
-        rating_before: 150_000,
-        rating_delta: delta,
-    };
-    v5.rounds.insert(
-        10,
-        RoundV1 {
-            id: 10,
-            manager: acc("manager.testnet"),
-            skill: SKILL.into(),
-            task_ref: "eval-expr".into(),
-            tests_hash: "h".into(),
-            bet_deadline_ms: 1,
-            max_agents: 5,
-            bounty: 0,
-            status: RoundStatusV1::Settled,
-            entries: vec![entry("echo.testnet", 2 * NEAR, 20, 800), entry("delta.testnet", 2 * NEAR, 20, -800)],
-            total_pool: 4 * NEAR,
-            fee: 0,
-            net: 4 * NEAR,
-            payout_mode: PayoutMode::Winners,
-            winner: Some(0),
-            total_tests: 20,
-            created_at_ms: 1,
-            locked_at_ms: Some(1),
-            settled_at_ms: Some(2),
-        },
-    );
-    v5.positions.insert((10, acc("fav.testnet")), PositionV1 { amounts: vec![NEAR, 0], claimed: false });
-    v5.ratings.insert(RatingKey { skill: SKILL.into(), agent: acc("echo.testnet") }, RatingV1 { rating: 153_600, rounds: 7, wins: 5, last_round: 10 });
-    v5.scouts.insert(acc("fav.testnet"), ScoutV1 { staked: 3 * NEAR, returned: 4 * NEAR, bets: 9, wins: 4 });
-    v5.rounds.flush();
-    v5.positions.flush();
-    v5.ratings.flush();
-    v5.scouts.flush();
-    env::state_write(&v5);
-    std::mem::forget(v5);
-
+    std::mem::forget(c);
+    let mut v6 = v6;
+    v6.legacy_rounds.flush();
+    v6.legacy_positions.flush();
+    v6.rounds.flush();
+    v6.positions.flush();
+    v6.ratings.flush();
+    v6.scouts.flush();
+    v6.tasks.flush();
+    v6.jobs.flush();
+    v6.verifier_stakes.flush();
+    v6.identities.flush();
+    v6.face_pages.flush();
+    v6.agent_by_number.flush();
+    env::state_write(&v6);
+    std::mem::forget(v6);
     ctx("league.testnet", 0, 2_000);
-    let mut m = Contract::migrate();
-    let cfg = m.get_config();
-    assert_eq!(cfg.first_lmsr_round, 11);
-    assert_eq!((cfg.params.k_field, cfg.params.k_task), (16, 16));
-    let old = m.get_round(10).unwrap();
-    assert_eq!(old.market, "parimutuel");
-    assert_eq!(old.winner, Some(acc("echo.testnet")));
-    assert_eq!(m.get_rounds(None, None).len(), 1);
-    let r = m.get_rating(acc("echo.testnet"), SKILL.into());
-    assert_eq!((r.rating, r.rounds, r.wins, r.attested), (153_600, 7, 5, 0));
-    let s = m.get_scout(acc("fav.testnet"));
-    assert_eq!((s.staked.0, s.bets, s.skill_ppm), (3 * NEAR, 9, 0));
-    // The old position still claims under the old rules: 1 of 2 NEAR on the winner of a 4 NEAR net.
-    assert_eq!(claim(&mut m, "fav.testnet", 10), 2 * NEAR);
-    // New rounds continue the numbering in the new storage.
-    ctx("owner.testnet", 0, 2_000);
-    m.set_params(Params { dispute_window_ms: 0, unstake_delay_ms: 3 * 24 * 3_600_000, ..m.get_config().params });
-    ctx("staker.testnet", NEAR, 2_000);
-    m.stake_verifier(near_pk(&key(1)));
-    curate(&mut m);
-    let id = round_with_agents(&mut m);
-    assert_eq!(id, 11);
-    assert_eq!(m.get_round(11).unwrap().market, "lmsr");
+    let m = Contract::migrate();
+    assert_eq!(m.get_round(id).unwrap().status, RoundStatus::Settled);
+    assert_eq!(m.get_rating(acc("a.testnet"), SKILL.into()).rating, before);
+    assert_eq!(m.get_job(job).unwrap().status, JobStatus::Open);
+    assert_eq!(m.get_tasks(None, None).len(), 5);
+    assert_eq!(m.get_identities(None, None).len(), 3);
+    assert_eq!(m.get_verifier_stakes().len(), 3);
+    assert!(m.get_briefs(None, None).is_empty());
+    assert_eq!(m.get_config().next_brief_id, 1);
+}
+
+// ----- briefs: scouts find the agent for a client's task -----
+
+const CLIENT: &str = "client.testnet";
+
+fn post_brief(c: &mut Contract) -> u64 {
+    ctx(CLIENT, 3 * NEAR + NEAR + NEAR / 2 + NEAR, 3_000_000);
+    c.post_brief(
+        SKILL.into(),
+        "I need a parser for the CSV exports of my shop.".into(),
+        "client-csv".into(),
+        "sha256:client".into(),
+        U128(3 * NEAR),
+        U128(NEAR),
+        U128(NEAR / 2),
+        U128(NEAR),
+        U128(NEAR / 10),
+        600_000,
+        600_000,
+        3_600_000,
+        Some(900_000),
+        None,
+        None,
+    )
+}
+
+fn nominate(c: &mut Contract, brief: u64, scout: &str, agent: &str, task: &str, stake: u128) {
+    ctx(scout, stake, 3_000_100);
+    c.nominate(brief, acc(agent), task.into());
+}
+
+/// Brief with nominations: s1 and s3 back a (on t1 and t2), s2 backs b on t1, s4 backs c on t2.
+fn scouted(c: &mut Contract) -> u64 {
+    for a in AGENTS {
+        if c.get_identity(acc(a)).is_none() {
+            issue(c, a);
+        }
+    }
+    let id = post_brief(c);
+    nominate(c, id, "s1.testnet", "a.testnet", "t1", NEAR);
+    nominate(c, id, "s2.testnet", "b.testnet", "t1", NEAR / 2);
+    nominate(c, id, "s3.testnet", "a.testnet", "t2", 3 * NEAR);
+    nominate(c, id, "s4.testnet", "c.testnet", "t2", NEAR / 5);
+    id
+}
+
+/// Runs the tryout with scores [a, b, c] and returns its round id.
+fn tryout(c: &mut Contract, keys: &[SigningKey], brief: u64, v: [u32; 3]) -> u64 {
+    ctx("anyone.testnet", 0, 3_000_000 + 600_000);
+    c.start_tryout(brief);
+    let round = c.get_brief(brief).unwrap().tryout_round.unwrap();
+    let start = 3_600_000 + 600_000;
+    ctx("anyone.testnet", 0, start);
+    c.lock_round(round);
+    for (i, a) in AGENTS.iter().enumerate() {
+        ctx(a, 0, start + 10 + i as u64);
+        c.submit_answer(round, format!("tryout-{a}"), None);
+    }
+    let s = scores(v);
+    let sig = sign(&keys[0], round, 10, &s);
+    ctx("verifier.testnet", 0, start + 100);
+    c.settle(round, 10, s, vec![sig]);
+    ctx("anyone.testnet", 0, start + 200);
+    c.offer(brief);
+    round
+}
+
+/// Accept, answer and score the client's job; returns the job id.
+fn deliver(c: &mut Contract, keys: &[SigningKey], brief: u64, score: u32) -> u64 {
+    ctx(CLIENT, 0, 5_000_000);
+    let job = c.accept_offer(brief);
+    let agent = c.get_job(job).unwrap().agent.unwrap();
+    ctx(agent.as_str(), 0, 5_000_100);
+    c.submit_job(job, "sha256:client-answer".into(), None);
+    ctx("verifier.testnet", 0, 5_000_200);
+    c.settle_job(job, 10, score, vec![job_sig(&keys[0], job, 10, agent.as_str(), score)]);
+    job
+}
+
+#[test]
+fn brief_funnel_pays_the_scouts_who_found_the_agent() {
+    let (mut c, keys) = setup(1);
+    let id = scouted(&mut c);
+    let round = tryout(&mut c, &keys, id, [9, 6, 2]);
+    // Most stake sat behind t2 (3.2 NEAR vs 1.5): the tryout ran there, rated, with all nominees.
+    let r = c.get_round(round).unwrap();
+    assert_eq!(r.task_ref, "t2");
+    assert!(r.rated);
+    assert_eq!(r.entries.len(), 3);
+    assert_eq!(r.manager, acc(CLIENT));
+    let b = c.get_brief(id).unwrap();
+    assert_eq!(b.status, BriefStatus::Offered);
+    assert_eq!(b.offered, Some(acc("a.testnet")));
+
+    let job = deliver(&mut c, &keys, id, 10);
+    assert_eq!(c.get_job(job).unwrap().status, JobStatus::Paid);
+    let b = c.get_brief(id).unwrap();
+    assert_eq!(b.status, BriefStatus::Delivered);
+    // a's scouts split the 1 NEAR reward 1:3 by stake; the others get their stake back.
+    let pay: Vec<u128> = b.nominations.iter().map(|n| n.payout.0).collect();
+    assert_eq!(pay, vec![NEAR + NEAR / 4, NEAR / 2, 3 * NEAR + 3 * NEAR / 4, NEAR / 5]);
+    let rec = c.get_scout_record(acc("s3.testnet"));
+    assert_eq!((rec.nominated, rec.hired, rec.delivered, rec.earned.0), (1, 1, 1, 3 * NEAR / 4));
+    assert_eq!(c.get_scout_record(acc("s2.testnet")).hired, 0);
+}
+
+#[test]
+fn failed_hire_costs_its_scouts_their_stake() {
+    let (mut c, keys) = setup(1);
+    let id = scouted(&mut c);
+    tryout(&mut c, &keys, id, [9, 6, 2]);
+    deliver(&mut c, &keys, id, 5);
+    let b = c.get_brief(id).unwrap();
+    assert_eq!(b.status, BriefStatus::Failed);
+    let pay: Vec<u128> = b.nominations.iter().map(|n| n.payout.0).collect();
+    assert_eq!(pay, vec![0, NEAR / 2, 0, NEAR / 5]);
+    let rec = c.get_scout_record(acc("s1.testnet"));
+    assert_eq!((rec.failed, rec.slashed.0), (1, NEAR));
+    assert!(get_logs().iter().any(|l| l.contains("brief_closed")));
+}
+
+#[test]
+fn tied_tryout_offers_the_higher_rated_winner() {
+    let (mut c, keys) = setup(1);
+    veteran(&mut c, &keys);
+    let id = scouted(&mut c);
+    // b ties a on the tryout, but a has the better record.
+    tryout(&mut c, &keys, id, [8, 8, 1]);
+    assert!(rating(&c, "a.testnet") > rating(&c, "b.testnet"));
+    assert_eq!(c.get_brief(id).unwrap().offered, Some(acc("a.testnet")));
+}
+
+#[test]
+fn single_nominee_is_offered_without_a_tryout_and_can_be_declined() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet");
+    let id = post_brief(&mut c);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "t1", NEAR);
+    ctx("anyone.testnet", 0, 3_600_000);
+    c.start_tryout(id);
+    let b = c.get_brief(id).unwrap();
+    assert_eq!((b.status, b.tryout_round), (BriefStatus::Offered, None));
+    ctx(CLIENT, 0, 3_700_000);
+    c.decline_offer(id);
+    let b = c.get_brief(id).unwrap();
+    assert_eq!(b.status, BriefStatus::Declined);
+    assert_eq!(b.nominations[0].payout.0, NEAR);
+}
+
+#[test]
+fn brief_without_nominations_is_refunded() {
+    let (mut c, _) = setup(1);
+    let id = post_brief(&mut c);
+    ctx("anyone.testnet", 0, 3_600_000);
+    c.start_tryout(id);
+    assert_eq!(c.get_brief(id).unwrap().status, BriefStatus::Cancelled);
+}
+
+#[test]
+fn hire_that_misses_its_deadline_fails_the_brief() {
+    let (mut c, keys) = setup(1);
+    let id = scouted(&mut c);
+    tryout(&mut c, &keys, id, [9, 6, 2]);
+    ctx(CLIENT, 0, 5_000_000);
+    let job = c.accept_offer(id);
+    ctx("anyone.testnet", 0, 5_000_000 + 3_600_001);
+    c.release_job(job);
+    assert_eq!(c.get_job(job).unwrap().status, JobStatus::Failed);
+    assert_eq!(c.get_brief(id).unwrap().status, BriefStatus::Failed);
+}
+
+#[test]
+#[should_panic(expected = "the tryout task must be a curated task")]
+fn tryout_task_must_be_curated() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet");
+    let id = post_brief(&mut c);
+    ctx("owner.testnet", 0, 1_000);
+    round_on(&mut c, "loose-task", false);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "loose-task", NEAR);
+}
+
+#[test]
+#[should_panic(expected = "the client cannot nominate")]
+fn client_cannot_nominate() {
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet");
+    let id = post_brief(&mut c);
+    nominate(&mut c, id, CLIENT, "a.testnet", "t1", NEAR);
+}
+
+#[test]
+#[should_panic(expected = "attach exactly")]
+fn brief_escrow_must_match() {
+    let (mut c, _) = setup(1);
+    ctx(CLIENT, NEAR, 3_000_000);
+    c.post_brief(SKILL.into(), "x".into(), "client-csv".into(), "h".into(), U128(3 * NEAR), U128(0), U128(0), U128(0), U128(NEAR / 10), 600_000, 600_000, 600_000, None, None, None);
 }
 
 /// Signature produced by the TypeScript verifier (packages/shared signMessage) for seed [7; 32].

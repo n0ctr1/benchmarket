@@ -199,6 +199,19 @@ impl Contract {
             let r = self.ratings.get_mut(&RatingKey { skill: job.skill.clone(), agent: agent.clone() }).unwrap();
             r.jobs_failed += 1;
         }
+        if let Some(brief_id) = self.job_brief.get(&job_id).copied() {
+            // A hire from a brief was offered to this agent only: missing the deadline fails it.
+            let j = self.job_mut(job_id);
+            j.status = JobStatus::Failed;
+            j.score = Some(0);
+            j.rating_delta = delta;
+            j.closed_at_ms = Some(env::block_timestamp_ms());
+            let (poster, budget) = (j.poster.clone(), j.budget);
+            emit("job_closed", json!({ "job_id": job_id, "agent": agent, "passed": false, "reason": "deadline missed" }));
+            Promise::new(poster).transfer(NearToken::from_yoctonear(budget)).detach();
+            self.close_brief(brief_id, briefs::Outcome::Failed, 0);
+            return;
+        }
         let j = self.job_mut(job_id);
         j.status = JobStatus::Open;
         j.agent = None;
@@ -307,6 +320,9 @@ impl Contract {
         emit("job_cancelled", json!({ "job_id": job_id, "reason": "dispute expired" }));
         Promise::new(poster).transfer(NearToken::from_yoctonear(budget)).detach();
         Promise::new(d.by).transfer(NearToken::from_yoctonear(d.bond)).detach();
+        if let Some(brief_id) = self.job_brief.get(&job_id).copied() {
+            self.close_brief(brief_id, briefs::Outcome::Void, 0);
+        }
     }
 
     pub fn get_job(&self, job_id: u64) -> Option<JobView> {
@@ -384,6 +400,9 @@ impl Contract {
             }
         } else {
             Promise::new(job.poster).transfer(NearToken::from_yoctonear(job.budget)).detach();
+        }
+        if let Some(brief_id) = self.job_brief.get(&job_id).copied() {
+            self.close_brief(brief_id, if passed { briefs::Outcome::Delivered } else { briefs::Outcome::Failed }, 0);
         }
     }
 }
