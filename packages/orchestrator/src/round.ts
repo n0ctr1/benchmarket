@@ -46,6 +46,8 @@ export interface RoundOptions {
   lie?: boolean;
   /** Play a round that already exists and is trading (a brief's tryout) instead of creating one. */
   existingRoundId?: number;
+  /** Set when the caller committed fresh tests for an existing round (a family tryout). */
+  freshTests?: boolean;
   /** Extra balance scouts need on top of their bet (brief nominations). */
   extraScoutFunds?: bigint;
   log?: (line: string) => void;
@@ -111,17 +113,22 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   // 1. Create. The deadline is a generous upper bound; the manager locks as soon as the last
   // scout has bought.
   const deadlineMs = Date.now() + Math.max(marketSeconds * 1000, 15 * 60_000);
+  // A family task runs on fresh hidden tests: the verifier draws a secret seed, generates them
+  // and the round commits their hash. The seed is published with the report.
+  const record = existing ? null : (await chain.getTasks()).find((t) => t.task_ref === (opts.taskRef ?? task.id));
+  const fresh = !existing && task.familyHash && (record ? record.tests_hash === task.familyHash : false) ? await verifier.prepareTests(task.id) : null;
   const roundId = existing ? existing.id : Number(
     await chain.createRound(league, {
       skill: task.skill,
       taskRef: opts.taskRef ?? task.id,
-      testsHash: task.testsHash,
+      testsHash: fresh ?? task.testsHash,
       betDeadlineMs: deadlineMs,
       maxAgents: Math.min(16, agents.length + (opts.openSeconds ? 4 : 0)),
       bounty: config.bounty,
       attested,
     }),
   );
+  if (fresh) verifier.bindTests("round", roundId, fresh);
   const tag = roundTag("round", roundId);
   const log: RoundLog = { roundId, taskId, events: [] };
   const note = (kind: string, data: Record<string, unknown>) => {
@@ -130,7 +137,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   };
   const created = (await chain.getRound(roundId))!;
   say(`round ${roundId}: ${task.title} (${task.id}), bounty ${formatNear(created.bounty)} NEAR${created.attested ? ", attested answers only" : ""}`);
-  say(`  task difficulty ${(created.task_rating_before / 100).toFixed(1)}${created.rated ? "" : " (uncurated: no rating changes)"}`);
+  say(`  task difficulty ${(created.task_rating_before / 100).toFixed(1)}${created.rated ? "" : " (uncurated: no rating changes)"}${fresh || opts.freshTests ? ", fresh hidden tests from a secret seed" : ""}`);
   note("round_created", { task: publicView(task), attested: created.attested, task_rating: created.task_rating_before, tryout: !!existing });
   if (existing) {
     say(`  tryout: ${existing.entries.map((e) => short(e.agent)).join(", ")} entered by the scouts who nominated them; market maker funded with ${formatNear(existing.subsidy)} NEAR from the brief`);

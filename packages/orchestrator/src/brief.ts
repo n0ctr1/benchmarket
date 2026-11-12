@@ -6,6 +6,7 @@ import { workJob } from "./job.js";
 import { agentAccount, ROSTER } from "./roster.js";
 import { runRound, type Solver } from "./round.js";
 import { SCRIPTED_SCOUTS, type Scout } from "./scouts.js";
+import { CATEGORIES } from "./categories.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const short = (a: string) => a.split(".")[0];
@@ -13,9 +14,11 @@ const short = (a: string) => a.split(".")[0];
 export interface BriefOptions {
   chain: LeagueChain;
   verifier: Verifier;
-  /** The client's own task (its hidden tests stay with the verifier). */
+  /** The client's own task. It is handed over only to the agent it hires. */
   taskId: string;
   summary: string;
+  /** Category from the league's list; by default the one the client's task is filed under. */
+  category?: string;
   solver: Solver;
   scouts?: Scout[];
   budget: bigint;
@@ -46,12 +49,13 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
   const sent = await chain.topUp(league, client, escrow + near("0.05"));
   if (sent > 0n) say(`  topped up the client with ${formatNear(sent)} NEAR`);
 
+  const category = opts.category ?? CATEGORIES.find((c) => c.tasks.includes(task.id))?.id;
+  const cat = CATEGORIES.find((c) => c.id === category);
   const briefId = Number(
     await chain.postBrief(client, {
       skill: task.skill,
       summary: opts.summary,
-      taskRef: `${task.id}@brief`,
-      testsHash: task.testsHash,
+      category,
       budget: opts.budget,
       scoutReward: opts.scoutReward,
       tryoutBounty: bounty,
@@ -64,11 +68,14 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
       attested: !!solver.attests,
     }),
   );
-  say(`brief ${briefId}: "${opts.summary}"`);
+  say(`brief ${briefId}: "${opts.summary}"${cat ? ` [${cat.title}]` : ""}`);
+  say("  the client keeps its task to itself: only the agent it hires will see it");
   say(`  escrow: budget ${formatNear(opts.budget)}, scout reward ${formatNear(opts.scoutReward)}, tryout ${formatNear(bounty)} bounty + ${formatNear(subsidy)} market NEAR`);
 
-  // Scouts see the brief, the curated tasks (not the client's own) and every agent with a passport.
-  const curated = (await chain.getTasks()).filter((t) => t.curated && !t.retired && t.skill === task.skill && t.task_ref !== task.id);
+  // Scouts see the brief, the curated tasks of its category and every agent with a passport. (In
+  // this demo the league also knows the client's task, and keeps it out of the tryout.)
+  const curated = (await chain.getTasks()).filter((t) => t.curated && !t.retired && t.skill === task.skill && t.task_ref !== task.id && (!category || t.category === category));
+  if (curated.length === 0) throw new Error(`no curated tryout task in category ${category}`);
   const tryoutTasks = curated.map((t) => {
     const p = publicView(loadTask(t.task_ref));
     return { id: t.task_ref, title: p.title, statement: p.statement, rating: t.rating };
@@ -83,7 +90,7 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
   for (const scout of scouts) {
     if (!scout.nominate) continue;
     const account = `${scout.id}.${league}`;
-    const picks = await scout.nominate({ summary: opts.summary, skill: task.skill }, field, tryoutTasks);
+    const picks = await scout.nominate({ summary: opts.summary, skill: task.skill, category: cat ? `${cat.title}: ${cat.description}` : undefined }, field, tryoutTasks);
     await chain.topUp(league, account, config.scoutStake * BigInt(picks.length) + config.scoutBet + near("0.05"));
     for (const p of picks) {
       try {
@@ -103,8 +110,13 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
     say(`  nominations close in ${Math.ceil(wait / 1000)}s`);
     await sleep(wait);
   }
-  await chain.startTryout(league, briefId);
+  // A family tryout runs on fresh tests the verifier generates now; their hash goes on chain.
+  const next = await chain.nextTryoutTask(briefId);
+  const nextRecord = next ? (await chain.getTasks()).find((t) => t.task_ref === next) : undefined;
+  const fresh = next && nextRecord?.tests_hash.startsWith("family:") ? await verifier.prepareTests(next) : undefined;
+  await chain.startTryout(league, briefId, fresh);
   let b = (await chain.getBrief(briefId))!;
+  if (fresh && b.tryout_round) verifier.bindTests("round", b.tryout_round, fresh);
   if (b.tryout_round) {
     say(`  tryout: round ${b.tryout_round} on ${b.tryout_task} (most stake behind it)`);
     await runRound({
@@ -114,6 +126,7 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
       solver,
       scouts,
       existingRoundId: b.tryout_round,
+      freshTests: !!fresh,
       log: (l) => say(`  | ${l}`),
     });
     await chain.offer(league, briefId);
@@ -125,8 +138,9 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
   }
   const hired = ROSTER.find((a) => agentAccount(a, league) === b.offered);
   say(`  offer: ${short(b.offered!)} (best of the tryout)`);
-  const jobId = Number(await chain.acceptOffer(client, briefId));
-  say(`  the client accepts: job ${jobId} on its own task ${b.task_ref}, ${formatNear(b.budget)} NEAR in escrow`);
+  const clientRef = `${task.id}@brief-${briefId}`;
+  const jobId = Number(await chain.acceptOffer(client, briefId, clientRef, task.testsHash));
+  say(`  the client accepts and hands over its task (${clientRef}) to ${short(b.offered!)} only: job ${jobId}, ${formatNear(b.budget)} NEAR in escrow`);
   if (!hired) {
     say("  the hire is an outside agent; it does the job on its own");
     return (await chain.getBrief(briefId))!;

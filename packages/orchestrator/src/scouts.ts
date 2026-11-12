@@ -28,6 +28,8 @@ export interface Scout {
 export interface BriefInfo {
   summary: string;
   skill: string;
+  /** The category the client picked, with its description. */
+  category?: string;
 }
 
 /** A curated task a scout may pick for the tryout. */
@@ -50,7 +52,7 @@ const words = (t: string) => new Set(t.toLowerCase().match(/[a-z]{3,}/g) ?? []);
 
 /** The curated task closest to the brief by shared words; ties go to the harder task. */
 export function closestTask(brief: BriefInfo, tasks: TryoutTask[]): TryoutTask {
-  const want = words(brief.summary);
+  const want = words(`${brief.summary} ${brief.category ?? ""}`);
   const score = (t: TryoutTask) => [...words(`${t.title} ${t.statement}`)].filter((w) => want.has(w)).length;
   return [...tasks].sort((a, b) => score(b) - score(a) || b.rating - a.rating || a.id.localeCompare(b.id))[0];
 }
@@ -180,13 +182,13 @@ Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three senten
       };
     },
     async nominate(brief, field, tasks) {
-      const system = `You are a scout in Agent League. A client needs an AI agent for a task. You put agents forward for a tryout and stake NEAR on each pick:
+      const system = `You are a scout in Agent League. A client needs an AI agent for a task; it describes the task but shows it only to the agent it hires. First work out what kind of task it is. You put agents forward for a tryout and stake NEAR on each pick:
 if the agent you nominated is hired and delivers, you share the client's scout reward; if it fails, you lose your stake. You also choose the curated tryout task
 that best predicts success on the client's task. Use only the information given.
 Reply with JSON only: {"nominations": [{"agent": "<agent id>", "task": "<task id>", "reasoning": "<one or two sentences>"}]} with one or two nominations.`;
       const rows = field.map((f) => ({ id: f.config.id, model: f.config.model, claimed_strengths: f.config.strengths, rating: +(f.rating / 100).toFixed(1), rounds_played: f.rounds }));
       const taskRows = tasks.map((t) => ({ id: t.id, title: t.title, difficulty: +(t.rating / 100).toFixed(1), statement: t.statement.slice(0, 400) }));
-      const user = `Client brief (${brief.skill}): ${brief.summary}\n\nCurated tryout tasks:\n${JSON.stringify(taskRows, null, 2)}\n\nAgents:\n${JSON.stringify(rows, null, 2)}`;
+      const user = `Client brief (${brief.skill}): ${brief.summary}${brief.category ? `\nCategory the client picked: ${brief.category}` : ""}\n\nCurated tryout tasks:\n${JSON.stringify(taskRows, null, 2)}\n\nAgents:\n${JSON.stringify(rows, null, 2)}`;
       let text: string | undefined;
       let reason: string;
       try {

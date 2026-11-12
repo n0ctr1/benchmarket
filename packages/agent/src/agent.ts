@@ -44,7 +44,9 @@ export type Brain = (system: string, prompt: string) => Promise<Completion>;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function nearAiBrain(model: string, apiKey: string, baseUrl: string): Brain {
-  const headers = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
+  // Canonical model ids and uncompressed bodies: models NEAR AI hosts in a TEE then sign from
+  // their own enclave, over exactly the bytes we keep.
+  const headers = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "x-no-aliasing": "true", "Accept-Encoding": "identity" };
   return async (system, prompt) => {
     const request = JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], max_tokens: 32000 });
     const res = await fetch(`${baseUrl}/chat/completions`, { method: "POST", headers, body: request, signal: AbortSignal.timeout(300_000) });
@@ -56,7 +58,7 @@ export function nearAiBrain(model: string, apiKey: string, baseUrl: string): Bra
     let signature: Completion["signature"] = null;
     for (let i = 0; i < 4 && !signature; i++) {
       await sleep(1500 * (i + 1));
-      const s = await fetch(`${baseUrl}/signature/${encodeURIComponent(j.id)}?model=${encodeURIComponent(model)}&signing_algo=ed25519`, { headers }).catch(() => null);
+      const s = await fetch(`${baseUrl}/signature/${encodeURIComponent(j.id)}?model=${encodeURIComponent(model)}&signing_algo=ecdsa`, { headers }).catch(() => null);
       if (s?.ok) signature = await s.json();
     }
     return { content, request, response, signature };

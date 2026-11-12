@@ -19,8 +19,8 @@ export interface ChatResult {
 }
 
 /**
- * Signature over `<model>:<sha256(request)>:<sha256(response)>` produced by the provider's
- * TEE. Lets anyone check that this exact completion came from the claimed model.
+ * NEAR AI's signature over `[<model>:]<sha256(request)>:<sha256(response)>`: from the model's own
+ * enclave when NEAR AI hosts it in a TEE (the text names the model), from the gateway otherwise.
  */
 export interface CompletionSignature {
   text: string;
@@ -39,7 +39,9 @@ export class ChatError extends Error {
 function headers(): Record<string, string> {
   const key = config.nearAiApiKey;
   if (!key) throw new Error("NEAR_AI_API_KEY is not set (see .env.example)");
-  return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  // x-no-aliasing: a canonical model id, so models NEAR AI hosts in a TEE sign from their own
+  // enclave; identity encoding, because the signature covers the uncompressed body.
+  return { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "x-no-aliasing": "true", "Accept-Encoding": "identity" };
 }
 
 export async function chat(
@@ -76,7 +78,9 @@ export async function chat(
  * few times; returns null if the cloud has none.
  */
 export async function completionSignature(id: string, model: string, attempts = 4): Promise<CompletionSignature | null> {
-  const url = `${config.nearAiBaseUrl}/signature/${encodeURIComponent(id)}?model=${encodeURIComponent(model)}&signing_algo=ed25519`;
+  // ECDSA: the model's enclave key for models NEAR AI hosts in a TEE (signature_kind
+  // provider_tee, the text names the model), the gateway's key otherwise.
+  const url = `${config.nearAiBaseUrl}/signature/${encodeURIComponent(id)}?model=${encodeURIComponent(model)}&signing_algo=ecdsa`;
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await fetch(url, { headers: headers(), signal: AbortSignal.timeout(20_000) });
@@ -95,4 +99,24 @@ export async function completionSignature(id: string, model: string, attempts = 
 /** The contract's attestation argument for a signature. */
 export function attestationArg(s: CompletionSignature) {
   return { text: s.text, signature: s.signature, signer: s.signing_address };
+}
+
+/** Signing keys from NEAR AI's attestation reports: the gateway's and each listed model's enclave. */
+export async function attestedSigners(models: string[]): Promise<{ gateway: string[]; models: Array<{ model: string; key: string }> }> {
+  const out = { gateway: [] as string[], models: [] as Array<{ model: string; key: string }> };
+  const get = async (q: string) => {
+    const r = await fetch(`${config.nearAiBaseUrl}/attestation/report?${q}`, { headers: headers(), signal: AbortSignal.timeout(30_000) }).catch(() => null);
+    return r?.ok ? ((await r.json()) as { gateway_attestation?: { signing_address?: string }; model_attestations?: Array<{ model_name?: string; signing_address?: string }> }) : null;
+  };
+  for (const algo of ["ed25519", "ecdsa"]) {
+    const g = (await get(`signing_algo=${algo}`))?.gateway_attestation?.signing_address;
+    if (g) out.gateway.push(g.toLowerCase());
+  }
+  for (const m of models) {
+    const rep = await get(`model=${encodeURIComponent(m)}&signing_algo=ecdsa`);
+    for (const a of rep?.model_attestations ?? []) {
+      if (a.signing_address && a.model_name === m) out.models.push({ model: m, key: a.signing_address.toLowerCase() });
+    }
+  }
+  return out;
 }

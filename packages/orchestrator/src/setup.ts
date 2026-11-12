@@ -3,6 +3,8 @@ import path from "node:path";
 import { generateKeyPair, listTaskIds, loadTask, publicKeyOf } from "@agent-league/shared";
 import { LeagueChain } from "./chain.js";
 import { config, formatNear, near, REPO_ROOT } from "./config.js";
+import { attestedSigners } from "./nearai.js";
+import { CATEGORIES } from "./categories.js";
 import { agentAccount, ROSTER } from "./roster.js";
 import { ALL_SCOUT_IDS } from "./scouts.js";
 
@@ -102,6 +104,29 @@ export async function configure(chain = new LeagueChain()): Promise<void> {
     console.log(`curated task ${id}`);
   }
 
+  // Tasks with a generator become families: every round runs on fresh tests from a new seed.
+  const tasksNow = new Map((await chain.getTasks()).map((t) => [t.task_ref, t]));
+  for (const id of listTaskIds()) {
+    const t = loadTask(id);
+    const have = tasksNow.get(id);
+    if (t.familyHash && have?.curated && have.tests_hash !== t.familyHash) {
+      await chain.setTaskTests(league, id, t.familyHash);
+      console.log(`task ${id} is now a family: fresh tests every round`);
+    }
+  }
+
+  // Categories clients pick from, with their tasks.
+  const cats = new Map((await chain.getCategories().catch(() => [])).map((c) => [c.id, c]));
+  for (const c of CATEGORIES) {
+    if (!cats.has(c.id)) {
+      await chain.setCategory(league, c.id, c.title, c.description);
+      console.log(`category ${c.id}`);
+    }
+    for (const t of c.tasks) {
+      if (!cats.get(c.id)?.skill_tasks.includes(t) && tasksNow.get(t)?.curated) await chain.setTaskCategory(league, t, c.id);
+    }
+  }
+
   // Testnet-sized parameters: short dispute window, small bonds and stakes.
   const window = config.disputeWindowSeconds * 1000;
   const want = {
@@ -140,27 +165,15 @@ export async function configure(chain = new LeagueChain()): Promise<void> {
     console.log(`arbiters set: ${arbiters.length} key(s)`);
   }
 
-  // Trusted inference signing key, read from NEAR AI Cloud's attestation report.
-  const signer = await nearAiSigner();
-  if (signer && !cfg.inference_signers.includes(signer)) {
-    await chain.setInferenceSigners(league, [...cfg.inference_signers, signer]);
-    console.log(`trusted NEAR AI signing key ${signer.slice(0, 16)}... (from the gateway attestation report)`);
-  }
-}
-
-/** The gateway's ed25519 signing key from its attestation report, if reachable. */
-async function nearAiSigner(): Promise<string | null> {
-  if (!config.nearAiApiKey) return null;
-  try {
-    const res = await fetch(`${config.nearAiBaseUrl}/attestation/report?signing_algo=ed25519`, {
-      headers: { Authorization: `Bearer ${config.nearAiApiKey}` },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) return null;
-    const j = (await res.json()) as { gateway_attestation?: { signing_address?: string; signing_algo?: string } };
-    const a = j.gateway_attestation;
-    return a?.signing_algo === "ed25519" && /^[0-9a-f]{64}$/i.test(a.signing_address ?? "") ? a.signing_address!.toLowerCase() : null;
-  } catch {
-    return null;
+  // Trusted inference signing keys, read from NEAR AI Cloud's attestation reports: the gateway's
+  // (ed25519 and ECDSA) and, for models NEAR AI hosts in a TEE, each model enclave's key.
+  if (config.nearAiApiKey) {
+    const keys = await attestedSigners([...new Set(ROSTER.map((a) => a.model))]);
+    const want = [...keys.gateway.map((k) => `gateway:${k}`), ...keys.models.map((m) => `model:${m.key}`)];
+    const merged = [...new Set([...cfg.inference_signers.map((k) => (k.includes(":") ? k : `gateway:${k}`)), ...want])];
+    if (merged.length !== cfg.inference_signers.length || merged.some((k, i) => k !== cfg.inference_signers[i])) {
+      await chain.setInferenceSigners(league, merged);
+      console.log(`trusted NEAR AI keys: ${keys.gateway.length} gateway, ${keys.models.map((m) => m.model).join(", ") || "no"} model enclaves`);
+    }
   }
 }

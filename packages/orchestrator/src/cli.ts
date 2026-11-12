@@ -179,6 +179,7 @@ async function main(): Promise<void> {
           verifier,
           taskId,
           summary: arg("summary", "I need a function that parses the CSV exports of my shop, quoted fields and all.")!,
+          category: arg("category"),
           solver: m.solver ?? simSolver,
           scouts: m.scouts,
           budget: near(arg("budget", "0.2")!),
@@ -186,6 +187,17 @@ async function main(): Promise<void> {
         }),
       );
       await leaderboard(chain);
+      break;
+    }
+    case "code-hash": {
+      // NEAR reports a contract's code hash as base58(sha256(wasm)): compare with the local build.
+      const { createHash } = await import("node:crypto");
+      const { base58 } = await import("@scure/base");
+      const wasm = path.join(DATA_DIR, "..", "contract/target/near/agent_league.wasm");
+      const local = base58.encode(createHash("sha256").update(fs.readFileSync(wasm)).digest());
+      const acct = (await chain.provider.viewAccount({ accountId: config.leagueAccount, blockQuery: { finality: "final" } })) as { code_hash?: string; codeHash?: string };
+      const onChain = acct.code_hash ?? acct.codeHash;
+      console.log(`local build  ${local}\non chain     ${onChain}\n${local === onChain ? "the deployed code is this build" : "different code is deployed (build the commit that was deployed to compare)"}`);
       break;
     }
     case "watch":
@@ -207,7 +219,7 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     default:
-      console.log("usage: league <setup|upgrade|configure|identities|round|demo|job|brief|watch|arbitrate|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm] [--round n] [--dispute]");
+      console.log("usage: league <setup|upgrade|configure|identities|round|demo|job|brief|watch|arbitrate|code-hash|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm] [--round n] [--dispute]");
       process.exit(cmd ? 1 : 0);
   }
 }

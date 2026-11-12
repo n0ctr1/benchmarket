@@ -89,6 +89,7 @@ export interface ScoutView {
 
 export interface TaskView {
   task_ref: string;
+  category: string | null;
   skill: string;
   curated: boolean;
   tests_hash: string;
@@ -167,8 +168,9 @@ export interface BriefView {
   client: string;
   skill: string;
   summary: string;
-  task_ref: string;
-  tests_hash: string;
+  category: string | null;
+  task_ref: string | null;
+  tests_hash: string | null;
   pass_ppm: number;
   attested: boolean;
   budget: string;
@@ -376,6 +378,22 @@ export class LeagueChain {
     return this.call<void>(staker, "stake_verifier", { public_key: publicKey }, amount);
   }
 
+  setCategory(owner: string, id: string, title: string, description: string) {
+    return this.call<void>(owner, "set_category", { id, title, description });
+  }
+
+  setTaskCategory(owner: string, taskRef: string, category: string) {
+    return this.call<void>(owner, "set_task_category", { task_ref: taskRef, category });
+  }
+
+  setTaskTests(owner: string, taskRef: string, testsHash: string) {
+    return this.call<void>(owner, "set_task_tests", { task_ref: taskRef, tests_hash: testsHash });
+  }
+
+  getCategories() {
+    return this.view<Array<{ id: string; title: string; description: string; skill_tasks: string[] }>>("get_categories", {});
+  }
+
   // ----- jobs -----
 
   postJob(poster: string, p: { skill: string; taskRef: string; testsHash: string; minRating: number; minRounds?: number; passPpm?: number; workWindowMs: number; attested?: boolean; budget: bigint }) {
@@ -409,13 +427,14 @@ export class LeagueChain {
 
   // ----- briefs -----
 
-  postBrief(client: string, p: { skill: string; summary: string; taskRef: string; testsHash: string; budget: bigint; scoutReward: bigint; tryoutBounty: bigint; tryoutSubsidy: bigint; minStake: bigint; nominateWindowMs: number; tradeWindowMs: number; workWindowMs: number; passPpm?: number; attested?: boolean }) {
+  postBrief(client: string, p: { skill: string; summary: string; category?: string; taskRef?: string; testsHash?: string; budget: bigint; scoutReward: bigint; tryoutBounty: bigint; tryoutSubsidy: bigint; minStake: bigint; nominateWindowMs: number; tradeWindowMs: number; workWindowMs: number; passPpm?: number; attested?: boolean }) {
     const total = p.budget + p.scoutReward + p.tryoutBounty + p.tryoutSubsidy;
     return this.call<number>(client, "post_brief", {
       skill: p.skill,
       summary: p.summary,
-      task_ref: p.taskRef,
-      tests_hash: p.testsHash,
+      category: p.category ?? null,
+      task_ref: p.taskRef ?? null,
+      tests_hash: p.testsHash ?? null,
       budget: p.budget.toString(),
       scout_reward: p.scoutReward.toString(),
       tryout_bounty: p.tryoutBounty.toString(),
@@ -434,16 +453,20 @@ export class LeagueChain {
     return this.call<void>(scout, "nominate", { brief_id: briefId, agent, task_ref: taskRef }, stake);
   }
 
-  startTryout(caller: string, briefId: number) {
-    return this.call<void>(caller, "start_tryout", { brief_id: briefId }, 0n, HEAVY_GAS);
+  startTryout(caller: string, briefId: number, testsHash?: string) {
+    return this.call<void>(caller, "start_tryout", { brief_id: briefId, tests_hash: testsHash ?? null }, 0n, HEAVY_GAS);
+  }
+
+  nextTryoutTask(briefId: number) {
+    return this.view<string | null>("next_tryout_task", { brief_id: briefId });
   }
 
   offer(caller: string, briefId: number) {
     return this.call<void>(caller, "offer", { brief_id: briefId }, 0n, HEAVY_GAS);
   }
 
-  acceptOffer(client: string, briefId: number) {
-    return this.call<number>(client, "accept_offer", { brief_id: briefId }, 0n, HEAVY_GAS);
+  acceptOffer(client: string, briefId: number, taskRef?: string, testsHash?: string) {
+    return this.call<number>(client, "accept_offer", { brief_id: briefId, task_ref: taskRef ?? null, tests_hash: testsHash ?? null }, 0n, HEAVY_GAS);
   }
 
   declineOffer(client: string, briefId: number) {
