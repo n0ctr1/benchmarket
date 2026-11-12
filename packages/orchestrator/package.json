@@ -1,0 +1,16 @@
+{
+  "name": "@agent-league/orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "league": "tsx src/cli.ts",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@agent-league/shared": "0.1.0",
+    "@agent-league/verifier": "0.1.0",
+    "near-api-js": "^7.5.3"
+  }
+}

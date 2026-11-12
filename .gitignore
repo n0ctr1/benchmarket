@@ -20,3 +20,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Local state: generated account keys, verifier state, round logs
+.data/
