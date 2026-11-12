@@ -56,6 +56,8 @@ enum StorageKey {
     Briefs,
     JobBrief,
     ScoutRecords,
+    Categories,
+    TaskCategory,
 }
 
 #[near(serializers = [borsh, json])]
@@ -301,6 +303,26 @@ pub struct TaskRecord {
     pub retired: bool,
 }
 
+/// A kind of work a client can ask for; curated tasks are filed under one.
+#[near(serializers = [borsh, json])]
+#[derive(Clone)]
+pub struct Category {
+    pub title: String,
+    pub description: String,
+}
+
+#[near(serializers = [json])]
+pub struct CategoryView {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub skill_tasks: Vec<String>,
+}
+
+/// Prefix of a curated task's `tests_hash` when the task is a family: every round commits fresh
+/// tests generated from a secret seed (revealed with the report) instead of one fixed set.
+pub const FAMILY_PREFIX: &str = "family:";
+
 #[near(serializers = [borsh])]
 #[derive(Clone)]
 pub struct VerifierStake {
@@ -446,6 +468,7 @@ pub struct PositionView {
 #[near(serializers = [json])]
 pub struct TaskView {
     pub task_ref: String,
+    pub category: Option<String>,
     #[serde(flatten)]
     pub record: TaskRecord,
 }
@@ -543,6 +566,8 @@ pub struct Contract {
     /// Jobs created from a brief's accepted offer.
     job_brief: LookupMap<u64, u64>,
     scout_records: LookupMap<AccountId, ScoutRecord>,
+    categories: IterableMap<String, Category>,
+    task_category: LookupMap<String, String>,
 }
 
 pub(crate) fn emit(event: &str, data: near_sdk::serde_json::Value) {
@@ -622,6 +647,8 @@ impl Contract {
             next_brief_id: 1,
             job_brief: LookupMap::new(StorageKey::JobBrief),
             scout_records: LookupMap::new(StorageKey::ScoutRecords),
+            categories: IterableMap::new(StorageKey::Categories),
+            task_category: LookupMap::new(StorageKey::TaskCategory),
         }
     }
 
@@ -659,6 +686,8 @@ impl Contract {
             next_brief_id: 1,
             job_brief: LookupMap::new(StorageKey::JobBrief),
             scout_records: LookupMap::new(StorageKey::ScoutRecords),
+            categories: IterableMap::new(StorageKey::Categories),
+            task_category: LookupMap::new(StorageKey::TaskCategory),
         }
     }
 
@@ -679,13 +708,23 @@ impl Contract {
         self.arbiter_threshold = threshold;
     }
 
-    /// Inference signing keys (hex ed25519) trusted after checking their attestation reports.
+    /// Inference signing keys trusted after checking their attestation reports:
+    /// `model:<key>` for a model's own enclave, `gateway:<key>` (or a bare key) for the NEAR AI
+    /// gateway; a key is 64 hex (ed25519) or a 0x address (ECDSA).
     pub fn set_inference_signers(&mut self, signers: Vec<String>) {
         self.assert_owner();
+        require!(signers.len() <= 64, "at most 64 signers");
         for s in &signers {
-            require!(attest::hex_decode(s).map_or(false, |b| b.len() == 32), "signer must be 32 bytes of hex");
+            require!(attest::parse_signer(s).is_some(), "signer must be [model:|gateway:]<64 hex or 0x address>");
         }
         self.inference_signers = signers.into_iter().map(|s| s.to_ascii_lowercase()).collect();
+    }
+
+    /// Hands the contract to a new owner (a DAO, for a live league).
+    pub fn set_owner(&mut self, owner: AccountId) {
+        self.assert_owner();
+        emit("owner_changed", json!({ "from": self.owner, "to": owner }));
+        self.owner = owner;
     }
 
     pub fn set_params(&mut self, params: Params) {
@@ -705,13 +744,41 @@ impl Contract {
         self.assert_owner();
         require!(!task_ref.is_empty() && task_ref.len() <= 64, "bad task_ref");
         require!(!skill.is_empty() && skill.len() <= 64, "bad skill");
-        require!(!tests_hash.is_empty() && tests_hash.len() <= 128, "bad tests hash");
+        require!(!tests_hash.is_empty() && tests_hash.len() <= 136, "bad tests hash");
         require!(!self.tasks.contains_key(&task_ref), "task already exists");
         self.tasks.insert(
             task_ref.clone(),
             TaskRecord { skill: skill.clone(), curated: true, tests_hash, rating: INITIAL_RATING, rounds: 0, jobs: 0, saturated: 0, retired: false },
         );
         emit("task_added", json!({ "task_ref": task_ref, "skill": skill }));
+    }
+
+    /// Adds or updates a category clients can pick for a brief.
+    pub fn set_category(&mut self, id: String, title: String, description: String) {
+        self.assert_owner();
+        require!(!id.is_empty() && id.len() <= 32 && id.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-'), "category id: lowercase, digits, dashes");
+        require!(!title.is_empty() && title.len() <= 64 && description.len() <= 300, "bad title or description");
+        self.categories.insert(id.clone(), Category { title, description });
+        emit("category_set", json!({ "category": id }));
+    }
+
+    /// Re-pins a curated task's tests: a new fixed set, or `family:<hash of generator and
+    /// reference>` to run every round on fresh tests. Its rating history is kept.
+    pub fn set_task_tests(&mut self, task_ref: String, tests_hash: String) {
+        self.assert_owner();
+        require!(!tests_hash.is_empty() && tests_hash.len() <= 136, "bad tests hash");
+        let t = self.tasks.get_mut(&task_ref).unwrap_or_else(|| env::panic_str("no such task"));
+        require!(t.curated, "only curated tasks are pinned");
+        t.tests_hash = tests_hash.clone();
+        emit("task_tests_set", json!({ "task_ref": task_ref, "tests_hash": tests_hash }));
+    }
+
+    /// Files a curated task under a category.
+    pub fn set_task_category(&mut self, task_ref: String, category: String) {
+        self.assert_owner();
+        require!(self.tasks.get(&task_ref).map_or(false, |t| t.curated), "no such curated task");
+        require!(self.categories.contains_key(&category), "no such category");
+        self.task_category.insert(task_ref, category);
     }
 
     /// Retires a task (or brings it back), e.g. after its tests leaked.
@@ -798,7 +865,24 @@ impl Contract {
             .iter()
             .skip(from_index.unwrap_or(0) as usize)
             .take(limit.unwrap_or(50).min(100) as usize)
-            .map(|(k, t)| TaskView { task_ref: k.clone(), record: t.clone() })
+            .map(|(k, t)| TaskView { task_ref: k.clone(), category: self.task_category.get(k).cloned(), record: t.clone() })
+            .collect()
+    }
+
+    pub fn get_categories(&self) -> Vec<CategoryView> {
+        self.categories
+            .iter()
+            .map(|(id, c)| CategoryView {
+                id: id.clone(),
+                title: c.title.clone(),
+                description: c.description.clone(),
+                skill_tasks: self
+                    .tasks
+                    .iter()
+                    .filter(|(k, t)| t.curated && !t.retired && self.task_category.get(*k) == Some(id))
+                    .map(|(k, _)| k.clone())
+                    .collect(),
+            })
             .collect()
     }
 }
@@ -864,7 +948,8 @@ impl Contract {
         let t = self.tasks.get(task_ref).unwrap();
         require!(t.skill == skill, "task belongs to another skill");
         require!(!t.retired, "task is retired");
-        if t.curated {
+        // A family commits fresh tests every round; a fixed task pins its one set.
+        if t.curated && !t.tests_hash.starts_with(FAMILY_PREFIX) {
             require!(t.tests_hash == tests_hash, "tests hash does not match the curated task");
         }
         (t.rating, t.curated)

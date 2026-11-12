@@ -891,8 +891,9 @@ fn post_brief(c: &mut Contract) -> u64 {
     c.post_brief(
         SKILL.into(),
         "I need a parser for the CSV exports of my shop.".into(),
-        "client-csv".into(),
-        "sha256:client".into(),
+        None,
+        Some("client-csv".into()),
+        Some("sha256:client".into()),
         U128(3 * NEAR),
         U128(NEAR),
         U128(NEAR / 2),
@@ -930,16 +931,18 @@ fn scouted(c: &mut Contract) -> u64 {
 /// Runs the tryout with scores [a, b, c] and returns its round id.
 fn tryout(c: &mut Contract, keys: &[SigningKey], brief: u64, v: [u32; 3]) -> u64 {
     ctx("anyone.testnet", 0, 3_000_000 + 600_000);
-    c.start_tryout(brief);
+    c.start_tryout(brief, None);
     let round = c.get_brief(brief).unwrap().tryout_round.unwrap();
     let start = 3_600_000 + 600_000;
     ctx("anyone.testnet", 0, start);
     c.lock_round(round);
-    for (i, a) in AGENTS.iter().enumerate() {
-        ctx(a, 0, start + 10 + i as u64);
+    // Scores are given per agent a, b, c; only the nominees are in the round.
+    let entrants: Vec<AccountId> = c.get_round(round).unwrap().entries.iter().map(|e| e.agent.clone()).collect();
+    for (i, a) in entrants.iter().enumerate() {
+        ctx(a.as_str(), 0, start + 10 + i as u64);
         c.submit_answer(round, format!("tryout-{a}"), None);
     }
-    let s = scores(v);
+    let s: Vec<(AccountId, u32)> = entrants.iter().map(|a| (a.clone(), v[AGENTS.iter().position(|x| acc(x) == *a).unwrap()])).collect();
     let sig = sign(&keys[0], round, 10, &s);
     ctx("verifier.testnet", 0, start + 100);
     c.settle(round, 10, s, vec![sig]);
@@ -951,7 +954,7 @@ fn tryout(c: &mut Contract, keys: &[SigningKey], brief: u64, v: [u32; 3]) -> u64
 /// Accept, answer and score the client's job; returns the job id.
 fn deliver(c: &mut Contract, keys: &[SigningKey], brief: u64, score: u32) -> u64 {
     ctx(CLIENT, 0, 5_000_000);
-    let job = c.accept_offer(brief);
+    let job = c.accept_offer(brief, None, None);
     let agent = c.get_job(job).unwrap().agent.unwrap();
     ctx(agent.as_str(), 0, 5_000_100);
     c.submit_job(job, "sha256:client-answer".into(), None);
@@ -1020,7 +1023,7 @@ fn single_nominee_is_offered_without_a_tryout_and_can_be_declined() {
     let id = post_brief(&mut c);
     nominate(&mut c, id, "s1.testnet", "a.testnet", "t1", NEAR);
     ctx("anyone.testnet", 0, 3_600_000);
-    c.start_tryout(id);
+    c.start_tryout(id, None);
     let b = c.get_brief(id).unwrap();
     assert_eq!((b.status, b.tryout_round), (BriefStatus::Offered, None));
     ctx(CLIENT, 0, 3_700_000);
@@ -1035,7 +1038,7 @@ fn brief_without_nominations_is_refunded() {
     let (mut c, _) = setup(1);
     let id = post_brief(&mut c);
     ctx("anyone.testnet", 0, 3_600_000);
-    c.start_tryout(id);
+    c.start_tryout(id, None);
     assert_eq!(c.get_brief(id).unwrap().status, BriefStatus::Cancelled);
 }
 
@@ -1045,7 +1048,7 @@ fn hire_that_misses_its_deadline_fails_the_brief() {
     let id = scouted(&mut c);
     tryout(&mut c, &keys, id, [9, 6, 2]);
     ctx(CLIENT, 0, 5_000_000);
-    let job = c.accept_offer(id);
+    let job = c.accept_offer(id, None, None);
     ctx("anyone.testnet", 0, 5_000_000 + 3_600_001);
     c.release_job(job);
     assert_eq!(c.get_job(job).unwrap().status, JobStatus::Failed);
@@ -1063,6 +1066,134 @@ fn tryout_task_must_be_curated() {
     nominate(&mut c, id, "s1.testnet", "a.testnet", "loose-task", NEAR);
 }
 
+/// A brief that names only a category: the task is handed over at hire.
+fn category_brief(c: &mut Contract) -> u64 {
+    ctx("owner.testnet", 0, 1_000);
+    c.set_category("parsing".into(), "Parsing text".into(), "Turn messy text into data.".into());
+    c.set_category("math".into(), "Math".into(), "Expressions and numbers.".into());
+    c.set_task_category("t1".into(), "parsing".into());
+    c.set_task_category("t2".into(), "math".into());
+    for a in AGENTS {
+        if c.get_identity(acc(a)).is_none() {
+            issue(c, a);
+        }
+    }
+    ctx(CLIENT, 3 * NEAR + NEAR + NEAR / 2 + NEAR, 3_000_000);
+    c.post_brief(SKILL.into(), "Parse my shop exports.".into(), Some("parsing".into()), None, None, U128(3 * NEAR), U128(NEAR), U128(NEAR / 2), U128(NEAR), U128(NEAR / 10), 600_000, 600_000, 3_600_000, None, None, None)
+}
+
+#[test]
+fn client_hands_over_its_task_only_to_the_hire() {
+    let (mut c, keys) = setup(1);
+    let id = category_brief(&mut c);
+    assert_eq!(c.get_categories().iter().find(|x| x.id == "parsing").unwrap().skill_tasks, vec!["t1".to_string()]);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "t1", NEAR);
+    nominate(&mut c, id, "s2.testnet", "b.testnet", "t1", NEAR);
+    assert_eq!(c.next_tryout_task(id), Some("t1".into()));
+    let b = c.get_brief(id).unwrap();
+    assert_eq!((b.task_ref, b.category.as_deref()), (None, Some("parsing")));
+    tryout(&mut c, &keys, id, [9, 4, 0]);
+    // The task is named only now, with the hire.
+    ctx(CLIENT, 0, 5_000_000);
+    let job = c.accept_offer(id, Some("client-csv".into()), Some("sha256:client".into()));
+    let j = c.get_job(job).unwrap();
+    assert_eq!((j.task_ref.as_str(), j.agent), ("client-csv", Some(acc("a.testnet"))));
+    assert_eq!(c.get_brief(id).unwrap().task_ref.as_deref(), Some("client-csv"));
+}
+
+#[test]
+#[should_panic(expected = "hand over the task")]
+fn hire_needs_the_task() {
+    let (mut c, keys) = setup(1);
+    let id = category_brief(&mut c);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "t1", NEAR);
+    nominate(&mut c, id, "s2.testnet", "b.testnet", "t1", NEAR);
+    tryout(&mut c, &keys, id, [9, 4, 0]);
+    ctx(CLIENT, 0, 5_000_000);
+    c.accept_offer(id, None, None);
+}
+
+#[test]
+#[should_panic(expected = "must be in the brief's category")]
+fn tryout_task_must_fit_the_category() {
+    let (mut c, _) = setup(1);
+    let id = category_brief(&mut c);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "t2", NEAR);
+}
+
+#[test]
+fn family_task_runs_on_fresh_tests_each_round() {
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.add_task("fam".into(), SKILL.into(), "family:sha256:generator".into());
+    issue(&mut c, "a.testnet");
+    ctx("manager.testnet", 0, 1_000);
+    let r1 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-1".into(), LOCK, 5, None);
+    let r2 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-2".into(), LOCK, 5, None);
+    assert!(c.get_round(r1).unwrap().rated && c.get_round(r2).unwrap().rated);
+    assert_ne!(c.get_round(r1).unwrap().tests_hash, c.get_round(r2).unwrap().tests_hash);
+}
+
+#[test]
+#[should_panic(expected = "commit the fresh tests hash")]
+fn family_tryout_needs_a_fresh_tests_hash() {
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.add_task("fam".into(), SKILL.into(), "family:sha256:generator".into());
+    for a in AGENTS {
+        issue(&mut c, a);
+    }
+    let id = post_brief(&mut c);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "fam", NEAR);
+    nominate(&mut c, id, "s2.testnet", "b.testnet", "fam", NEAR);
+    ctx("owner.testnet", 0, 3_600_000);
+    c.start_tryout(id, None);
+}
+
+#[test]
+fn family_tryout_takes_the_league_tests_hash() {
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.add_task("fam".into(), SKILL.into(), "family:sha256:generator".into());
+    for a in AGENTS {
+        issue(&mut c, a);
+    }
+    let id = post_brief(&mut c);
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "fam", NEAR);
+    nominate(&mut c, id, "s2.testnet", "b.testnet", "fam", NEAR);
+    ctx("owner.testnet", 0, 3_600_000);
+    c.start_tryout(id, Some("sha256:fresh".into()));
+    let r = c.get_round(c.get_brief(id).unwrap().tryout_round.unwrap()).unwrap();
+    assert_eq!(r.tests_hash, "sha256:fresh");
+}
+
+#[test]
+fn model_enclave_attestation_records_the_model() {
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.set_inference_signers(vec!["model:0x3b753b4406613c5e70ae640508632b600424fa0c".into()]);
+    let id = round_with_agents(&mut c);
+    lock(&mut c, id);
+    let att = Attestation {
+        text: "z-ai/glm-5.3-flash:7d948ea65843e5895371355867545313ff2b8ceb12c16674eba1a9f96f568d03:3539d3009b9e81f56db30373f34cd5b4886399d7c752ad9808f715fe9bc39d26".into(),
+        signature: "0x44cdcfe83cacc9c01d9221852d81d68fe8ea49262c82a5536eab3dc5b445f0d50aab1b4c0952ec2e4b3f4a8fa99588da4d1d78dba683ad6b90788f06fce918361c".into(),
+        signer: "0x3b753b4406613c5e70ae640508632b600424fa0c".into(),
+    };
+    ctx("a.testnet", 0, ANSWER);
+    c.submit_answer(id, "sha256:3539d3009b9e81f56db30373f34cd5b4886399d7c752ad9808f715fe9bc39d26".into(), Some(att));
+    let e = &c.get_round(id).unwrap().entries[0];
+    assert!(e.attested);
+    assert_eq!(e.model.as_deref(), Some("z-ai/glm-5.3-flash"));
+}
+
+#[test]
+fn owner_can_hand_over_to_a_dao() {
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.set_owner(acc("league.sputnik-dao.testnet"));
+    assert_eq!(c.get_config().owner, acc("league.sputnik-dao.testnet"));
+}
+
 #[test]
 #[should_panic(expected = "the client cannot nominate")]
 fn client_cannot_nominate() {
@@ -1077,7 +1208,7 @@ fn client_cannot_nominate() {
 fn brief_escrow_must_match() {
     let (mut c, _) = setup(1);
     ctx(CLIENT, NEAR, 3_000_000);
-    c.post_brief(SKILL.into(), "x".into(), "client-csv".into(), "h".into(), U128(3 * NEAR), U128(0), U128(0), U128(0), U128(NEAR / 10), 600_000, 600_000, 600_000, None, None, None);
+    c.post_brief(SKILL.into(), "x".into(), None, Some("client-csv".into()), Some("h".into()), U128(3 * NEAR), U128(0), U128(0), U128(0), U128(NEAR / 10), 600_000, 600_000, 600_000, None, None, None);
 }
 
 /// Signature produced by the TypeScript verifier (packages/shared signMessage) for seed [7; 32].

@@ -7,6 +7,12 @@
 //! verifier must score the very response the key signed. The request hash binds the model, the
 //! agent's system prompt and the round's prompt (which names the round), which the verifier
 //! checks off chain against the agent's `config_hash`.
+//!
+//! Two kinds of keys sign: a model's own enclave (`model:` in the trusted list; NEAR AI hosts the
+//! model in a TEE and the signed text names the model), and the NEAR AI gateway (`gateway:`, or a
+//! bare key; the model runs at an outside provider). Signatures are ed25519 (key as 64 hex) or
+//! ECDSA secp256k1 over the EIP-191 message (key as a 0x address). The model is recorded only when
+//! a model key signed, so `model.is_some()` means "this response came out of that model's enclave".
 
 use near_sdk::{env, near};
 
@@ -23,9 +29,49 @@ pub struct Attestation {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attested {
+    /// Set only when the model's own enclave signed.
     pub model: Option<String>,
     pub request_hash: String,
     pub response_hash: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SignerKind {
+    Model,
+    Gateway,
+}
+
+/// Splits a trusted-list entry into its kind and key (lowercase). A bare key is a gateway key.
+pub fn parse_signer(entry: &str) -> Option<(SignerKind, String)> {
+    let (kind, key) = match entry.split_once(':') {
+        Some(("model", k)) => (SignerKind::Model, k),
+        Some(("gateway", k)) => (SignerKind::Gateway, k),
+        None => (SignerKind::Gateway, entry),
+        _ => return None,
+    };
+    let key = key.to_ascii_lowercase();
+    let ok = (key.len() == 64 && hex_decode(&key).is_some())
+        || (key.len() == 42 && key.starts_with("0x") && hex_decode(&key[2..]).is_some());
+    ok.then_some((kind, key))
+}
+
+/// Address that signed `text` as an EIP-191 personal message, lowercase 0x-hex.
+fn ecdsa_signer(text: &str, signature: &str) -> Option<String> {
+    let raw = hex_decode(signature.strip_prefix("0x").unwrap_or(signature))?;
+    if raw.len() != 65 {
+        return None;
+    }
+    let v = match raw[64] {
+        27 | 28 => raw[64] - 27,
+        0 | 1 => raw[64],
+        _ => return None,
+    };
+    let mut msg = format!("\x19Ethereum Signed Message:\n{}", text.len()).into_bytes();
+    msg.extend_from_slice(text.as_bytes());
+    let hash = env::keccak256_array(&msg);
+    let pk = env::ecrecover(&hash, &raw[..64], v, false)?;
+    let addr = env::keccak256_array(&pk);
+    Some(format!("0x{}", addr[12..].iter().map(|b| format!("{b:02x}")).collect::<String>()))
 }
 
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
@@ -58,15 +104,29 @@ pub fn verify(a: &Attestation, trusted: &[String]) -> Result<Attested, String> {
     if a.text.len() > 256 {
         return Err("attestation text too long".into());
     }
-    if !trusted.iter().any(|t| t.eq_ignore_ascii_case(&a.signer)) {
-        return Err("attestation signer is not trusted".into());
+    let signer = a.signer.to_ascii_lowercase();
+    let kind = trusted
+        .iter()
+        .filter_map(|t| parse_signer(t))
+        .find(|(_, k)| *k == signer)
+        .map(|(kind, _)| kind)
+        .ok_or("attestation signer is not trusted")?;
+    if signer.starts_with("0x") {
+        if ecdsa_signer(&a.text, &a.signature).as_deref() != Some(signer.as_str()) {
+            return Err("attestation signature does not verify".into());
+        }
+    } else {
+        let sig: [u8; 64] = hex_decode(&a.signature).and_then(|v| v.try_into().ok()).ok_or("bad attestation signature")?;
+        let pk: [u8; 32] = hex_decode(&signer).and_then(|v| v.try_into().ok()).ok_or("bad attestation signer")?;
+        if !env::ed25519_verify(&sig, a.text.as_bytes(), &pk) {
+            return Err("attestation signature does not verify".into());
+        }
     }
-    let sig: [u8; 64] = hex_decode(&a.signature).and_then(|v| v.try_into().ok()).ok_or("bad attestation signature")?;
-    let pk: [u8; 32] = hex_decode(&a.signer.to_ascii_lowercase()).and_then(|v| v.try_into().ok()).ok_or("bad attestation signer")?;
-    if !env::ed25519_verify(&sig, a.text.as_bytes(), &pk) {
-        return Err("attestation signature does not verify".into());
+    let mut out = parse_text(&a.text).ok_or("attestation text is not <request>:<response>")?;
+    if kind != SignerKind::Model {
+        out.model = None;
     }
-    parse_text(&a.text).ok_or_else(|| "attestation text is not <request>:<response>".into())
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -98,6 +158,31 @@ mod tests {
         assert!(verify(&att(TEXT), &[]).unwrap_err().contains("not trusted"));
         let altered = TEXT.replacen('e', "f", 1);
         assert!(verify(&att(&altered), &[SIGNER.into()]).unwrap_err().contains("does not verify"));
+    }
+
+    // A real model-enclave ECDSA signature from NEAR AI Cloud (GLM 5.3, provider_tee).
+    const TEE_TEXT: &str = "z-ai/glm-5.3-flash:7d948ea65843e5895371355867545313ff2b8ceb12c16674eba1a9f96f568d03:3539d3009b9e81f56db30373f34cd5b4886399d7c752ad9808f715fe9bc39d26";
+    const TEE_SIG: &str = "0x44cdcfe83cacc9c01d9221852d81d68fe8ea49262c82a5536eab3dc5b445f0d50aab1b4c0952ec2e4b3f4a8fa99588da4d1d78dba683ad6b90788f06fce918361c";
+    const TEE_SIGNER: &str = "0x3b753b4406613c5e70ae640508632b600424fa0c";
+
+    #[test]
+    fn verifies_a_real_model_enclave_signature() {
+        testing_env!(VMContextBuilder::new().build());
+        let a = Attestation { text: TEE_TEXT.into(), signature: TEE_SIG.into(), signer: TEE_SIGNER.into() };
+        let got = verify(&a, &[format!("model:{TEE_SIGNER}")]).unwrap();
+        assert_eq!(got.model.as_deref(), Some("z-ai/glm-5.3-flash"));
+        // Listed as a gateway key, the same signature does not claim the model's enclave.
+        assert_eq!(verify(&a, &[format!("gateway:{TEE_SIGNER}")]).unwrap().model, None);
+        let forged = Attestation { text: TEE_TEXT.replacen('7', "8", 1), ..a };
+        assert!(verify(&forged, &[format!("model:{TEE_SIGNER}")]).unwrap_err().contains("does not verify"));
+    }
+
+    #[test]
+    fn signer_entries() {
+        assert_eq!(parse_signer(SIGNER), Some((SignerKind::Gateway, SIGNER.into())));
+        assert_eq!(parse_signer(&format!("model:{}", TEE_SIGNER.to_uppercase().replace("0X", "0x"))).unwrap().0, SignerKind::Model);
+        assert!(parse_signer("model:0x12").is_none());
+        assert!(parse_signer("other:0x3b753b4406613c5e70ae640508632b600424fa0c").is_none());
     }
 
     #[test]

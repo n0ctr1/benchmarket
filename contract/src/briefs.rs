@@ -1,12 +1,13 @@
 //! Briefs: a person with a task asks the league for an agent.
 //!
-//! 1. The client posts a brief with escrow: the budget for the work, a reward for scouts, and a
-//!    tryout budget (bounty and market subsidy).
-//! 2. Scouts nominate agents, each with a stake and a curated tryout task they think predicts
-//!    success on this brief.
+//! 1. The client posts a brief with escrow: what it needs in words and, optionally, a category
+//!    from the league's list; the budget for the work, a reward for scouts, and a tryout budget
+//!    (bounty and market subsidy). The task itself can stay with the client until it hires.
+//! 2. Scouts nominate agents, each with a stake and a curated tryout task (of the brief's
+//!    category, if it has one) they think predicts success on this brief.
 //! 3. The league runs a rated tryout round on the most-backed task with every nominee.
-//! 4. The tryout's best (top score, then rating) is offered to the client, who accepts (a job is
-//!    created for that agent from the escrow) or declines (refund).
+//! 4. The tryout's best (top score, then rating) is offered to the client, who accepts by handing
+//!    over its task (a job is created for that agent only, from the escrow) or declines (refund).
 //! 5. When the job closes, the scouts who nominated the hired agent are paid the reward pro rata
 //!    to their stake if it delivered, and lose their stake to the client if it failed. Scouts of
 //!    other nominees get their stake back. A scout vouches for its pick with money.
@@ -61,9 +62,10 @@ pub struct Brief {
     pub client: AccountId,
     pub skill: String,
     pub summary: String,
-    /// The client's own task and its hidden tests.
-    pub task_ref: String,
-    pub tests_hash: String,
+    pub category: Option<String>,
+    /// The client's own task and its hidden tests; may be given only when hiring.
+    pub task_ref: Option<String>,
+    pub tests_hash: Option<String>,
     pub pass_ppm: u32,
     pub attested: bool,
     pub budget: u128,
@@ -114,8 +116,9 @@ pub struct BriefView {
     pub client: AccountId,
     pub skill: String,
     pub summary: String,
-    pub task_ref: String,
-    pub tests_hash: String,
+    pub category: Option<String>,
+    pub task_ref: Option<String>,
+    pub tests_hash: Option<String>,
     pub pass_ppm: u32,
     pub attested: bool,
     pub budget: U128,
@@ -152,8 +155,9 @@ impl Contract {
         &mut self,
         skill: String,
         summary: String,
-        task_ref: String,
-        tests_hash: String,
+        category: Option<String>,
+        task_ref: Option<String>,
+        tests_hash: Option<String>,
         budget: U128,
         scout_reward: U128,
         tryout_bounty: U128,
@@ -172,12 +176,21 @@ impl Contract {
         require!(budget.0 > 0, "the budget must be positive");
         require!(!skill.is_empty() && skill.len() <= 64, "bad skill");
         require!(!summary.is_empty() && summary.len() <= 500, "summary must be 1..=500 bytes");
-        require!(!tests_hash.is_empty() && tests_hash.len() <= 128, "bad tests hash");
         require!(min_stake.0 >= self.params.min_bet.0, "min_stake below the minimum bet");
+        if let Some(c) = &category {
+            require!(self.categories.contains_key(c), "no such category");
+        }
         require!(nominate_window_ms >= 60_000 && trade_window_ms >= 60_000 && work_window_ms >= 60_000, "windows must be at least a minute");
         let pass = pass_ppm.unwrap_or(math::PPM as u32);
         require!(pass > 0 && pass as u64 <= math::PPM, "pass_ppm must be 1..=1000000");
-        self.use_task(&task_ref, &skill, &tests_hash);
+        match (&task_ref, &tests_hash) {
+            (Some(t), Some(h)) => {
+                require!(!h.is_empty() && h.len() <= 128, "bad tests hash");
+                self.use_task(t, &skill, h);
+            }
+            (None, None) => {}
+            _ => env::panic_str("give task_ref and tests_hash together, or neither until hiring"),
+        }
         let now = env::block_timestamp_ms();
         let id = self.next_brief_id;
         self.next_brief_id += 1;
@@ -186,6 +199,7 @@ impl Contract {
             client: env::predecessor_account_id(),
             skill,
             summary,
+            category,
             task_ref,
             tests_hash,
             pass_ppm: pass,
@@ -211,7 +225,7 @@ impl Contract {
         };
         emit(
             "brief_posted",
-            json!({ "brief_id": id, "client": brief.client, "skill": brief.skill, "budget": budget, "scout_reward": scout_reward, "nominate_until_ms": brief.nominate_until_ms }),
+            json!({ "brief_id": id, "client": brief.client, "skill": brief.skill, "category": brief.category, "budget": budget, "scout_reward": scout_reward, "nominate_until_ms": brief.nominate_until_ms }),
         );
         self.briefs.insert(id, brief);
         id
@@ -224,13 +238,17 @@ impl Contract {
         let stake = env::attached_deposit().as_yoctonear();
         require!(self.identities.contains_key(&agent), "agent has no identity");
         let task = self.tasks.get(&task_ref).cloned().unwrap_or_else(|| env::panic_str("no such task"));
+        let task_cat = self.task_category.get(&task_ref).cloned();
         let brief = self.briefs.get_mut(&brief_id).unwrap_or_else(|| env::panic_str("no such brief"));
         require!(brief.status == BriefStatus::Scouting, "nominations are closed");
         require!(env::block_timestamp_ms() < brief.nominate_until_ms, "nominations are closed");
         require!(stake >= brief.min_stake, "stake below the brief's minimum");
         require!(scout != brief.client, "the client cannot nominate");
         require!(task.curated && !task.retired && task.skill == brief.skill, "the tryout task must be a curated task of this skill");
-        require!(task_ref != brief.task_ref, "the tryout cannot be the client's own task");
+        require!(Some(&task_ref) != brief.task_ref.as_ref(), "the tryout cannot be the client's own task");
+        if brief.category.is_some() {
+            require!(task_cat == brief.category, "the tryout task must be in the brief's category");
+        }
         require!(brief.nominations.len() < MAX_NOMINATIONS, "too many nominations");
         require!(!brief.nominations.iter().any(|n| n.scout == scout && n.agent == agent), "already nominated this agent");
         let new_agent = !brief.nominations.iter().any(|n| n.agent == agent);
@@ -244,7 +262,7 @@ impl Contract {
     /// After the nomination window, anyone starts the tryout: a rated round on the most-backed
     /// task with every nominee, funded by the brief. With one nominee it is offered directly;
     /// with none the brief is cancelled and refunded.
-    pub fn start_tryout(&mut self, brief_id: u64) {
+    pub fn start_tryout(&mut self, brief_id: u64, tests_hash: Option<String>) {
         let now = env::block_timestamp_ms();
         let brief = self.briefs.get(&brief_id).cloned().unwrap_or_else(|| env::panic_str("no such brief"));
         require!(brief.status == BriefStatus::Scouting, "brief is not scouting");
@@ -273,17 +291,21 @@ impl Contract {
             }
             return;
         }
-        // The tryout task with the most stake behind it (first nominated wins a tie).
-        let mut tally: Vec<(String, u128)> = vec![];
-        for n in &brief.nominations {
-            match tally.iter_mut().find(|(t, _)| *t == n.task_ref) {
-                Some((_, s)) => *s += n.stake,
-                None => tally.push((n.task_ref.clone(), n.stake)),
-            }
-        }
-        let task_ref = tally.iter().fold(&tally[0], |best, x| if x.1 > best.1 { x } else { best }).0.clone();
+        let task_ref = most_backed(&brief).unwrap();
         let task = self.tasks.get(&task_ref).cloned().unwrap();
         require!(!task.retired, "the chosen tryout task was retired meanwhile");
+        // A family task runs on fresh tests: the league's verifier generates them and commits
+        // their hash here. A fixed task uses its pinned set.
+        let round_tests = if task.tests_hash.starts_with(FAMILY_PREFIX) {
+            let caller = env::predecessor_account_id();
+            require!(caller == self.owner || caller == brief.client, "only the league or the client starts a tryout on fresh tests");
+            let h = tests_hash.unwrap_or_else(|| env::panic_str("this tryout task is a family: commit the fresh tests hash"));
+            require!(!h.is_empty() && h.len() <= 128 && !h.starts_with(FAMILY_PREFIX), "bad tests hash");
+            h
+        } else {
+            require!(tests_hash.as_ref().map_or(true, |h| *h == task.tests_hash), "tests hash does not match the curated task");
+            task.tests_hash.clone()
+        };
         let entries: Vec<Entry> = agents
             .iter()
             .map(|a| Entry {
@@ -314,7 +336,7 @@ impl Contract {
             manager: brief.client.clone(),
             skill: brief.skill.clone(),
             task_ref: task_ref.clone(),
-            tests_hash: task.tests_hash.clone(),
+            tests_hash: round_tests,
             bet_deadline_ms: now + brief.trade_window_ms,
             answer_deadline_ms: 0,
             max_agents: entries.len() as u8,
@@ -394,22 +416,42 @@ impl Contract {
     }
 
     /// The client hires the offered agent: a job is created from the escrow, already taken by it.
-    pub fn accept_offer(&mut self, brief_id: u64) -> u64 {
+    /// The client hires the offered agent and, if it has not yet, hands over its task now: only
+    /// the hired agent ever works on it.
+    pub fn accept_offer(&mut self, brief_id: u64, task_ref: Option<String>, tests_hash: Option<String>) -> u64 {
         let now = env::block_timestamp_ms();
-        let brief = self.briefs.get(&brief_id).cloned().unwrap_or_else(|| env::panic_str("no such brief"));
+        let mut brief = self.briefs.get(&brief_id).cloned().unwrap_or_else(|| env::panic_str("no such brief"));
         require!(brief.client == env::predecessor_account_id(), "only the client");
         require!(brief.status == BriefStatus::Offered, "nothing to accept");
         require!(now <= brief.offer_until_ms, "the offer expired");
+        if brief.task_ref.is_none() {
+            let (t, h) = match (task_ref, tests_hash) {
+                (Some(t), Some(h)) => (t, h),
+                _ => env::panic_str("hand over the task: task_ref and tests_hash"),
+            };
+            require!(!h.is_empty() && h.len() <= 128, "bad tests hash");
+            require!(Some(&t) != brief.tryout_task.as_ref(), "the client's task cannot be the tryout task");
+            self.use_task(&t, &brief.skill, &h);
+            brief.task_ref = Some(t);
+            brief.tests_hash = Some(h);
+            let b = self.briefs.get_mut(&brief_id).unwrap();
+            b.task_ref = brief.task_ref.clone();
+            b.tests_hash = brief.tests_hash.clone();
+        } else {
+            require!(task_ref.is_none() && tests_hash.is_none(), "the task was given with the brief");
+        }
+        let client_task = brief.task_ref.clone().unwrap();
+        let client_tests = brief.tests_hash.clone().unwrap();
         let agent = brief.offered.clone().unwrap();
-        let rated = self.tasks.get(&brief.task_ref).map_or(false, |t| t.curated);
+        let rated = self.tasks.get(&client_task).map_or(false, |t| t.curated);
         let job_id = self.next_job_id;
         self.next_job_id += 1;
         let job = Job {
             id: job_id,
             poster: brief.client.clone(),
             skill: brief.skill.clone(),
-            task_ref: brief.task_ref.clone(),
-            tests_hash: brief.tests_hash.clone(),
+            task_ref: client_task,
+            tests_hash: client_tests,
             budget: brief.budget,
             min_rating: 0,
             min_rounds: 0,
@@ -463,6 +505,11 @@ impl Contract {
         require!(brief.status == BriefStatus::Offered, "nothing to expire");
         require!(env::block_timestamp_ms() > brief.offer_until_ms, "the offer is still open");
         self.decline(brief_id);
+    }
+
+    /// The tryout task `start_tryout` would pick now (most stake behind it).
+    pub fn next_tryout_task(&self, brief_id: u64) -> Option<String> {
+        self.briefs.get(&brief_id).and_then(most_backed)
     }
 
     pub fn get_brief(&self, brief_id: u64) -> Option<BriefView> {
@@ -570,12 +617,28 @@ impl Contract {
     }
 }
 
+/// The nominated tryout task with the most stake behind it; the first nominated wins a tie.
+fn most_backed(brief: &Brief) -> Option<String> {
+    let mut tally: Vec<(String, u128)> = vec![];
+    for n in &brief.nominations {
+        match tally.iter_mut().find(|(t, _)| *t == n.task_ref) {
+            Some((_, s)) => *s += n.stake,
+            None => tally.push((n.task_ref.clone(), n.stake)),
+        }
+    }
+    tally.iter().fold(None::<&(String, u128)>, |best, x| match best {
+        Some(b) if b.1 >= x.1 => Some(b),
+        _ => Some(x),
+    }).map(|x| x.0.clone())
+}
+
 fn brief_view(b: &Brief) -> BriefView {
     BriefView {
         id: b.id,
         client: b.client.clone(),
         skill: b.skill.clone(),
         summary: b.summary.clone(),
+        category: b.category.clone(),
         task_ref: b.task_ref.clone(),
         tests_hash: b.tests_hash.clone(),
         pass_ppm: b.pass_ppm,
