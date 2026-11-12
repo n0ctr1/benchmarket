@@ -1,50 +1,58 @@
-//! Agent identity ("passport"): a face the agent picks for itself from a fixed grammar.
+//! Agent identity ("passport"): an abstract face, like a GitHub identicon.
 //!
-//! A face is seven slot values: head, top, eyes, nose, mouth, ears, hue. The catalogs that
-//! turn slot values into ASCII live off chain (packages/shared/src/identity.ts); the contract
-//! only needs the slot sizes to validate a face and compare it with every face issued so far.
-//!
-//! Uniqueness rule: a new face must differ from every existing face in at least
-//! `MIN_DISTANCE` slots, and at least `MIN_SHAPE_DISTANCE` of those must be shape slots
-//! (everything except hue), so a recolor of someone else's face is never accepted.
+//! The agent writes a short self-description (its `seed`). The contract hashes it and derives
+//! a 5x5 mirrored pattern (15 free cells) and a hue, so the face is a pure function of the
+//! agent's own words and nobody can pick someone else's face. A pattern is accepted only if it
+//! differs from every issued pattern in at least `MIN_BITS` cells; the agent rewrites its
+//! seed otherwise. The renderer lives in packages/shared/src/identity.ts.
 
-/// Number of options per slot: head, top, eyes, nose, mouth, ears, hue.
-pub const FACE_SLOTS: [u8; 7] = [6, 8, 10, 6, 10, 6, 10];
-pub const SHAPE_SLOTS: usize = 6;
-pub const MIN_DISTANCE: u8 = 3;
-pub const MIN_SHAPE_DISTANCE: u8 = 2;
+use near_sdk::env;
+
+pub const DOMAIN: &str = "agent-league:face:v1:";
+pub const CELLS: u32 = 15;
+pub const MIN_BITS: u32 = 3;
+pub const MIN_FILL: u32 = 4;
+pub const MAX_FILL: u32 = 11;
+pub const MIN_SEED: usize = 20;
+pub const MAX_SEED: usize = 400;
 pub const MAX_MOTTO: usize = 64;
 
-pub fn validate_face(face: &[u8]) -> Result<(), String> {
-    if face.len() != FACE_SLOTS.len() {
-        return Err(format!("face must have {} slots", FACE_SLOTS.len()));
+/// (pattern, hue) for a seed. Bit `row * 3 + col` is the cell in column `col` (0..3) of `row`;
+/// columns 3 and 4 mirror columns 1 and 0.
+pub fn derive(seed: &str) -> (u16, u16) {
+    let mut input = DOMAIN.as_bytes().to_vec();
+    input.extend_from_slice(seed.as_bytes());
+    let h = env::sha256_array(&input);
+    let pattern = (h[0] as u16 | ((h[1] as u16) << 8)) & 0x7fff;
+    let hue = ((h[2] as u16) << 8 | h[3] as u16) % 360;
+    (pattern, hue)
+}
+
+pub fn bits_apart(a: u16, b: u16) -> u32 {
+    (a ^ b).count_ones()
+}
+
+fn printable(s: &str) -> bool {
+    s.chars().all(|c| (' '..='~').contains(&c))
+}
+
+pub fn validate_seed(seed: &str) -> Result<(), String> {
+    if seed.len() < MIN_SEED || seed.len() > MAX_SEED {
+        return Err(format!("seed must be {MIN_SEED}..={MAX_SEED} characters"));
     }
-    for (i, (v, n)) in face.iter().zip(FACE_SLOTS.iter()).enumerate() {
-        if v >= n {
-            return Err(format!("slot {i} out of range: {v} >= {n}"));
-        }
+    if !printable(seed) || seed.trim() != seed {
+        return Err("seed must be printable ASCII without leading or trailing spaces".into());
     }
     Ok(())
 }
 
-/// (all-slot distance, shape-slot distance).
-pub fn distance(a: &[u8], b: &[u8]) -> (u8, u8) {
-    let mut all = 0;
-    let mut shape = 0;
-    for i in 0..FACE_SLOTS.len() {
-        if a.get(i) != b.get(i) {
-            all += 1;
-            if i < SHAPE_SLOTS {
-                shape += 1;
-            }
-        }
+/// Very sparse or very full patterns read as noise, not a face.
+pub fn validate_pattern(pattern: u16) -> Result<(), String> {
+    let fill = (pattern as u32).count_ones();
+    if !(MIN_FILL..=MAX_FILL).contains(&fill) {
+        return Err(format!("pattern has {fill} of {CELLS} cells filled, needs {MIN_FILL}..={MAX_FILL}"));
     }
-    (all, shape)
-}
-
-pub fn distinct_enough(a: &[u8], b: &[u8]) -> bool {
-    let (all, shape) = distance(a, b);
-    all >= MIN_DISTANCE && shape >= MIN_SHAPE_DISTANCE
+    Ok(())
 }
 
 pub fn validate_motto(motto: &str) -> Result<(), String> {
@@ -52,54 +60,49 @@ pub fn validate_motto(motto: &str) -> Result<(), String> {
     if m.is_empty() || m.len() > MAX_MOTTO {
         return Err(format!("motto must be 1..={MAX_MOTTO} characters"));
     }
-    if !m.chars().all(|c| (' '..='~').contains(&c)) {
+    if !printable(m) {
         return Err("motto must be printable ASCII".into());
     }
     Ok(())
 }
 
-/// Canonical text form, e.g. `h2-t5-e7-n1-m3-a2-c4`.
-pub fn face_code(face: &[u8]) -> String {
-    const TAGS: [char; 7] = ['h', 't', 'e', 'n', 'm', 'a', 'c'];
-    face.iter().zip(TAGS.iter()).map(|(v, t)| format!("{t}{v}")).collect::<Vec<_>>().join("-")
+/// Text form used in events and views, e.g. `5a3c-212` (pattern hex, hue).
+pub fn face_code(pattern: u16, hue: u16) -> String {
+    format!("{pattern:04x}-{hue:03}")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
 
     #[test]
-    fn validates_ranges() {
-        assert!(validate_face(&[0, 0, 0, 0, 0, 0, 0]).is_ok());
-        assert!(validate_face(&[5, 7, 9, 5, 9, 5, 9]).is_ok());
-        assert!(validate_face(&[6, 0, 0, 0, 0, 0, 0]).is_err());
-        assert!(validate_face(&[0, 0, 0]).is_err());
+    fn derive_matches_the_typescript_renderer() {
+        testing_env!(VMContextBuilder::new().build());
+        // Same vector as packages/orchestrator/test/identity.test.ts.
+        assert_eq!(derive("I read the spec twice and test the edges first."), EXPECTED_VECTOR);
+    }
+
+    // Computed by the TypeScript implementation; both sides must agree.
+    const EXPECTED_VECTOR: (u16, u16) = (21617, 60);
+
+    #[test]
+    fn distance_and_fill() {
+        assert_eq!(bits_apart(0b101, 0b011), 2);
+        assert!(validate_pattern(0b1111).is_ok());
+        assert!(validate_pattern(0b111).is_err());
+        assert!(validate_pattern(0x7fff).is_err());
     }
 
     #[test]
-    fn recolor_is_not_distinct() {
-        let a = [1, 2, 3, 4, 5, 1, 0];
-        // Same shape, other hue: distance 1.
-        assert!(!distinct_enough(&a, &[1, 2, 3, 4, 5, 1, 7]));
-        // Two shape slots and the hue: accepted.
-        assert!(distinct_enough(&a, &[1, 2, 9, 4, 0, 1, 7]));
-        // Ears and hue only: two slots, one of them shape. Rejected.
-        assert_eq!(distance(&a, &[1, 2, 3, 4, 5, 3, 7]), (2, 1));
-        assert!(!distinct_enough(&a, &[1, 2, 3, 4, 5, 3, 7]));
-        // Three shape slots, same hue: accepted.
-        assert!(distinct_enough(&a, &[0, 0, 0, 4, 5, 1, 0]));
-    }
-
-    #[test]
-    fn motto_rules() {
-        assert!(validate_motto("Spec first, code second.").is_ok());
-        assert!(validate_motto("   ").is_err());
+    fn seed_and_motto_rules() {
+        assert!(validate_seed("A careful agent that reads the spec.").is_ok());
+        assert!(validate_seed("too short").is_err());
+        assert!(validate_seed(" leading space is not allowed here").is_err());
+        assert!(validate_seed("caf\u{e9} is not ascii but long enough").is_err());
+        assert!(validate_motto("Spec first.").is_ok());
         assert!(validate_motto(&"x".repeat(65)).is_err());
-        assert!(validate_motto("caf\u{e9}").is_err());
-    }
-
-    #[test]
-    fn code_format() {
-        assert_eq!(face_code(&[2, 5, 7, 1, 3, 2, 4]), "h2-t5-e7-n1-m3-a2-c4");
+        assert_eq!(face_code(0x5a3c, 7), "5a3c-007");
     }
 }

@@ -43,21 +43,26 @@ fn setup(threshold: u8) -> (Contract, Vec<SigningKey>) {
     (c, keys)
 }
 
-/// Issues a passport as the agent itself. Faces of different agents differ in all slots here.
-fn issue(c: &mut Contract, agent: &str, face: [u8; 7]) -> u32 {
-    ctx(agent, IDENTITY_DEPOSIT, 900);
-    c.register_identity(acc(agent), face.to_vec(), format!("I am {agent}"), "cfg".into(), "proof".into())
+/// A seed for `name` whose face is accepted right now (tries suffixes until one fits).
+fn seed_for(c: &Contract, name: &str) -> String {
+    (0..500)
+        .map(|n| format!("I am {name}, a careful agent, variant {n}."))
+        .find(|s| c.check_face(s.clone()).ok)
+        .expect("no acceptable seed")
 }
 
-fn face_for(i: u8) -> [u8; 7] {
-    [i % 6, i % 8, i % 10, i % 6, i % 10, i % 6, i % 10]
+/// Issues a passport as the agent itself.
+fn issue(c: &mut Contract, agent: &str) -> u32 {
+    let seed = seed_for(c, agent);
+    ctx(agent, IDENTITY_DEPOSIT, 900);
+    c.register_identity(acc(agent), seed, format!("I am {agent}"), "cfg".into(), "proof".into())
 }
 
 /// Creates a round with agents a, b, c registered by their builders (0.5 NEAR stake each).
 fn round_with_agents(c: &mut Contract) -> u64 {
-    for (i, a) in ["a.testnet", "b.testnet", "c.testnet"].iter().enumerate() {
+    for a in ["a.testnet", "b.testnet", "c.testnet"] {
         if c.get_identity(acc(a)).is_none() {
-            issue(c, a, face_for(i as u8));
+            issue(c, a);
         }
     }
     ctx("manager.testnet", 10 * NEAR, 1_000);
@@ -236,7 +241,7 @@ fn missing_answer_cannot_score() {
 #[should_panic(expected = "builder stake below minimum")]
 fn builder_must_stake() {
     let (mut c, _) = setup(1);
-    issue(&mut c, "x.testnet", face_for(1));
+    issue(&mut c, "x.testnet");
     ctx("manager.testnet", 0, 1_000);
     let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5);
     ctx("builder.testnet", NEAR / 10, 1_100);
@@ -247,9 +252,10 @@ fn builder_must_stake() {
 fn manager_registers_market_agents_without_stake() {
     let (mut c, _) = setup(1);
     // Market agents cannot sign: the owner issues their passports.
-    for (i, m) in ["m1.testnet", "m2.testnet"].iter().enumerate() {
+    for m in ["m1.testnet", "m2.testnet"] {
+        let seed = seed_for(&c, m);
         ctx("owner.testnet", IDENTITY_DEPOSIT, 900);
-        c.register_identity(acc(m), face_for(i as u8 + 3).to_vec(), "market agent".into(), "market:handle".into(), "".into());
+        c.register_identity(acc(m), seed, "market agent".into(), "market:handle".into(), "".into());
     }
     ctx("manager.testnet", 0, 1_000);
     let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5);
@@ -330,62 +336,77 @@ fn accepts_signature_from_typescript_verifier() {
 // ----- identities -----
 
 #[test]
-fn identities_are_numbered_and_listed() {
+fn identities_are_numbered_and_derived_on_chain() {
     let (mut c, _) = setup(1);
-    assert_eq!(issue(&mut c, "a.testnet", face_for(0)), 1);
-    assert_eq!(issue(&mut c, "b.testnet", face_for(1)), 2);
+    assert_eq!(issue(&mut c, "a.testnet"), 1);
+    assert_eq!(issue(&mut c, "b.testnet"), 2);
     let all = c.get_identities(None, None);
     assert_eq!(all.len(), 2);
-    assert_eq!(all[1].face_code, "h1-t1-e1-n1-m1-a1-c1");
-    assert_eq!(c.get_identity(acc("a.testnet")).unwrap().motto, "I am a.testnet");
+    let a = c.get_identity(acc("a.testnet")).unwrap();
+    assert_eq!((a.pattern, a.hue), identity::derive(&a.seed));
+    assert_eq!(a.face_code, identity::face_code(a.pattern, a.hue));
+    assert!(identity::bits_apart(all[0].pattern, all[1].pattern) >= identity::MIN_BITS);
     assert!(get_logs().iter().any(|l| l.contains("identity_issued")));
 }
 
 #[test]
-#[should_panic(expected = "face too close to a.testnet")]
-fn same_face_is_rejected() {
+#[should_panic(expected = "face too close to a.testnet: 0 cells apart")]
+fn same_seed_is_rejected() {
     let (mut c, _) = setup(1);
-    issue(&mut c, "a.testnet", [1, 2, 3, 4, 5, 1, 0]);
-    issue(&mut c, "b.testnet", [1, 2, 3, 4, 5, 1, 0]);
+    let seed = seed_for(&c, "a.testnet");
+    ctx("a.testnet", IDENTITY_DEPOSIT, 900);
+    c.register_identity(acc("a.testnet"), seed.clone(), "a".into(), "cfg".into(), "".into());
+    ctx("b.testnet", IDENTITY_DEPOSIT, 900);
+    c.register_identity(acc("b.testnet"), seed, "b".into(), "cfg".into(), "".into());
 }
 
 #[test]
-#[should_panic(expected = "face too close to a.testnet")]
-fn recolored_face_is_rejected() {
+fn near_identical_pattern_is_rejected() {
     let (mut c, _) = setup(1);
-    issue(&mut c, "a.testnet", [1, 2, 3, 4, 5, 1, 0]);
-    // Different hue and ears, same head, top, eyes, nose, mouth.
-    issue(&mut c, "b.testnet", [1, 2, 3, 4, 5, 3, 7]);
+    issue(&mut c, "a.testnet");
+    let taken = c.get_identity(acc("a.testnet")).unwrap().pattern;
+    // Search for another seed whose pattern is 1 or 2 cells from the issued one.
+    let close = (0..20_000)
+        .map(|n| format!("A different agent with another story, try {n}."))
+        .find(|s| {
+            let (p, _) = identity::derive(s);
+            let d = identity::bits_apart(p, taken);
+            (1..identity::MIN_BITS).contains(&d) && identity::validate_pattern(p).is_ok()
+        })
+        .expect("no close seed found");
+    let check = c.check_face(close);
+    assert!(!check.ok);
+    assert_eq!(check.nearest, Some(acc("a.testnet")));
+    assert!(check.reason.unwrap().contains("cells apart"));
 }
 
 #[test]
-fn check_face_reports_nearest() {
-    let (mut c, _) = setup(1);
-    issue(&mut c, "a.testnet", [1, 2, 3, 4, 5, 1, 0]);
-    issue(&mut c, "b.testnet", [5, 7, 9, 0, 0, 5, 9]);
-    let near = c.check_face(vec![1, 2, 3, 4, 0, 0, 0]);
-    assert!(!near.ok);
-    assert_eq!(near.nearest, Some(acc("a.testnet")));
-    assert_eq!(near.distance, Some(2));
-    let far = c.check_face(vec![1, 2, 9, 4, 0, 0, 0]);
-    assert!(far.ok);
-    assert!(!c.check_face(vec![9, 0, 0, 0, 0, 0, 0]).ok);
+fn check_face_validates_seed_and_fill() {
+    let (c, _) = setup(1);
+    assert!(!c.check_face("short".into()).ok);
+    let sparse = (0..50_000)
+        .map(|n| format!("Sparse face search, attempt number {n}."))
+        .find(|s| (identity::derive(s).0 as u32).count_ones() < identity::MIN_FILL)
+        .unwrap();
+    let r = c.check_face(sparse);
+    assert!(!r.ok && r.reason.unwrap().contains("cells filled"));
 }
 
 #[test]
 #[should_panic(expected = "identity already issued")]
 fn identity_is_issued_once() {
     let (mut c, _) = setup(1);
-    issue(&mut c, "a.testnet", face_for(0));
-    issue(&mut c, "a.testnet", face_for(3));
+    issue(&mut c, "a.testnet");
+    issue(&mut c, "a.testnet");
 }
 
 #[test]
 #[should_panic(expected = "only the agent or the owner")]
 fn others_cannot_issue_an_identity() {
     let (mut c, _) = setup(1);
+    let seed = seed_for(&c, "a.testnet");
     ctx("mallory.testnet", IDENTITY_DEPOSIT, 900);
-    c.register_identity(acc("a.testnet"), face_for(0).to_vec(), "hi".into(), "cfg".into(), "".into());
+    c.register_identity(acc("a.testnet"), seed, "hi".into(), "cfg".into(), "".into());
 }
 
 #[test]
@@ -399,11 +420,27 @@ fn registration_needs_an_identity() {
 }
 
 #[test]
-fn migrate_keeps_v1_state_and_adds_identities() {
-    let (mut c, keys) = setup(1);
+fn migrate_keeps_rounds_and_drops_v2_passports() {
+    let (mut c, _) = setup(1);
     let id = round_with_agents(&mut c);
-    // Write the same rounds and ratings in the V1 layout, as the deployed contract has them.
-    let v1 = ContractV1 {
+    c.rounds.flush();
+    c.positions.flush();
+    // The deployed V2 state: same rounds, plus one passport in the old format.
+    let mut old_ids: IterableMap<AccountId, IdentityV2> = IterableMap::new(StorageKey::Identities);
+    old_ids.insert(
+        acc("a.testnet"),
+        IdentityV2 {
+            number: 1,
+            face: vec![1, 2, 3, 4, 5, 1, 0],
+            motto: "old".into(),
+            config_hash: "cfg".into(),
+            proof: "".into(),
+            issuer: acc("a.testnet"),
+            issued_at_ms: 1,
+        },
+    );
+    old_ids.flush();
+    let v2 = ContractV2 {
         owner: c.owner.clone(),
         verifiers: c.verifiers.clone(),
         threshold: c.threshold,
@@ -417,15 +454,13 @@ fn migrate_keeps_v1_state_and_adds_identities() {
         positions: LookupMap::new(StorageKey::Positions),
         ratings: IterableMap::new(StorageKey::Ratings),
         scouts: IterableMap::new(StorageKey::Scouts),
+        identities: old_ids,
+        next_identity: 2,
     };
-    c.rounds.flush();
-    c.positions.flush();
-    env::state_write(&v1);
+    env::state_write(&v2);
     ctx("league.testnet", 0, 2_000);
     let mut m = Contract::migrate();
     assert_eq!(m.get_round(id).unwrap().entries.len(), 3);
-    assert_eq!(m.next_round_id, id + 1);
     assert!(m.get_identities(None, None).is_empty());
-    assert_eq!(issue(&mut m, "d.testnet", face_for(4)), 1);
-    let _ = keys;
+    assert_eq!(issue(&mut m, "d.testnet"), 1);
 }
