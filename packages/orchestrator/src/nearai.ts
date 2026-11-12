@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import https from "node:https";
 import { clientKey, modelX25519, openField, sealField } from "@agent-league/shared";
 import { config } from "./config.js";
 
@@ -58,14 +59,10 @@ export async function chat(
     max_tokens: opts.maxTokens ?? 32000,
     ...(opts.json ? { response_format: { type: "json_object" } } : {}),
   });
-  const res = await fetch(`${config.nearAiBaseUrl}/chat/completions`, {
-    method: "POST",
-    headers: headers(),
-    body: requestBody,
-    signal: AbortSignal.timeout(opts.timeoutMs ?? 300_000),
-  });
-  const body = await res.text();
-  if (!res.ok) throw new Error(`NEAR AI ${res.status} for ${model}: ${body.slice(0, 300)}`);
+  // node:https, not fetch: fetch drops a response whose headers take more than 300 s.
+  const res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, headers(), requestBody, opts.timeoutMs ?? 600_000);
+  const body = res.text;
+  if (res.status !== 200) throw new Error(`NEAR AI ${res.status} for ${model}: ${body.slice(0, 300)}`);
   const j = JSON.parse(body);
   const choice = j.choices?.[0];
   const content = choice?.message?.content;
@@ -155,14 +152,14 @@ export async function sealedChat(model: string, messages: ChatMessage[], maxToke
   const me = clientKey();
   const requestBody = JSON.stringify({ model, messages: messages.map((m, i) => ({ role: m.role, content: fields[i].field })), max_tokens: maxTokens });
   const started = Date.now();
-  const res = await fetch(`${config.nearAiBaseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { ...headers(), "X-Signing-Algo": "ed25519", "X-Client-Pub-Key": me.pubHex, "X-Model-Pub-Key": modelPub, "X-Encryption-Version": "2" },
-    body: requestBody,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const responseBody = await res.text();
-  if (!res.ok) throw new Error(`NEAR AI ${res.status} for ${model}: ${responseBody.slice(0, 300)}`);
+  const res = await postLong(
+    `${config.nearAiBaseUrl}/chat/completions`,
+    { ...headers(), "X-Signing-Algo": "ed25519", "X-Client-Pub-Key": me.pubHex, "X-Model-Pub-Key": modelPub, "X-Encryption-Version": "2" },
+    requestBody,
+    timeoutMs,
+  );
+  const responseBody = res.text;
+  if (res.status !== 200) throw new Error(`NEAR AI ${res.status} for ${model}: ${responseBody.slice(0, 300)}`);
   const j = JSON.parse(responseBody);
   const sealedContent = j.choices?.[0]?.message?.content;
   if (typeof sealedContent !== "string" || !sealedContent) throw new ChatError(`empty completion from ${model}`, j.choices?.[0]?.finish_reason === "length");
@@ -174,4 +171,22 @@ export async function sealedChat(model: string, messages: ChatMessage[], maxToke
     sealed: { modelPub, fieldSecrets: fields.map((f) => f.secret), clientSeed: me.seed },
     latencyMs: Date.now() - started,
   };
+}
+
+/**
+ * POST over node:https. Node's fetch gives up waiting for response headers after 300 s whatever
+ * the abort signal says; reasoning models answering a whole task without streaming take longer.
+ */
+function postLong(url: string, hdrs: Record<string, string>, body: string, timeoutMs: number): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: "POST", headers: { ...hdrs, "Content-Length": Buffer.byteLength(body) } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") }));
+      res.on("error", reject);
+    });
+    req.setTimeout(timeoutMs, () => req.destroy(Object.assign(new Error(`timed out after ${timeoutMs / 1000}s`), { name: "TimeoutError" })));
+    req.on("error", reject);
+    req.end(body);
+  });
 }
