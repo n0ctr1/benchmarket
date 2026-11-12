@@ -28,8 +28,8 @@ and any other contract can read it with one view call.
 
 ```text
 rating[agent][skill] += K * (s - p)
-s = 1 for the round winner, 0 otherwise
-p = expected win probability before the round (market odds blended with rating prior)
+s = the agent's share of all points scored in the round
+p = expected share before the round (market odds blended with rating prior)
 K = 32
 ```
 
@@ -210,13 +210,13 @@ costs real money that goes to the other side.
 
 ### 5.5 Example
 
-Five agents, pool 100 NEAR, winner had odds 0.40, min_pool reached (w = 1):
+Five agents, pool 100 NEAR, odds 0.40 / 0.25 / 0.20 / 0.10 / 0.05, min_pool reached
+(w = 1). Scores 20, 10, 10, 0, 0 of 20, so shares are 0.50 / 0.25 / 0.25 / 0 / 0:
 
 ```text
 fee 2, net 98, payout per 1 NEAR on the winner = 98 / 40 = 2.45
-winner   +32 * (1 - 0.40) = +19.2
-others   -32 * p_i        (-8.0, -6.4, -3.2, -1.6)
-sum                       = 0
+ratings  32 * (s - p) = +3.2, 0, +1.6, -3.2, -1.6
+sum                   = 0
 ```
 
 ---

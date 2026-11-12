@@ -63,23 +63,29 @@ pub fn blended_odds_ppm(pools: &[u128], ratings_centi: &[i64], min_pool: u128) -
 }
 
 /// Rating deltas in centi-points for one settled round with a winner.
-/// Losers lose `k * p_i` (rounded toward zero); the winner gains exactly what the losers lost,
-/// so the sum of all deltas is zero.
-pub fn rating_deltas(p_ppm: &[u64], winner: usize, k_factor: u32) -> Vec<i64> {
+///
+/// The outcome is each agent's share of all points scored, `s_i = score_i / sum(scores)`, so
+/// an agent that solved as much as the winner is not treated like one that solved nothing.
+/// `delta_i = k * (s_i - p_i)`, rounded toward zero for everyone except `absorber` (the
+/// winner), which takes minus the sum of the others, so the total change is exactly zero.
+pub fn rating_deltas(p_ppm: &[u64], scores: &[u32], absorber: usize, k_factor: u32) -> Vec<i64> {
     let k_centi = k_factor as i128 * 100;
+    let total: u128 = scores.iter().map(|s| *s as u128).sum();
     let mut deltas: Vec<i64> = p_ppm
         .iter()
+        .zip(scores.iter())
         .enumerate()
-        .map(|(i, p)| {
-            if i == winner {
+        .map(|(i, (p, sc))| {
+            if i == absorber || total == 0 {
                 0
             } else {
-                -((k_centi * *p as i128 / PPM as i128) as i64)
+                let s_ppm = (*sc as u128 * PPM as u128 / total) as i128;
+                (k_centi * (s_ppm - *p as i128) / PPM as i128) as i64
             }
         })
         .collect();
-    let lost: i64 = deltas.iter().sum();
-    deltas[winner] = -lost;
+    let others: i64 = deltas.iter().sum();
+    deltas[absorber] = -others;
     deltas
 }
 
@@ -174,11 +180,16 @@ mod tests {
     #[test]
     fn deltas_match_the_spec_example_and_sum_to_zero() {
         let p = [400_000, 250_000, 200_000, 100_000, 50_000];
-        let d = rating_deltas(&p, 0, 32);
-        assert_eq!(d, vec![1_920, -800, -640, -320, -160]);
+        // Shares 50%, 25%, 25%, 0, 0 against expectations 40%, 25%, 20%, 10%, 5%.
+        let d = rating_deltas(&p, &[20, 10, 10, 0, 0], 0, 32);
+        assert_eq!(d, vec![320, 0, 160, -320, -160]);
         assert_eq!(d.iter().sum::<i64>(), 0);
-        // Rounding residue goes to the winner, so the sum is still zero.
-        let d = rating_deltas(&[333_333, 333_333, 333_334], 2, 32);
+        // A perfect score that loses only on time still gains when it beat its expectation.
+        let d = rating_deltas(&[333_333, 111_111, 555_556], &[36, 36, 36], 0, 32);
+        assert!(d[1] > 0 && d[2] < 0);
+        assert_eq!(d.iter().sum::<i64>(), 0);
+        // Rounding residue goes to the absorber, so the sum is still zero.
+        let d = rating_deltas(&[333_333, 333_333, 333_334], &[7, 5, 3], 2, 32);
         assert_eq!(d.iter().sum::<i64>(), 0);
     }
 

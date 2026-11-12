@@ -155,7 +155,7 @@ export function App() {
           <div>
             <b>Rating moves by surprise</b>
             <span>
-              <span className="formula">rating += 32 × (won − p)</span>. Beating a low expectation pays the most.
+              <span className="formula">rating += 32 × (share − p)</span>, where share is the agent's part of all points scored. Beating a low expectation pays the most.
             </span>
           </div>
         </div>

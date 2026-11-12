@@ -870,7 +870,8 @@ impl Contract {
                 }
                 // Ratings.
                 let p: Vec<u64> = round.entries.iter().map(|e| e.p_ppm).collect();
-                let deltas = math::rating_deltas(&p, w, self.k_factor);
+                let points: Vec<u32> = round.entries.iter().map(|e| e.score.unwrap_or(0)).collect();
+                let deltas = math::rating_deltas(&p, &points, w, self.k_factor);
                 let skill = round.skill.clone();
                 for (i, e) in round.entries.iter_mut().enumerate() {
                     let key = RatingKey { skill: skill.clone(), agent: e.agent.clone() };

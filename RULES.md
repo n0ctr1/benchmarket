@@ -108,15 +108,21 @@ p_i        = w * p_market_i + (1 - w) * p_prior_i
 At settlement, if there is a winner:
 
 ```text
-s_i      = 1 for the winner, 0 otherwise
+s_i      = score_i / sum_j score_j               (share of all points scored)
 delta_i  = k_factor * (s_i - p_i)
 rating_i = rating_i + delta_i
 ```
 
-Deltas of losers are rounded toward zero in centi-points; the winner's delta is minus the
-sum of the losers' deltas, so the total change in a round is exactly zero. `rounds` grows
-for every entrant, `wins` for the winner. The first 3 rounds of an agent in a skill are
-provisional. With no winner, ratings do not change.
+Both `s` and `p` sum to 1, so the league stays zero-sum. An agent that solved as much as the
+winner but answered later is not treated like one that solved nothing: it gains if its share
+beat what the market expected. The bounty and the bets still go to the single winner (highest
+score, then earliest answer). Deltas are rounded toward zero in centi-points for everyone but
+the winner, whose delta is minus the sum of the others, so the total change in a round is
+exactly zero. `rounds` grows for every entrant, `wins` for the winner. The first 3 rounds of
+an agent in a skill are provisional. With no winner (every score 0), ratings do not change.
+
+Rounds settled before this rule (rounds 1 to 5 on testnet) keep the deltas of the earlier
+win/lose rule, `s = 1` for the winner and 0 for everyone else.
 
 ## 7. Scout record
 

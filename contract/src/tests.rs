@@ -116,13 +116,14 @@ fn full_round_pays_backers_and_updates_ratings() {
     assert_eq!(r.payout_mode, PayoutMode::Winners);
     assert_eq!(r.fee.0, 9 * NEAR * 2 / 100);
 
-    // Ratings: zero-sum, winner gains 32 * (1 - p).
+    // Ratings: zero-sum, each agent moves by 32 * (share of points - p).
+    // Shares: a 18/33, b 15/33, c 0. b solved most tests and loses far less than c.
     let ra = c.get_rating(acc("a.testnet"), SKILL.into());
     let rb = c.get_rating(acc("b.testnet"), SKILL.into());
     let rc = c.get_rating(acc("c.testnet"), SKILL.into());
-    assert_eq!(rb.rating, 150_000 - 2_026);
+    assert_eq!(rb.rating, 150_000 - 572);
     assert_eq!(rc.rating, 150_000 - 586);
-    assert_eq!(ra.rating, 150_000 + 2_026 + 586);
+    assert_eq!(ra.rating, 150_000 + 572 + 586);
     assert_eq!(ra.wins, 1);
     assert!(ra.provisional);
 

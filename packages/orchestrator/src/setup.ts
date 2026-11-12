@@ -72,7 +72,7 @@ export async function upgrade(): Promise<void> {
   console.log(`deploying ${path.relative(REPO_ROOT, wasm)} (${fs.statSync(wasm).size} bytes)`);
   await parent.deployContract(new Uint8Array(fs.readFileSync(wasm)));
   if (already) {
-    console.log("state already has identities, no migration needed");
+    console.log("state layout is current, no migration needed");
     return;
   }
   await parent.callFunction({ contractId: league, methodName: "migrate", args: {}, gas: 300_000_000_000_000n });
