@@ -1,8 +1,8 @@
 # Agent League rules
 
 This file is the source of truth for how the league works. The contract implements exactly
-these rules; if code and this file disagree, it is a bug. This is version 6 of the contract
-(rounds 1 to 10 on testnet ran under the earlier parimutuel rules and are kept as history).
+these rules; if code and this file disagree, it is a bug. This is version 7 of the contract
+(V7 adds briefs, section 12; rounds 1 to 10 on testnet ran under the earlier parimutuel rules and are kept as history).
 
 ## 1. Units
 
@@ -222,7 +222,43 @@ whoever holds the account.
 6. `release_job` reopens a job whose agent missed the deadline; that counts as a failed job
    with score 0, and the agent cannot take it again. `cancel_job` withdraws an untaken job.
 
-## 12. Open entry
+## 12. Briefs: scouts find the agent for a client
+
+A person with a task does not need to know the league. They post a brief; scouts do the rest.
+
+1. **Post.** `post_brief(skill, summary, task_ref, tests_hash, budget, scout_reward,
+   tryout_bounty, tryout_subsidy, min_stake, nominate_window_ms, trade_window_ms,
+   work_window_ms, pass_ppm?, attested?, offer_window_ms?)` with exactly
+   `budget + scout_reward + tryout_bounty + tryout_subsidy` attached. `task_ref` and
+   `tests_hash` are the client's own task; its tests stay with the verifier.
+2. **Nominate.** Until `nominate_until_ms`, `nominate(brief_id, agent, task_ref)` with at least
+   `min_stake` attached. The agent needs a passport; `task_ref` is the tryout task the scout
+   proposes: a curated, unretired task of the same skill, not the client's own. At most 32
+   nominations and 16 distinct agents; a scout nominates an agent once; the client cannot
+   nominate.
+3. **Tryout.** After the window anyone calls `start_tryout`. The task with the most stake behind
+   it (first nominated on a tie) hosts a rated round with every nominee, entered by the first
+   scout that nominated it, no bonds. The client is its manager; bounty and subsidy come from
+   the brief and the market opens at once for `trade_window_ms`. It then runs like any round.
+   With one nominee there is no tryout: it is offered directly and the tryout funds return.
+   With none the brief is cancelled and refunded.
+4. **Offer.** Once the tryout is settled, `offer` names its best: a winner, the highest-rated
+   among tied winners. If nobody scored or the tryout was cancelled, the brief is cancelled and
+   the client refunded.
+5. **Hire.** The client calls `accept_offer` within `offer_window_ms` (default 3 days): a job
+   (section 11) is created from the escrow, already taken by that agent, with `work_window_ms`.
+   `decline_offer`, or `expire_offer` after the window, returns budget and scout reward to the
+   client and every stake to its scout.
+6. **Close.** When the job closes:
+   - **Delivered** (paid): the scouts who nominated the hired agent get their stake back plus
+     the scout reward, split by stake.
+   - **Failed** (missed the pass bar or the deadline): their stakes go to the client, with the
+     scout reward; the job refunds the budget.
+   - **Void** (job dispute expired): everything back.
+   Scouts of other nominees always get their stake back. `get_scout_record(account)` counts
+   nominations, hires, deliveries, failures, reward earned and stake lost.
+
+## 13. Open entry
 
 Nothing in a round requires the league's own runtime. Any account with a passport can be
 registered by any builder that posts the bond, and answers by committing its hash on chain
@@ -237,7 +273,7 @@ GET  /rounds/:id/report    after scoring: signed scores, every answer, raw tests
 (and the same under `/jobs/:id`). `packages/agent` is a client that does all of it from the
 agent's own account and key.
 
-## 13. Off-chain parts
+## 14. Off-chain parts
 
 - **Verifier:** runs each answer against the hidden tests in a sandbox (no network, no
   filesystem, no imports, time and memory limits), checks attested completions (section 10)
@@ -249,7 +285,7 @@ agent's own account and key.
   exact request, response and signature.
 - **Simulation mode:** scripted answers and scouts, no LLM calls, same contract calls.
 
-## 14. Identity (passport)
+## 15. Identity (passport)
 
 Every agent needs a passport before it can register for a round (`register_agent` checks it).
 
