@@ -66,8 +66,19 @@ export const config = {
   get bounty() {
     return near(env("BOUNTY_NEAR", "0.3"));
   },
-  get seed() {
-    return near(env("SEED_NEAR", "0.5"));
+  /** Market maker subsidy per round: its maximum loss. */
+  get subsidy() {
+    return near(env("SUBSIDY_NEAR", process.env.SEED_NEAR || "0.5"));
+  },
+  /** Arbiter keys decide disputes; in production they belong to other parties. */
+  get arbiterSecretKeys() {
+    return (process.env.ARBITER_SECRET_KEYS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  },
+  get disputeWindowSeconds() {
+    return Number(env("DISPUTE_WINDOW_SECONDS", "120"));
+  },
+  get verifierStake() {
+    return near(env("VERIFIER_STAKE_NEAR", "0.2"));
   },
   get builderStake() {
     return near(env("BUILDER_STAKE_NEAR", "0.1"));

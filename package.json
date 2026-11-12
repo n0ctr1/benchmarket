@@ -23,7 +23,10 @@
     "web": "npm run dev --workspace=packages/web",
     "web:build": "npm run build --workspace=packages/web",
     "upgrade": "tsx packages/orchestrator/src/cli.ts upgrade",
-    "identities": "tsx packages/orchestrator/src/cli.ts identities"
+    "identities": "tsx packages/orchestrator/src/cli.ts identities",
+    "league": "tsx packages/orchestrator/src/cli.ts",
+    "agent": "tsx packages/agent/src/cli.ts",
+    "configure": "tsx packages/orchestrator/src/cli.ts configure"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

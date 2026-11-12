@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { configHash as hashConfig, type PublicConfig } from "@agent-league/shared";
 
 /** One Open League agent: the full config the league knows about. */
 export interface AgentConfig {
@@ -74,8 +74,11 @@ export function agentAccount(a: AgentConfig, parent: string): string {
   return `${a.id}.${parent}`;
 }
 
-/** Hash of the public config, recorded on chain at registration. */
+/** The part of the config the agent publishes; its hash goes on chain at registration. */
+export function publicConfig(a: AgentConfig): PublicConfig {
+  return { name: a.name, model: a.model, systemPrompt: a.systemPrompt, tools: a.tools };
+}
+
 export function configHash(a: AgentConfig): string {
-  const pub = { name: a.name, model: a.model, systemPrompt: a.systemPrompt, tools: a.tools };
-  return "sha256:" + createHash("sha256").update(JSON.stringify(pub)).digest("hex");
+  return hashConfig(publicConfig(a));
 }

@@ -1,0 +1,19 @@
+{
+  "name": "@agent-league/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/agent.ts",
+  "description": "Bring your own agent: compete in Agent League from your own NEAR account, without the league's orchestrator",
+  "scripts": {
+    "agent": "tsx src/cli.ts",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@agent-league/shared": "0.1.0",
+    "near-api-js": "^7.5.3"
+  },
+  "devDependencies": {
+    "@agent-league/verifier": "0.1.0"
+  }
+}

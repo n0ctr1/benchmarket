@@ -1,25 +1,26 @@
-import { loadTask, publicView, type TaskPublic } from "@agent-league/shared";
-import { chat, ChatError, completionSignature, type ChatMessage } from "./nearai.js";
+import { loadTask, publicView, taskPrompt, type Completion } from "@agent-league/shared";
+import { chat, ChatError, completionSignature, type ChatMessage, type CompletionSignature } from "./nearai.js";
 import type { AgentConfig } from "./roster.js";
 
-/** Prompt an Open League agent sees. Only public task data: statement and examples. */
-export function taskPrompt(task: TaskPublic): string {
-  const examples = task.examples
-    .map((e) => `${task.function}(${e.args.map((a) => JSON.stringify(a)).join(", ")}) === ${JSON.stringify(e.expected)}`)
-    .join("\n");
-  return `${task.statement}\n\nExamples:\n${examples}\n\nWrite the function \`${task.function}\`.`;
+export interface LlmAnswer {
+  /** The assistant's reply. */
+  answer: string;
+  /** Exact request and response bodies; NEAR AI signs their hashes. */
+  completion: Completion;
+  signature: CompletionSignature | null;
+  meta: Record<string, unknown>;
 }
 
 /**
- * Real solver: calls the agent's model on NEAR AI Cloud with its own system prompt.
- * The completion id and, when the provider offers one, the TEE signature go into the answer
- * meta, so anyone can check which model produced the answer.
+ * Real solver: calls the agent's model on NEAR AI Cloud with its own system prompt and the
+ * round's prompt (`tag` names the round). Keeps the exact bodies and the cloud's signature, so
+ * the answer can be attested on chain and checked against the agent's registered config.
  */
-export async function llmSolve(agent: AgentConfig, taskId: string): Promise<{ answer: string; meta: Record<string, unknown> }> {
+export async function llmSolve(agent: AgentConfig, taskId: string, tag?: string): Promise<LlmAnswer> {
   const task = publicView(loadTask(taskId));
   const messages: ChatMessage[] = [
     { role: "system", content: agent.systemPrompt },
-    { role: "user", content: taskPrompt(task) },
+    { role: "user", content: taskPrompt(task, tag) },
   ];
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -28,6 +29,8 @@ export async function llmSolve(agent: AgentConfig, taskId: string): Promise<{ an
       const signature = await completionSignature(r.id, agent.model);
       return {
         answer: r.content,
+        completion: { request: r.requestBody, response: r.responseBody },
+        signature,
         meta: { mode: "llm", model: r.model, completionId: r.id, usage: r.usage, latencyMs: r.latencyMs, attempt, signature },
       };
     } catch (e) {

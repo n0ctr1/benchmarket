@@ -9,34 +9,55 @@ export interface EntryView {
   builder: string;
   league: League;
   config_hash: string;
-  pool: string;
+  bond: string;
+  shares: string;
+  /** Current market price, ppm. */
   odds_ppm: number;
   p_ppm: number;
+  /** Price at lock, ppm. */
   market_ppm: number;
   answer_hash: string | null;
   answered_at_ms: number | null;
+  attested: boolean;
+  model: string | null;
+  request_hash: string | null;
   score: number | null;
   rating_before: number;
   rating_delta: number;
+  field_delta: number;
+  task_delta: number;
 }
+
+export type RoundStatus = "Open" | "Trading" | "Locked" | "Proposed" | "Disputed" | "Settled" | "Cancelled";
 
 export interface RoundView {
   id: number;
+  market: "lmsr" | "parimutuel";
   manager: string;
   skill: string;
   task_ref: string;
   tests_hash: string;
   bet_deadline_ms: number;
+  answer_deadline_ms: number;
   max_agents: number;
+  attested: boolean;
+  rated: boolean;
   bounty: string;
-  status: "Open" | "Locked" | "Settled" | "Cancelled";
+  status: RoundStatus;
   entries: EntryView[];
+  liquidity: string;
+  subsidy: string;
   total_pool: string;
   fee: string;
-  net: string;
+  bettors: number;
   payout_mode: "Pending" | "Winners" | "Refund";
+  winners: string[];
   winner: string | null;
   total_tests: number;
+  task_rating_before: number;
+  task_delta: number;
+  proposal: { total_tests: number; scores: Array<[string, number]>; signers: string[]; proposed_at_ms: number; dispute_until_ms: number } | null;
+  dispute: { by: string; bond: string; at_ms: number; overturned: boolean | null } | null;
   created_at_ms: number;
   locked_at_ms: number | null;
   settled_at_ms: number | null;
@@ -50,6 +71,9 @@ export interface RatingView {
   wins: number;
   provisional: boolean;
   last_round: number;
+  attested: number;
+  jobs_done: number;
+  jobs_failed: number;
 }
 
 export interface ScoutView {
@@ -59,6 +83,88 @@ export interface ScoutView {
   pnl: string;
   bets: number;
   wins: number;
+  skill_ppm: number;
+  scored_rounds: number;
+}
+
+export interface TaskView {
+  task_ref: string;
+  skill: string;
+  curated: boolean;
+  tests_hash: string;
+  rating: number;
+  rounds: number;
+  jobs: number;
+  saturated: number;
+  retired: boolean;
+}
+
+export type JobStatus = "Open" | "Taken" | "Answered" | "Proposed" | "Disputed" | "Paid" | "Failed" | "Cancelled";
+
+export interface JobView {
+  id: number;
+  poster: string;
+  skill: string;
+  task_ref: string;
+  tests_hash: string;
+  budget: string;
+  min_rating: number;
+  min_rounds: number;
+  pass_ppm: number;
+  attested: boolean;
+  rated: boolean;
+  work_window_ms: number;
+  status: JobStatus;
+  agent: string | null;
+  deadline_ms: number;
+  answer_hash: string | null;
+  answer_attested: boolean;
+  model: string | null;
+  request_hash: string | null;
+  score: number | null;
+  total_tests: number;
+  dispute_until_ms: number | null;
+  disputed_by: string | null;
+  rating_delta: number;
+  created_at_ms: number;
+  closed_at_ms: number | null;
+}
+
+export interface Params {
+  fee_bps: number;
+  min_pool: string;
+  min_builder_stake: string;
+  min_bet: string;
+  k_field: number;
+  k_task: number;
+  answer_window_ms: number;
+  dispute_window_ms: number;
+  resolve_timeout_ms: number;
+  settle_timeout_ms: number;
+  dispute_bond: string;
+  min_verifier_stake: string;
+  unstake_delay_ms: number;
+  max_bettors: number;
+}
+
+export interface ConfigView {
+  owner: string;
+  verifiers: string[];
+  threshold: number;
+  arbiters: string[];
+  arbiter_threshold: number;
+  inference_signers: string[];
+  params: Params;
+  next_round_id: number;
+  first_lmsr_round: number;
+  next_job_id: number;
+}
+
+/** NEAR AI Cloud signature, as the contract takes it. */
+export interface AttestationArg {
+  text: string;
+  signature: string;
+  signer: string;
 }
 
 export interface IdentityView {
@@ -152,38 +258,51 @@ export class LeagueChain {
 
   // ----- calls -----
 
-  createRound(manager: string, p: { skill: string; taskRef: string; testsHash: string; betDeadlineMs: number; maxAgents: number; bounty: bigint }) {
+  createRound(manager: string, p: { skill: string; taskRef: string; testsHash: string; betDeadlineMs: number; maxAgents: number; bounty: bigint; attested?: boolean }) {
     return this.call<number>(manager, "create_round", {
       skill: p.skill,
       task_ref: p.taskRef,
       tests_hash: p.testsHash,
       bet_deadline_ms: p.betDeadlineMs,
       max_agents: p.maxAgents,
+      attested: p.attested ?? false,
     }, p.bounty);
   }
 
-  registerAgent(builder: string, roundId: number, agent: string, league: League, configHash: string, stake: bigint) {
-    return this.call<void>(builder, "register_agent", { round_id: roundId, agent, league, config_hash: configHash }, stake);
+  registerAgent(builder: string, roundId: number, agent: string, league: League, configHash: string, bond: bigint) {
+    return this.call<void>(builder, "register_agent", { round_id: roundId, agent, league, config_hash: configHash }, bond);
   }
 
-  seed(seeder: string, roundId: number, amount: bigint) {
-    return this.call<void>(seeder, "seed", { round_id: roundId }, amount);
+  openMarket(manager: string, roundId: number, subsidy: bigint) {
+    return this.call<void>(manager, "open_market", { round_id: roundId }, subsidy);
   }
 
-  placeBet(bettor: string, roundId: number, agent: string, amount: bigint) {
-    return this.call<void>(bettor, "place_bet", { round_id: roundId, agent }, amount);
+  buy(bettor: string, roundId: number, agent: string, amount: bigint, minShares?: bigint) {
+    return this.call<string>(bettor, "buy", { round_id: roundId, agent, min_shares: minShares?.toString() ?? null }, amount);
   }
 
   lockRound(caller: string, roundId: number) {
     return this.call<void>(caller, "lock_round", { round_id: roundId });
   }
 
-  submitAnswer(agent: string, roundId: number, answerHash: string) {
-    return this.call<void>(agent, "submit_answer", { round_id: roundId, answer_hash: answerHash });
+  submitAnswer(agent: string, roundId: number, answerHash: string, attestation?: AttestationArg) {
+    return this.call<void>(agent, "submit_answer", { round_id: roundId, answer_hash: answerHash, attestation: attestation ?? null }, 0n, teraToGas("50"));
   }
 
   settle(caller: string, roundId: number, totalTests: number, scores: Array<[string, number]>, signatures: string[]) {
     return this.call<void>(caller, "settle", { round_id: roundId, total_tests: totalTests, scores, signatures }, 0n, HEAVY_GAS);
+  }
+
+  finalize(caller: string, roundId: number) {
+    return this.call<void>(caller, "finalize", { round_id: roundId }, 0n, HEAVY_GAS);
+  }
+
+  dispute(caller: string, roundId: number, bond: bigint) {
+    return this.call<void>(caller, "dispute", { round_id: roundId }, bond);
+  }
+
+  resolveDispute(caller: string, roundId: number, totalTests: number, scores: Array<[string, number]>, signatures: string[]) {
+    return this.call<void>(caller, "resolve_dispute", { round_id: roundId, total_tests: totalTests, scores, signatures }, 0n, HEAVY_GAS);
   }
 
   cancelRound(caller: string, roundId: number) {
@@ -196,6 +315,59 @@ export class LeagueChain {
 
   registerIdentity(signer: string, agent: string, seed: string, motto: string, configHash: string, proof: string) {
     return this.call<number>(signer, "register_identity", { agent, seed, motto, config_hash: configHash, proof }, IDENTITY_DEPOSIT, teraToGas("50"));
+  }
+
+  // ----- owner and verifiers -----
+
+  addTask(owner: string, taskRef: string, skill: string, testsHash: string) {
+    return this.call<void>(owner, "add_task", { task_ref: taskRef, skill, tests_hash: testsHash });
+  }
+
+  setParams(owner: string, params: Params) {
+    return this.call<void>(owner, "set_params", { params });
+  }
+
+  setArbiters(owner: string, arbiters: string[], threshold: number) {
+    return this.call<void>(owner, "set_arbiters", { arbiters, threshold });
+  }
+
+  setInferenceSigners(owner: string, signers: string[]) {
+    return this.call<void>(owner, "set_inference_signers", { signers });
+  }
+
+  stakeVerifier(staker: string, publicKey: string, amount: bigint) {
+    return this.call<void>(staker, "stake_verifier", { public_key: publicKey }, amount);
+  }
+
+  // ----- jobs -----
+
+  postJob(poster: string, p: { skill: string; taskRef: string; testsHash: string; minRating: number; minRounds?: number; passPpm?: number; workWindowMs: number; attested?: boolean; budget: bigint }) {
+    return this.call<number>(poster, "post_job", {
+      skill: p.skill,
+      task_ref: p.taskRef,
+      tests_hash: p.testsHash,
+      min_rating: p.minRating,
+      min_rounds: p.minRounds ?? null,
+      pass_ppm: p.passPpm ?? null,
+      work_window_ms: p.workWindowMs,
+      attested: p.attested ?? false,
+    }, p.budget);
+  }
+
+  takeJob(agent: string, jobId: number) {
+    return this.call<void>(agent, "take_job", { job_id: jobId });
+  }
+
+  submitJob(agent: string, jobId: number, answerHash: string, attestation?: AttestationArg) {
+    return this.call<void>(agent, "submit_job", { job_id: jobId, answer_hash: answerHash, attestation: attestation ?? null }, 0n, teraToGas("50"));
+  }
+
+  settleJob(caller: string, jobId: number, totalTests: number, score: number, signatures: string[]) {
+    return this.call<void>(caller, "settle_job", { job_id: jobId, total_tests: totalTests, score, signatures }, 0n, HEAVY_GAS);
+  }
+
+  finalizeJob(caller: string, jobId: number) {
+    return this.call<void>(caller, "finalize_job", { job_id: jobId }, 0n, HEAVY_GAS);
   }
 
   // ----- views -----
@@ -237,7 +409,27 @@ export class LeagueChain {
   }
 
   getPosition(roundId: number, account: string) {
-    return this.view<Array<{ agent: string; amount: string }>>("get_position", { round_id: roundId, account });
+    return this.view<Array<{ agent: string; amount: string; bond: string }>>("get_position", { round_id: roundId, account });
+  }
+
+  getTasks() {
+    return this.view<TaskView[]>("get_tasks", { limit: 100 });
+  }
+
+  getJob(jobId: number) {
+    return this.view<JobView | null>("get_job", { job_id: jobId });
+  }
+
+  getJobs(status?: JobStatus) {
+    return this.view<JobView[]>("get_jobs", { status: status ?? null, limit: 50 });
+  }
+
+  isQualified(agent: string, skill: string, minRating: number, minRounds?: number) {
+    return this.view<boolean>("is_qualified", { agent, skill, min_rating: minRating, min_rounds: minRounds ?? null, min_attested: null });
+  }
+
+  getVerifierStakes() {
+    return this.view<Array<{ public_key: string; owner: string; amount: string; unlock_at_ms: number | null; active: boolean }>>("get_verifier_stakes", {});
   }
 
   /** Available (spendable) balance of an account, yoctoNEAR. */
@@ -256,6 +448,6 @@ export class LeagueChain {
   }
 
   getConfig() {
-    return this.view<Record<string, unknown>>("get_config", {});
+    return this.view<ConfigView>("get_config", {});
   }
 }

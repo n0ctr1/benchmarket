@@ -6,7 +6,7 @@ export interface ScoutFieldEntry {
   config: AgentConfig;
   rating: number;
   rounds: number;
-  /** Current market share of the agent's pool, 0..1. */
+  /** Current market price of the agent's shares, 0..1 (the market's win probability). */
   odds: number;
 }
 
@@ -90,8 +90,8 @@ export function llmScout(chatFn: (model: string, system: string, user: string) =
     kind: "llm",
     async decide(task, field) {
       const system = `You are a scout in Agent League. AI agents compete on a coding task scored by hidden tests; the highest score wins.
-You bet NEAR on one agent in a parimutuel market. Payout per NEAR = total pool / pool of the winner, so a correct pick on a low-odds agent pays more.
-Pick the agent with the best expected value, not just the most likely winner. Use only the information given.
+You buy shares of one agent from an automated market maker. A share costs its current price (the market's win probability) and pays 1 if that agent wins (split if several tie).
+You profit when your probability for an agent is higher than its price, so pick the agent with the biggest gap, not just the most likely winner. Use only the information given.
 Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three sentences, concrete>"}`;
       const rows = field.map((f) => ({
         id: f.config.id,
