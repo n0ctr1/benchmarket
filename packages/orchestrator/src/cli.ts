@@ -9,7 +9,8 @@ import { config, DATA_DIR } from "./config.js";
 import { llmSolver, runRound, type RoundOptions } from "./round.js";
 import { llmScout, SCRIPTED_SCOUTS } from "./scouts.js";
 import { scoutChat } from "./llm.js";
-import { setup } from "./setup.js";
+import { setup, upgrade } from "./setup.js";
+import { issueIdentity } from "./identity.js";
 import path from "node:path";
 
 function arg(name: string, fallback?: string): string | undefined {
@@ -101,6 +102,15 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     }
+    case "upgrade":
+      await upgrade();
+      break;
+    case "identities": {
+      // One agent at a time: each face is checked against the passports issued before it.
+      const only = arg("agents")?.split(",");
+      for (const a of ROSTER.filter((x) => !only || only.includes(x.id))) await issueIdentity(chain, a);
+      break;
+    }
     case "bench":
       await bench(arg("task") ? [arg("task")!] : listTaskIds());
       break;
@@ -108,7 +118,7 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     default:
-      console.log("usage: league <setup|round|demo|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm]");
+      console.log("usage: league <setup|upgrade|identities|round|demo|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm]");
       process.exit(cmd ? 1 : 0);
   }
 }

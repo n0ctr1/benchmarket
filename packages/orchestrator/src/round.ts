@@ -56,6 +56,11 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   const task = loadTask(taskId);
   const marketSeconds = opts.marketSeconds ?? 120;
 
+  // Every agent needs a passport before it can enter (npm run identities).
+  for (const a of agents) {
+    if (!(await chain.getIdentity(agentAccount(a, league)))) throw new Error(`${a.name} has no passport yet: run npm run identities`);
+  }
+
   // 1. Create.
   const roundId = Number(
     await chain.createRound(league, {

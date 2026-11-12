@@ -1,0 +1,121 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { conflictPrompt, faceCode, parseIdentityReply, renderFace, zeroPrompt, type IdentityChoice } from "@agent-league/shared";
+import { IDENTITY_DEPOSIT, type LeagueChain } from "./chain.js";
+import { config, DATA_DIR } from "./config.js";
+import { chat, completionSignature, type ChatMessage, type CompletionSignature } from "./nearai.js";
+import { agentAccount, configHash, type AgentConfig } from "./roster.js";
+
+export interface IdentityAttempt {
+  at: number;
+  reply?: string;
+  choice?: IdentityChoice;
+  rejected?: string;
+  completionId?: string;
+  signature?: CompletionSignature | null;
+}
+
+export interface IdentityRecord {
+  agent: string;
+  model: string;
+  zeroPromptHash: string;
+  attempts: IdentityAttempt[];
+  issued?: { number: number; face: number[]; motto: string; why: string };
+}
+
+const MAX_ATTEMPTS = 4;
+
+function save(rec: IdentityRecord): void {
+  const dir = path.join(DATA_DIR, "identities");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${rec.agent}.json`), JSON.stringify(rec, null, 2));
+}
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/**
+ * The agent picks its own face. Every agent gets the same zero prompt (with its own system
+ * prompt as the system message, since the agent is model + prompt). The contract is the judge
+ * of uniqueness: a face too close to an issued one is sent back with the list of taken faces.
+ */
+export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say: (l: string) => void = console.log): Promise<IdentityRecord> {
+  const league = config.leagueAccount;
+  const account = agentAccount(agent, league);
+  const existing = await chain.getIdentity(account);
+  if (existing) {
+    say(`  ${agent.name.padEnd(7)} already has passport #${existing.number} (${existing.face_code})`);
+    return { agent: account, model: agent.model, zeroPromptHash: "", attempts: [] };
+  }
+  // The agent pays the passport deposit and gas itself; make sure it can.
+  const sent = await chain.topUp(league, account, IDENTITY_DEPOSIT + 10n ** 23n);
+  if (sent > 0n) say(`  topped up ${agent.id} for its passport`);
+  const zero = zeroPrompt();
+  const rec: IdentityRecord = { agent: account, model: agent.model, zeroPromptHash: `sha256:${sha(zero)}`, attempts: [] };
+  const messages: ChatMessage[] = [
+    { role: "system", content: agent.systemPrompt },
+    { role: "user", content: zero },
+  ];
+
+  for (let i = 1; i <= MAX_ATTEMPTS; i++) {
+    const attempt: IdentityAttempt = { at: Date.now() };
+    rec.attempts.push(attempt);
+    let reply;
+    try {
+      reply = await chat(agent.model, messages, { maxTokens: 32000, timeoutMs: 300_000 });
+    } catch (e) {
+      attempt.rejected = `model error: ${e instanceof Error ? e.message : e}`;
+      save(rec);
+      say(`  ${agent.name.padEnd(7)} attempt ${i}: ${attempt.rejected}`);
+      continue;
+    }
+    attempt.reply = reply.content;
+    attempt.completionId = reply.id;
+    attempt.signature = await completionSignature(reply.id, agent.model);
+    messages.push({ role: "assistant", content: reply.content });
+
+    let choice: IdentityChoice;
+    try {
+      choice = parseIdentityReply(reply.content);
+      attempt.choice = choice;
+    } catch (e) {
+      attempt.rejected = `invalid reply: ${e instanceof Error ? e.message : e}`;
+      save(rec);
+      say(`  ${agent.name.padEnd(7)} attempt ${i}: ${attempt.rejected}`);
+      messages.push({ role: "user", content: `That was not valid (${attempt.rejected}). Reply with the JSON object only.` });
+      continue;
+    }
+
+    const check = await chain.checkFace(choice.face);
+    let reason = check.ok ? null : check.reason ?? "rejected";
+    if (!reason) {
+      const sig = attempt.signature;
+      const proof = `nearai:${reply.id}:${sig?.signature_kind ?? "unsigned"}:${sig ? sha(sig.signature).slice(0, 16) : "-"}`;
+      try {
+        const number = Number(await chain.registerIdentity(account, account, choice.face, choice.motto, configHash(agent), proof));
+        rec.issued = { number, face: choice.face, motto: choice.motto, why: choice.why };
+        save(rec);
+        say(`  ${agent.name.padEnd(7)} passport #${number} ${faceCode(choice.face)}  "${choice.motto}"`);
+        for (const l of renderFace(choice.face)) say(`            ${l}`);
+        return rec;
+      } catch (e) {
+        // Another agent may have taken a close face between the check and the call; that goes
+        // back to the model. Anything else (balance, network) is not the agent's problem.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!/face too close/.test(msg)) {
+          rec.attempts.pop();
+          save(rec);
+          throw e;
+        }
+        reason = msg;
+      }
+    }
+    attempt.rejected = reason!;
+    save(rec);
+    say(`  ${agent.name.padEnd(7)} attempt ${i}: ${faceCode(choice.face)} rejected, ${reason}`);
+    const taken = (await chain.getIdentities()).map((t) => ({ agent: t.agent.split(".")[0], face: t.face }));
+    messages.push({ role: "user", content: conflictPrompt(taken, choice.face, reason!) });
+  }
+  save(rec);
+  throw new Error(`${agent.name} could not get a unique face in ${MAX_ATTEMPTS} attempts`);
+}

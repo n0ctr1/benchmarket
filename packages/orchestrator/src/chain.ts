@@ -61,6 +61,28 @@ export interface ScoutView {
   wins: number;
 }
 
+export interface IdentityView {
+  agent: string;
+  number: number;
+  face: number[];
+  face_code: string;
+  motto: string;
+  config_hash: string;
+  proof: string;
+  issuer: string;
+  issued_at_ms: number;
+}
+
+export interface FaceCheck {
+  ok: boolean;
+  reason: string | null;
+  nearest: string | null;
+  distance: number | null;
+  shape_distance: number | null;
+}
+
+export const IDENTITY_DEPOSIT = 10n ** 24n / 50n;
+
 const GAS = teraToGas("30");
 const HEAVY_GAS = teraToGas("150");
 
@@ -140,7 +162,23 @@ export class LeagueChain {
     return this.call<string>(caller, "claim", { round_id: roundId });
   }
 
+  registerIdentity(signer: string, agent: string, face: number[], motto: string, configHash: string, proof: string) {
+    return this.call<number>(signer, "register_identity", { agent, face, motto, config_hash: configHash, proof }, IDENTITY_DEPOSIT, teraToGas("50"));
+  }
+
   // ----- views -----
+
+  getIdentity(agent: string) {
+    return this.view<IdentityView | null>("get_identity", { agent });
+  }
+
+  getIdentities() {
+    return this.view<IdentityView[]>("get_identities", { limit: 100 });
+  }
+
+  checkFace(face: number[]) {
+    return this.view<FaceCheck>("check_face", { face });
+  }
 
   getRound(roundId: number) {
     return this.view<RoundView | null>("get_round", { round_id: roundId });

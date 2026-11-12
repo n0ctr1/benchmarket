@@ -59,3 +59,22 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
     console.log(`created ${w.id} with ${formatNear(w.balance)} NEAR`);
   }
 }
+
+/** Deploys the current wasm over the existing contract and runs `migrate` (V1 -> identities). */
+export async function upgrade(): Promise<void> {
+  const chain = new LeagueChain();
+  const league = config.leagueAccount;
+  const parent = chain.account(league);
+  const wasm = WASM_CANDIDATES.find((p) => fs.existsSync(p));
+  if (!wasm) throw new Error("build the contract first: npm run build:contract");
+  const already = await chain.getIdentities().then(() => true, () => false);
+  console.log(`deploying ${path.relative(REPO_ROOT, wasm)} (${fs.statSync(wasm).size} bytes)`);
+  await parent.deployContract(new Uint8Array(fs.readFileSync(wasm)));
+  if (already) {
+    console.log("state already has identities, no migration needed");
+    return;
+  }
+  await parent.callFunction({ contractId: league, methodName: "migrate", args: {}, gas: 300_000_000_000_000n });
+  const rounds = await chain.getRounds(50);
+  console.log(`migrated: ${rounds.length} rounds kept, identity registry added`);
+}

@@ -21,7 +21,9 @@
     "status": "tsx packages/orchestrator/src/cli.ts status",
     "bench": "tsx packages/orchestrator/src/cli.ts bench",
     "web": "npm run dev --workspace=packages/web",
-    "web:build": "npm run build --workspace=packages/web"
+    "web:build": "npm run build --workspace=packages/web",
+    "upgrade": "tsx packages/orchestrator/src/cli.ts upgrade",
+    "identities": "tsx packages/orchestrator/src/cli.ts identities"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
