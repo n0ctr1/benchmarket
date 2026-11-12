@@ -61,13 +61,24 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     if (!(await chain.getIdentity(agentAccount(a, league)))) throw new Error(`${a.name} has no passport yet: run npm run identities`);
   }
 
-  // 1. Create.
+  // 0. The league tops up agents and scouts that ran low, so a demo can run many rounds from one
+  // faucet account. Done before the round exists so it never eats into the market window.
+  const reserve = 0.05;
+  for (const id of [...agents.map((a) => agentAccount(a, league)), ...scouts.map((s) => `${s.id}.${league}`)]) {
+    const need = id.startsWith("scout") ? config.scoutBet : config.builderStake;
+    const sent = await chain.topUp(league, id, need + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
+    if (sent > 0n) say(`  topped up ${id.split(".")[0]} with ${formatNear(sent, sent < 10n ** 21n ? 6 : 3)} NEAR`);
+  }
+
+  // 1. Create. The deadline is a generous upper bound (registration, every scout's decision,
+  // RPC retries); the manager locks as soon as the last scout has bet.
+  const deadlineMs = Date.now() + Math.max(marketSeconds * 1000, 15 * 60_000);
   const roundId = Number(
     await chain.createRound(league, {
       skill: task.skill,
       taskRef: task.id,
       testsHash: task.testsHash,
-      betDeadlineMs: Date.now() + marketSeconds * 1000 + 60_000,
+      betDeadlineMs: deadlineMs,
       maxAgents: agents.length,
       bounty: config.bounty,
     }),
@@ -80,14 +91,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   say(`round ${roundId}: ${task.title} (${task.id}), bounty ${formatNear(config.bounty)} NEAR`);
   note("round_created", { task: publicView(task) });
 
-  // 2. Agents register themselves and stake on themselves. The league tops up agents and scouts
-  // that ran low, so a demo can run many rounds from one faucet account.
-  const reserve = 0.05;
-  for (const id of [...agents.map((a) => agentAccount(a, league)), ...scouts.map((s) => `${s.id}.${league}`)]) {
-    const need = id.startsWith("scout") ? config.scoutBet : config.builderStake;
-    const sent = await chain.topUp(league, id, need + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
-    if (sent > 0n) say(`  topped up ${id.split(".")[0]} with ${formatNear(sent)} NEAR`);
-  }
+  // 2. Agents register themselves and stake on themselves.
   for (const a of agents) {
     const acc = agentAccount(a, league);
     await chain.registerAgent(acc, roundId, acc, "Open", configHash(a), config.builderStake);
@@ -112,7 +116,8 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     const account = `${scout.id}.${league}`;
     await chain.placeBet(account, roundId, d.agent, config.scoutBet);
     say(`  ${scout.id.padEnd(12)} backs ${d.agent.split(".")[0]}: ${d.reasoning}`);
-    note("scout_bet", { scout: account, kind: scout.kind, agent: d.agent, reasoning: d.reasoning });
+    note("scout_bet", { scout: account, kind: scout.kind, agent: d.agent, reasoning: d.reasoning, ...(d.fallback ? { fallback: d.fallback } : {}) });
+    if (d.fallback) say(`    (${scout.id} fallback: ${d.fallback.reason})`);
     await sleep(1500);
   }
 

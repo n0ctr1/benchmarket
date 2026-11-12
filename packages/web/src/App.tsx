@@ -4,7 +4,8 @@ import { blockHeight, EXPLORER, getBettors, getIdentities, getLeaderboard, getRo
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Scouts, Standings } from "./Tables";
 
-const POLL_MS = 6000;
+// Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
+const POLL_MS = 15000;
 
 export function App() {
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -29,6 +30,7 @@ export function App() {
     let live = true;
     let identitiesSeen = -1;
     const tick = async () => {
+      if (document.hidden && identitiesSeen >= 0) return;
       try {
         const [r, l, b, h, ids] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities()]);
         if (!live) return;

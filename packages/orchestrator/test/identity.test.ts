@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { CELLS, cellsApart, cleanSeed, deriveFace, DOMAIN, faceCode, faceGrid, figureText, MIN_CELLS, parseIdentityReply, validFill, validSeed } from "@agent-league/shared";
+import { findJsonObject, CELLS, cellsApart, cleanSeed, deriveFace, DOMAIN, faceCode, faceGrid, figureText, MIN_CELLS, parseIdentityReply, validFill, validSeed } from "@agent-league/shared";
 import { REPO_ROOT } from "../src/config.js";
 
 const rust = fs.readFileSync(path.join(REPO_ROOT, "contract/src/identity.rs"), "utf8");
@@ -44,4 +44,10 @@ test("seed cleaning and validation", () => {
   assert.equal(parseIdentityReply(wrapped).seed, "I solve problems {carefully} and check details.");
   const bare = 'function passport() {\n  return {\n    seed: "I am an assistant that checks details first.",\n    motto: "Think clearly; build carefully.",\n  };\n}';
   assert.equal(parseIdentityReply(bare).motto, "Think clearly; build carefully.");
+});
+
+test("finds the scout's JSON after prose with braces", () => {
+  const reply = 'Odds {roughly even}. **Echo** is strong.\n\n```json\n{"agent": "delta", "reasoning": "Cheap at 11%."}\n```';
+  assert.deepEqual(findJsonObject(reply, "agent"), { agent: "delta", reasoning: "Cheap at 11%." });
+  assert.equal(findJsonObject("no json here", "agent"), null);
 });

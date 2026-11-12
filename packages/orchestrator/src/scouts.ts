@@ -1,4 +1,4 @@
-import type { TaskPublic } from "@agent-league/shared";
+import { findJsonObject, type TaskPublic } from "@agent-league/shared";
 import type { AgentConfig } from "./roster.js";
 
 export interface ScoutFieldEntry {
@@ -13,6 +13,8 @@ export interface ScoutFieldEntry {
 export interface ScoutDecision {
   agent: string;
   reasoning: string;
+  /** Set when an LLM scout fell back to a scripted rule: why, and the start of the raw reply. */
+  fallback?: { reason: string; reply?: string };
 }
 
 export interface Scout {
@@ -102,19 +104,25 @@ Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three senten
         market_odds: `${(f.odds * 100).toFixed(1)}%`,
       }));
       const user = `Task: ${task.title} (${task.id})\n\n${task.statement}\n\nField:\n${JSON.stringify(rows, null, 2)}`;
+      let text: string | undefined;
+      let reason: string;
       try {
-        const text = await chatFn(model, system, user);
-        const json = /\{[\s\S]*\}/.exec(text)?.[0];
-        const parsed = json ? (JSON.parse(json) as { agent?: string; reasoning?: string }) : {};
-        const pick = field.find((f) => f.config.id === parsed.agent || f.agent === parsed.agent);
+        text = await chatFn(model, system, user);
+        const parsed = findJsonObject(text, "agent") as { agent?: string; reasoning?: string } | null;
+        const pick = parsed && field.find((f) => f.config.id === parsed.agent || f.agent === parsed.agent);
         if (pick && typeof parsed.reasoning === "string" && parsed.reasoning.trim()) {
           return { agent: pick.agent, reasoning: parsed.reasoning.trim() };
         }
-      } catch {
-        // fall through
+        reason = !parsed ? "no JSON object with an agent" : !pick ? `unknown agent ${JSON.stringify(parsed.agent)}` : "empty reasoning";
+      } catch (e) {
+        reason = `model error: ${e instanceof Error ? e.message : e}`;
       }
       const d = await valueScout.decide(task, field);
-      return { agent: d.agent, reasoning: `(model reply unusable, value fallback) ${d.reasoning}` };
+      return {
+        agent: d.agent,
+        reasoning: `(model reply unusable, value fallback) ${d.reasoning}`,
+        fallback: { reason, reply: text?.slice(0, 600) },
+      };
     },
   };
 }

@@ -149,8 +149,8 @@ function parseLoose(src: string): Record<string, unknown> | null {
   return null;
 }
 
-/** First balanced `{...}` in the text that parses as JSON and has a `seed`, wherever it sits. */
-function findObject(text: string): Record<string, unknown> | null {
+/** First balanced `{...}` in the text that parses as an object with `key`, wherever it sits. */
+export function findJsonObject(text: string, key: string): Record<string, unknown> | null {
   for (let start = text.indexOf("{"); start >= 0; start = text.indexOf("{", start + 1)) {
     let depth = 0;
     let inStr = false;
@@ -163,7 +163,7 @@ function findObject(text: string): Record<string, unknown> | null {
       else if (ch === "{") depth++;
       else if (ch === "}" && --depth === 0) {
         const o = parseLoose(text.slice(start, i + 1));
-        if (o && "seed" in o) return o;
+        if (o && key in o) return o;
         break;
       }
     }
@@ -172,7 +172,7 @@ function findObject(text: string): Record<string, unknown> | null {
 }
 
 export function parseIdentityReply(text: string): IdentityChoice {
-  const o = findObject(text);
+  const o = findJsonObject(text, "seed");
   if (!o) throw new Error("no JSON object with a seed in the reply");
   const seed = cleanSeed(String(o.seed ?? ""));
   const bad = validSeed(seed);

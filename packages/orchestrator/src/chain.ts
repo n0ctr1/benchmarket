@@ -86,6 +86,27 @@ export interface FaceCheck {
 
 export const IDENTITY_DEPOSIT = 10n ** 24n / 50n;
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Retries a request the RPC rejected with 429 (rate limit). A rejected request never reached
+ * the network, so retrying a transaction cannot execute it twice.
+ */
+async function withRetry<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const limited = /429|Rate limits exceeded/i.test(msg) || (e as { cause?: unknown })?.cause === 429;
+      if (!limited || attempt >= 6) throw e;
+      const wait = 1500 * 2 ** attempt;
+      console.warn(`  rpc rate limit on ${what}, retrying in ${(wait / 1000).toFixed(1)}s`);
+      await sleep(wait);
+    }
+  }
+}
+
 const GAS = teraToGas("30");
 const HEAVY_GAS = teraToGas("150");
 
@@ -111,18 +132,22 @@ export class LeagueChain {
   }
 
   private async call<T>(signer: string, methodName: string, args: Record<string, unknown>, deposit: bigint = 0n, gas = GAS): Promise<T> {
-    return (await this.account(signer).callFunction({
-      contractId: this.contractId,
-      methodName,
-      args,
-      deposit,
-      gas,
-    })) as T;
+    return (await withRetry(methodName, () =>
+      this.account(signer).callFunction({
+        contractId: this.contractId,
+        methodName,
+        args,
+        deposit,
+        gas,
+      }),
+    )) as T;
   }
 
   private async view<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
     // Optimistic finality: read our own writes right after the transaction executed.
-    return (await this.provider.callFunction({ contractId: this.contractId, method, args, blockQuery: { finality: "optimistic" } })) as T;
+    return (await withRetry(method, () =>
+      this.provider.callFunction({ contractId: this.contractId, method, args, blockQuery: { finality: "optimistic" } }),
+    )) as T;
   }
 
   // ----- calls -----
@@ -159,6 +184,10 @@ export class LeagueChain {
 
   settle(caller: string, roundId: number, totalTests: number, scores: Array<[string, number]>, signatures: string[]) {
     return this.call<void>(caller, "settle", { round_id: roundId, total_tests: totalTests, scores, signatures }, 0n, HEAVY_GAS);
+  }
+
+  cancelRound(caller: string, roundId: number) {
+    return this.call<void>(caller, "cancel_round", { round_id: roundId });
   }
 
   claim(caller: string, roundId: number) {
@@ -213,7 +242,7 @@ export class LeagueChain {
 
   /** Available (spendable) balance of an account, yoctoNEAR. */
   async available(id: string): Promise<bigint> {
-    const s = await this.account(id).getState();
+    const s = await withRetry("get_state", () => this.account(id).getState());
     return BigInt(s.balance.available);
   }
 
@@ -222,7 +251,7 @@ export class LeagueChain {
     const have = await this.available(to);
     if (have >= min) return 0n;
     const amount = min - have;
-    await this.account(from).transfer({ receiverId: to, amount });
+    await withRetry("transfer", () => this.account(from).transfer({ receiverId: to, amount }));
     return amount;
   }
 
