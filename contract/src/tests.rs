@@ -288,3 +288,20 @@ fn ratings_carry_over_and_shape_the_prior() {
     assert!(r.entries[0].p_ppm > r.entries[1].p_ppm);
     assert_eq!(r.entries[0].rating_before, c.get_rating(acc("a.testnet"), SKILL.into()).rating);
 }
+
+/// Signature produced by the TypeScript verifier (packages/shared signMessage) for seed [7; 32].
+/// Guards against the two sides drifting apart on message format or hashing.
+#[test]
+fn accepts_signature_from_typescript_verifier() {
+    let pk: PublicKey = "ed25519:GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB".parse().unwrap();
+    let sig = near_sdk::base64::Engine::decode(
+        &near_sdk::base64::engine::general_purpose::STANDARD,
+        "RMZ3mnm56nWl5CyP2Qw1mZAyboqzNaGhbzqtXVVVF+AbehS+AxFveSr8+ad37L5TSOUt+z7AO+y81WD0utPbCw==",
+    )
+    .unwrap();
+    ctx("owner.testnet", 0, 1_000);
+    let msg = math::settlement_message(3, 20, &[("a.testnet", 20), ("b.testnet", 7)]);
+    let digest = near_sdk::env::sha256_array(msg.as_bytes());
+    let sig: [u8; 64] = sig.try_into().unwrap();
+    assert!(near_sdk::env::ed25519_verify(&sig, &digest, &ed25519_bytes(&pk)));
+}
