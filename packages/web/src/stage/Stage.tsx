@@ -88,7 +88,17 @@ function spot(i: number, n: number): [number, number] {
   const u = i / (n - 1);
   return [lerp(-7.6, 7.6, u), -0.6 - 2.3 * Math.sin(Math.PI * u)];
 }
-const scoutX = (j: number, m: number) => (j - (m - 1) / 2) * 4.4;
+/**
+ * Scouts stand on a half circle in front of the agents, facing them: the middle of the arc is
+ * nearest the camera, its ends curve back toward the agents' wings.
+ */
+function scoutSpot(j: number, m: number, wide = 8.6): [number, number] {
+  if (m <= 1) return [0, 4.8];
+  // Even steps across, so labels never overlap; depth follows the arc.
+  const half = Math.min(wide, 1.3 * (m - 1));
+  const u = -1 + (2 * j) / (m - 1);
+  return [half * u, 1.5 + 3.2 * Math.sqrt(1 - 0.92 * u * u)];
+}
 
 interface Tri {
   a: V3;
@@ -136,7 +146,7 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
     {
       let sd = 7;
       const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
-      dust = Array.from({ length: 170 }, () => ({ x: (rnd() - 0.5) * 34, y: rnd() * 9, z: -16 + rnd() * 22, v: 0.15 + rnd() * 0.35, ph: rnd() * 6.28 }));
+      dust = Array.from({ length: 320 }, () => ({ x: (rnd() - 0.5) * 34, y: rnd() * 9, z: -16 + rnd() * 22, v: 0.15 + rnd() * 0.35, ph: rnd() * 6.28 }));
     }
     const reduceQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
 
@@ -339,16 +349,23 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         if (p.z < 1) continue;
         const cx = Math.floor(p.x / cw), cy = Math.floor(p.y / ch);
         if (cx < 0 || cy < 0 || cx >= C || cy >= R) continue;
-        const idx = cy * C + cx, iz = 1 / p.z;
-        if (iz <= B.z[idx]) continue;
+        const iz = 1 / p.z;
         const near = Math.max(0, Math.min(1, (26 - p.z) / 18));
         const tw = 0.75 + 0.25 * Math.sin(ts * 1.3 + d.ph * 3);
-        B.z[idx] = iz;
-        B.lum[idx] = (0.22 + 0.7 * near) * tw;
-        B.r[idx] = 170;
-        B.g[idx] = 170;
-        B.b[idx] = 182;
-        B.chr[idx] = near > 0.75 ? "+" : near > 0.4 ? "·" : ".";
+        // Near motes are a small cross of cells, far ones a single cell.
+        const cells = near > 0.55 ? [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] : [[0, 0]];
+        for (const [dx, dy] of cells) {
+          const qx = cx + dx, qy = cy + dy;
+          if (qx < 0 || qy < 0 || qx >= C || qy >= R) continue;
+          const idx = qy * C + qx;
+          if (iz <= B.z[idx]) continue;
+          B.z[idx] = iz;
+          B.lum[idx] = (0.5 + 0.9 * near) * tw * (dx || dy ? 0.7 : 1);
+          B.r[idx] = 222;
+          B.g[idx] = 224;
+          B.b[idx] = 236;
+          B.chr[idx] = dx || dy ? "+" : near > 0.7 ? "@" : near > 0.35 ? "*" : "+";
+        }
       }
 
       // The character buffer, one fillStyle per color.
@@ -409,7 +426,8 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
       if (bet && betAge >= 0 && betAge < BEAM_MS * 2.6) {
         const s2 = betAge / BEAM_MS;
         const [x, z] = spot(bet.agent, n);
-        const from = v3(scoutX(bet.scout, m), 0.55, 4.6), to = v3(x, 0.06, z);
+        const [sx, sz] = scoutSpot(bet.scout, m, W < 640 ? 6.4 : 8.6);
+        const from = v3(sx, 0.55, sz), to = v3(x, 0.06, z);
         const at = (q: number) => proj(v3(lerp(from[0], to[0], q), lerp(from[1], to[1], q) + Math.sin(Math.PI * q) * 2.2, lerp(from[2], to[2], q)));
         const e = ease(Math.min(1, s2));
         const fade = s2 <= 1 ? 1 : Math.max(0, 1 - (s2 - 1) / 1.6);
@@ -455,12 +473,15 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         ctx.restore();
       }
       S.scouts.forEach((sc, j) => {
-        const p = proj(v3(scoutX(j, m), 0, 4.6));
+        const [sx, sz] = scoutSpot(j, m, W < 640 ? 6.4 : 8.6);
+        const p = proj(v3(sx, 0, sz));
         if (p.z < 0.3) return;
         const betting = !!bet && bet.scout === j && betAge >= 0 && betAge < BEAM_MS + 900;
-        text(p.x, p.y - 12, sc.face, `600 18px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#ECEBE4");
-        text(p.x, p.y + 10, sc.id, `500 11px 'IBM Plex Mono', monospace`, "#5A5A55");
-        text(p.x, p.y + 26, sc.line, `600 11px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#8B8B85");
+        // On a narrow stage there is room for faces only; the betting scout keeps its line.
+        const narrow = W < 640;
+        text(p.x, p.y - 12, sc.face, `600 ${narrow ? 13 : 18}px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#ECEBE4");
+        if (!narrow) text(p.x, p.y + 10, sc.id, `500 11px 'IBM Plex Mono', monospace`, "#5A5A55");
+        if (!narrow || betting) text(p.x, p.y + (narrow ? 6 : 26), sc.line, `600 11px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#8B8B85");
         if (sc.says) {
           // Word-wrapped bubble above the scout, kept inside the stage.
           ctx.font = `500 11.5px 'IBM Plex Mono', monospace`;
