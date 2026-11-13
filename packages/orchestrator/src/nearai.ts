@@ -39,8 +39,11 @@ export class ChatError extends Error {
   }
 }
 
+/** Which of the configured keys is in use; moves on when one is out of credit. */
+let keyIndex = 0;
+
 function headers(): Record<string, string> {
-  const key = config.nearAiApiKey;
+  const key = config.nearAiApiKeys[keyIndex];
   if (!key) throw new Error("NEAR_AI_API_KEY is not set (see .env.example)");
   // x-no-aliasing: a canonical model id, so models NEAR AI hosts in a TEE sign from their own
   // enclave; identity encoding, because the signature covers the uncompressed body.
@@ -60,7 +63,7 @@ export async function chat(
     ...(opts.json ? { response_format: { type: "json_object" } } : {}),
   });
   // node:https, not fetch: fetch drops a response whose headers take more than 300 s.
-  const res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, headers(), requestBody, opts.timeoutMs ?? 600_000);
+  const res = await completions({}, requestBody, opts.timeoutMs ?? 600_000);
   const body = res.text;
   if (res.status !== 200) throw new Error(`NEAR AI ${res.status} for ${model}: ${body.slice(0, 300)}`);
   const j = JSON.parse(body);
@@ -152,12 +155,7 @@ export async function sealedChat(model: string, messages: ChatMessage[], maxToke
   const me = clientKey();
   const requestBody = JSON.stringify({ model, messages: messages.map((m, i) => ({ role: m.role, content: fields[i].field })), max_tokens: maxTokens });
   const started = Date.now();
-  const res = await postLong(
-    `${config.nearAiBaseUrl}/chat/completions`,
-    { ...headers(), "X-Signing-Algo": "ed25519", "X-Client-Pub-Key": me.pubHex, "X-Model-Pub-Key": modelPub, "X-Encryption-Version": "2" },
-    requestBody,
-    timeoutMs,
-  );
+  const res = await completions({ "X-Signing-Algo": "ed25519", "X-Client-Pub-Key": me.pubHex, "X-Model-Pub-Key": modelPub, "X-Encryption-Version": "2" }, requestBody, timeoutMs);
   const responseBody = res.text;
   if (res.status !== 200) throw new Error(`NEAR AI ${res.status} for ${model}: ${responseBody.slice(0, 300)}`);
   const j = JSON.parse(responseBody);
@@ -171,6 +169,17 @@ export async function sealedChat(model: string, messages: ChatMessage[], maxToke
     sealed: { modelPub, fieldSecrets: fields.map((f) => f.secret), clientSeed: me.seed },
     latencyMs: Date.now() - started,
   };
+}
+
+/** POSTs a completion; a key that is out of credit (402) hands over to the next one in .env. */
+async function completions(extra: Record<string, string>, body: string, timeoutMs: number) {
+  let res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, { ...headers(), ...extra }, body, timeoutMs);
+  while (res.status === 402 && keyIndex + 1 < config.nearAiApiKeys.length) {
+    keyIndex++;
+    console.log(`  (NEAR AI key ${keyIndex} is out of credit; switching to key ${keyIndex + 1})`);
+    res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, { ...headers(), ...extra }, body, timeoutMs);
+  }
+  return res;
 }
 
 /**

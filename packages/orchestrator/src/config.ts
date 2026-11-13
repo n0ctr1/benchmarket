@@ -60,6 +60,10 @@ export const config = {
   get nearAiApiKey() {
     return process.env.NEAR_AI_API_KEY || undefined;
   },
+  /** Every NEAR AI key in .env, in order: the next one takes over when one runs out of credit. */
+  get nearAiApiKeys(): string[] {
+    return [process.env.NEAR_AI_API_KEY, process.env.NEAR_AI_API_KEY2].filter((k): k is string => !!k);
+  },
   get nearAiBaseUrl() {
     return env("NEAR_AI_BASE_URL", "https://cloud-api.near.ai/v1");
   },
