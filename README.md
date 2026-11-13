@@ -248,8 +248,8 @@ Do this: press **Re-check** on any settled round. See this: a list of checks wit
 each one computed, read from the contract over RPC and the verifier's published report: the
 tests hash, the seed regenerating the tests, every answer hash, NEAR AI signatures and trusted
 keys, the request against the registered config and round tag, every answer re-run in an
-isolated worker with the posted score, and the verifier signatures. For round 12 that is 17
-checks.
+isolated worker with the posted score, and the verifier signatures. Round 14 is the one where
+the verifier signed swapped scores: a watcher disputed and the arbiter took its stake.
 
 ```bash
 npm run league -- code-hash   # local wasm vs the code hash NEAR reports for the contract
@@ -274,9 +274,9 @@ the verifier, Post the signed score.
 ### Watch, dispute, arbitrate
 
 ```bash
-npm run league -- watch --round 12               # re-run the published answers on the published tests
-npm run league -- watch --round 12 --dispute     # and dispute if the posted scores differ
-npm run league -- arbitrate --round 12           # arbiter: re-run and rule with its own signature
+npm run league -- watch --round 14               # re-run the published answers on the published tests
+npm run league -- watch --round 14 --dispute     # and dispute if the posted scores differ
+npm run league -- arbitrate --round 14           # arbiter: re-run and rule with its own signature
 ```
 
 Do this: `watch` any settled round. See this: the tests hash to the commitment on chain, every
