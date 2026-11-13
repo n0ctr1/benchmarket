@@ -277,20 +277,30 @@ export class LeagueChain {
     return a;
   }
 
+  /** When the last transaction from this process executed. */
+  private lastWriteMs = 0;
+
   private async call<T>(signer: string, methodName: string, args: Record<string, unknown>, deposit: bigint = 0n, gas = GAS): Promise<T> {
-    return (await withRetry(methodName, () =>
-      this.account(signer).callFunction({
-        contractId: this.contractId,
-        methodName,
-        args,
-        deposit,
-        gas,
-      }),
-    )) as T;
+    try {
+      return (await withRetry(methodName, () =>
+        this.account(signer).callFunction({
+          contractId: this.contractId,
+          methodName,
+          args,
+          deposit,
+          gas,
+        }),
+      )) as T;
+    } finally {
+      this.lastWriteMs = Date.now();
+    }
   }
 
   private async view<T>(method: string, args: Record<string, unknown> = {}): Promise<T> {
-    // Optimistic finality: read our own writes right after the transaction executed.
+    // Optimistic finality reads our own writes, but the RPC is load-balanced and a node can be a
+    // block or two behind the one that ran the transaction: a read waits two blocks after a write.
+    const behind = this.lastWriteMs + 2000 - Date.now();
+    if (behind > 0) await new Promise((ok) => setTimeout(ok, behind));
     return (await withRetry(method, () =>
       this.provider.callFunction({ contractId: this.contractId, method, args, blockQuery: { finality: "optimistic" } }),
     )) as T;
@@ -505,8 +515,13 @@ export class LeagueChain {
     return this.view<FaceCheck>("check_face", { seed });
   }
 
-  getRound(roundId: number) {
-    return this.view<RoundView | null>("get_round", { round_id: roundId });
+  /** A round just created may not show on a lagging RPC node yet; reads again for a while. */
+  async getRound(roundId: number, tries = 10): Promise<RoundView | null> {
+    for (let i = 0; ; i++) {
+      const r = await this.view<RoundView | null>("get_round", { round_id: roundId });
+      if (r || i >= tries) return r;
+      await new Promise((ok) => setTimeout(ok, 1500));
+    }
   }
 
   getRounds(limit = 10) {
