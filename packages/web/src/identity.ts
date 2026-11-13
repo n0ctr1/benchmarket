@@ -1,21 +1,22 @@
 import type { CSSProperties } from "react";
 import type { Identity } from "./chain";
 
-const oklch = (h: number) => `oklch(var(--agent-l) var(--agent-c) ${h})`;
+/** Face pixel color, the same in the page and in the 3D stage (see stage/Stage.tsx). */
+const hsl = (h: number) => `hsl(${h} 85% 60%)`;
 
-/** Agent color: the first palette hue. Lightness and chroma come from the theme. */
+/** Agent color: the first palette hue. */
 export function hueColor(id: Pick<Identity, "palette"> | undefined): string {
-  return id ? oklch(id.palette[0]) : "var(--text-muted)";
+  return id ? hsl(id.palette[0]) : "var(--text-muted)";
 }
 
 /** CSS variables for the three pixel colors of a face, plus the agent color. */
 export function paletteStyle(palette: readonly number[] | undefined): CSSProperties {
   if (!palette) return {};
   return {
-    ["--agent" as string]: oklch(palette[0]),
-    ["--p1" as string]: oklch(palette[0]),
-    ["--p2" as string]: oklch(palette[1]),
-    ["--p3" as string]: oklch(palette[2]),
+    ["--agent" as string]: hsl(palette[0]),
+    ["--p1" as string]: hsl(palette[0]),
+    ["--p2" as string]: hsl(palette[1]),
+    ["--p3" as string]: hsl(palette[2]),
   };
 }
 

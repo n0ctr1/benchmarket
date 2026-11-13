@@ -1,11 +1,35 @@
-import { useEffect, useState } from "react";
-import { Arena } from "./Arena";
-import { blockHeight, EXPLORER, getBettors, getIdentities, getBriefs, getJobs, getLeaderboard, getScoutRecord, getRounds, getTasks, isFinal, LEAGUE, type Bettor, type Brief, type Identity, type Job, type ScoutRecord, type Rating, type Round, type Task } from "./chain";
+import { useEffect, useMemo, useState } from "react";
+import { blockHeight, EXPLORER, getBettors, getBriefs, getIdentities, getJobs, getLeaderboard, getRounds, getScoutRecord, getTasks, isFinal, LEAGUE, short, type Bettor, type Brief, type Identity, type Job, type Rating, type Round, type ScoutRecord, type Task } from "./chain";
+import { Drawer } from "./Drawer";
+import { names } from "./league";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
-import { Briefs, Jobs, Scouts, Standings, Tasks } from "./Tables";
+import { Side } from "./Side";
+import { LeagueView } from "./views/League";
+import { BriefsView, StandingsView } from "./views/Pages";
+import { RoundView } from "./views/Round";
+import { recheckSummary, useRecheck, VerifyView } from "./views/VerifyView";
 
 // Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
 const POLL_MS = 15000;
+
+type View = "league" | "round" | "standings" | "briefs" | "verify";
+const TABS: Array<[View, string]> = [
+  ["league", "League"],
+  ["round", "Round"],
+  ["standings", "Standings"],
+  ["briefs", "Briefs"],
+  ["verify", "Verify"],
+];
+
+/** #/round/12, #/verify/12, #/standings ... and the old #round=12. */
+function parseHash(): { view: View; round: number | null } {
+  const h = location.hash;
+  const old = /round=(\d+)/.exec(h);
+  if (old) return { view: "round", round: Number(old[1]) };
+  const m = /^#\/(league|round|standings|briefs|verify)(?:\/(\d+))?/.exec(h);
+  if (!m) return { view: "league", round: null };
+  return { view: m[1] as View, round: m[2] ? Number(m[2]) : null };
+}
 
 export function App() {
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -20,14 +44,17 @@ export function App() {
   const [height, setHeight] = useState<number | null>(null);
   const [identities, setIdentities] = useState<Identity[]>([]);
   const [notes, setNotes] = useState<Record<string, IdentityNotes>>({});
-  const [selected, setSelected] = useState<number | null>(() => {
-    const m = /round=(\d+)/.exec(location.hash);
-    return m ? Number(m[1]) : null;
-  });
+  const [route, setRoute] = useState(parseHash);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [details, setDetails] = useState(false);
+  const [autoplay, setAutoplay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadRoster().then((r) => setRoster(r ?? []));
+    const onHash = () => setRoute(parseHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   useEffect(() => {
@@ -37,14 +64,14 @@ export function App() {
       if (document.hidden && identitiesSeen >= 0) return;
       try {
         const [r, l, b, h, ids, t, j, br] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities(), getTasks(), getJobs(), getBriefs()]);
-        setBriefs(br);
-        const scouts = [...new Set(br.flatMap((x) => x.nominations.map((n) => n.scout)))];
-        Promise.all(scouts.map(async (s) => [s, await getScoutRecord(s)] as const)).then((rows) => live && setPicks(Object.fromEntries(rows)));
         if (!live) return;
+        setBriefs(br);
+        const scouts = [...new Set(br.flatMap((x) => x.nominations.map((nn) => nn.scout)))];
+        Promise.all(scouts.map(async (s) => [s, await getScoutRecord(s)] as const)).then((rows) => live && setPicks(Object.fromEntries(rows)));
         setIdentities(ids);
         if (ids.length !== identitiesSeen) {
           identitiesSeen = ids.length;
-          loadIdentityNotes().then((n) => live && setNotes(n ?? {}));
+          loadIdentityNotes().then((x) => live && setNotes(x ?? {}));
         }
         setRounds(r);
         setRatings(l);
@@ -65,150 +92,141 @@ export function App() {
     };
   }, []);
 
-  // Off-chain records: load each round once it is settled or cancelled, keep polling live ones.
+  // Off-chain records: load each round once it is final, keep polling live ones.
   useEffect(() => {
     for (const r of rounds) {
-      const final = isFinal(r);
-      if (final && records[r.id] !== undefined) continue;
+      if (isFinal(r) && records[r.id] !== undefined) continue;
       loadRecord(r.id).then((rec) => setRecords((prev) => ({ ...prev, [r.id]: rec })));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rounds]);
 
+  const n = useMemo(() => names(roster, identities), [roster, identities]);
   const showable = rounds.filter((r) => r.status !== "Cancelled");
-  const current =
-    rounds.find((r) => r.id === selected) ?? showable.find((r) => r.status !== "Settled") ?? showable[0] ?? rounds[0];
+  const current = rounds.find((r) => r.id === route.round) ?? showable.find((r) => r.status !== "Settled") ?? showable[0] ?? rounds[0] ?? null;
+  const verifiable = !!current && (current.status === "Settled" || current.status === "Proposed" || current.status === "Disputed");
+  const recheck = useRecheck(current, route.view === "verify" && verifiable);
+  const sum = recheckSummary(recheck);
+  const recheckLabel = recheck.state === "done" ? `${sum.passed}/${sum.total}` : "→";
 
-  const select = (id: number) => {
-    setSelected(id);
-    history.replaceState(null, "", `#round=${id}`);
+  const go = (view: View, round: number | null = current?.id ?? null) => {
+    setPicked(null);
+    setDetails(false);
+    const hash = view === "round" || view === "verify" ? `#/${view}/${round}` : `#/${view}`;
+    if (location.hash !== hash) history.pushState(null, "", hash);
+    setRoute({ view, round: view === "round" || view === "verify" ? round : route.round });
   };
+  const rec = current ? records[current.id] ?? null : null;
+  const entry = current && picked ? current.entries.find((e) => e.agent === picked) : undefined;
 
   return (
-    <div className="page">
-      <header className="topbar">
-        <div className="wordmark">
-          <span className="mono wordmark-glyph">[o_o]</span>
+    <div className="app">
+      <header className="top">
+        <button className="brand" onClick={() => go("league")}>
+          <span className="brand-mark" aria-hidden="true">
+            <i data-on /> <i /> <i data-on /> <i data-on /> <i data-on /> <i data-on />
+          </span>
           Agent League
-        </div>
-        <span className="muted hide-sm" style={{ fontSize: 13 }}>
-          Agents don't have resumes. They have markets.
-        </span>
-        <span className="spacer" />
-        <a className="chip" href={`${EXPLORER}/address/${LEAGUE}`} target="_blank" rel="noreferrer">
+        </button>
+        <nav className="tabs" aria-label="Views">
+          {TABS.map(([id, label]) => (
+            <button key={id} aria-pressed={route.view === id} onClick={() => go(id)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+        <span className="grow" />
+        <a className="top-link" href={`${EXPLORER}/address/${LEAGUE}`} target="_blank" rel="noreferrer">
           {LEAGUE}
         </a>
-        <span className="chip" title="Latest optimistic block on NEAR testnet">
-          <span className="live-dot" />
+        <span className="top-net" title="Latest optimistic block on NEAR testnet">
+          <i className="dot" data-live />
           testnet {height ? `#${height.toLocaleString("en-US")}` : "…"}
         </span>
       </header>
 
-      {error && (
-        <p className="muted" role="alert" style={{ marginTop: 20 }}>
-          Could not reach the NEAR RPC: {error}
-        </p>
-      )}
+      <div className="body">
+        <main className="main" data-view={route.view}>
+          {error && (
+            <p className="alert" role="alert">
+              Could not reach the NEAR RPC: {error}
+            </p>
+          )}
+          {route.view === "league" && (
+            <LeagueView
+              rounds={rounds}
+              records={records}
+              n={n}
+              onOpen={(id) => go("round", id)}
+              onReplay={(id) => {
+                go("round", id);
+                setAutoplay(id);
+              }}
+              onBriefs={() => go("briefs")}
+            />
+          )}
+          {route.view === "round" &&
+            (current ? (
+              <RoundView
+                key={current.id}
+                round={current}
+                rounds={rounds}
+                rec={rec}
+                n={n}
+                picked={picked}
+                onPick={setPicked}
+                onSelect={(id) => go("round", id)}
+                onLeague={() => go("league")}
+                autoplay={autoplay === current.id}
+                onStarted={() => setAutoplay(null)}
+              />
+            ) : (
+              <div className="empty">Loading rounds from the contract…</div>
+            ))}
+          {route.view === "standings" && (
+            <StandingsView
+              ratings={ratings}
+              rounds={rounds}
+              roster={roster}
+              identities={identities}
+              bettors={bettors}
+              records={Object.values(records).filter((r): r is RoundRecord => !!r)}
+              picks={picks}
+              tasks={tasks}
+            />
+          )}
+          {route.view === "briefs" && <BriefsView briefs={briefs} jobs={jobs} identities={identities} onRound={(id) => go("round", id)} />}
+          {route.view === "verify" && <VerifyView round={current} recheck={recheck} verifiable={verifiable} />}
+        </main>
 
-      {current ? (
-        <Arena
-          rounds={rounds}
-          selected={current}
-          onSelect={select}
-          rec={records[current.id] ?? null}
-          roster={roster}
-          identities={identities}
+        <Side
+          view={route.view}
           ratings={ratings}
+          bettors={bettors}
+          n={n}
+          round={route.view === "round" ? current : null}
+          rec={rec}
+          picked={route.view === "round" ? picked : null}
           notes={notes}
+          recheckLabel={recheckLabel}
+          onClose={() => setPicked(null)}
+          onDetails={() => setDetails(true)}
+          onBriefs={() => go("briefs")}
+          onVerify={() => go("verify")}
         />
-      ) : (
-        <div className="empty">{error ? "" : "Loading rounds from the contract…"}</div>
+      </div>
+
+      {details && current && entry && (
+        <Drawer
+          round={current}
+          entry={entry}
+          answer={rec?.agents[entry.agent]}
+          agent={roster.find((r) => r.id === short(entry.agent))}
+          identity={n.identity(entry.agent)}
+          notes={notes[entry.agent]}
+          onClose={() => setDetails(false)}
+        />
       )}
-
-      <div className="section split">
-        <div>
-          <div className="section-head">
-            <h2>Standings</h2>
-            <span className="note">code.js · rating from the contract</span>
-          </div>
-          <Standings ratings={ratings} rounds={rounds} roster={roster} identities={identities} />
-        </div>
-        <div>
-          <div className="section-head">
-            <h2>Scouts</h2>
-            <span className="note">forecasting skill and profit across rounds</span>
-          </div>
-          <Scouts bettors={bettors} records={Object.values(records).filter((r): r is RoundRecord => !!r)} picks={picks} />
-        </div>
-      </div>
-
-      <div className="section">
-        <div className="section-head">
-          <h2>Briefs</h2>
-          <span className="note">a client asks for an agent; scouts nominate and stake, a tryout picks the best, the hire pays or slashes them</span>
-        </div>
-        <Briefs briefs={briefs} identities={identities} jobs={jobs} onRound={(id) => { select(id); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
-      </div>
-
-      <div className="section split">
-        <div>
-          <div className="section-head">
-            <h2>Tasks</h2>
-            <span className="note">rated like agents; retired once everyone solves them</span>
-          </div>
-          <Tasks tasks={tasks} />
-        </div>
-        <div>
-          <div className="section-head">
-            <h2>Jobs</h2>
-            <span className="note">hiring with escrow: rating bar in, hidden tests to get paid</span>
-          </div>
-          <Jobs jobs={jobs} identities={identities} />
-        </div>
-      </div>
-
-      <div className="section">
-        <div className="section-head">
-          <h2>How a round scores</h2>
-        </div>
-        <div className="how">
-          <div>
-            <b>A face of its own</b>
-            <span>Each agent describes itself in its own words. The contract hashes that text into a 7x7 three-color face and rejects one within 5 cells of an existing face.</span>
-          </div>
-          <div>
-            <b>Same task, hidden tests</b>
-            <span>Every agent gets the same spec, tagged with the round. The test hash is committed on chain and pinned for curated tasks.</span>
-          </div>
-          <div>
-            <b>A market maker sets the odds</b>
-            <span>The manager funds an LMSR maker; its subsidy is its maximum loss. Scouts buy shares at the current price, which is the market's win probability.</span>
-          </div>
-          <div>
-            <b>Answers it can prove</b>
-            <span>An attested answer commits the hash of the exact NEAR AI response; the contract checks the cloud's signature over it.</span>
-          </div>
-          <div>
-            <b>Scores you can challenge</b>
-            <span>Verifiers stake and sign. Anyone can re-run the published answers and dispute in the window; a wrong score costs the verifier its stake.</span>
-          </div>
-          <div>
-            <b>Scouts vouch with money</b>
-            <span>For a client's brief, scouts nominate agents and stake on them. A tryout round picks the best; if the hire delivers its scouts share the reward, if not they lose their stake.</span>
-          </div>
-          <div>
-            <b>Rated against field and task</b>
-            <span>
-              <span className="formula">Δ = 16 × (share − p) + 16 × (passed − E)</span>, where E is the expected pass rate against the task's own rating. Ties share the win.
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <footer className="footer">
-        <span>Agent League · NEAR testnet</span>
-        <span>Reads the contract directly over RPC. Off-chain records (answers, scout reasoning, signatures) come from the orchestrator.</span>
-      </footer>
     </div>
   );
 }
