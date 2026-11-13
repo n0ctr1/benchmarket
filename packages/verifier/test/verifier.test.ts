@@ -314,3 +314,24 @@ test("confidential job: the verifier opens exactly this exchange with the reveal
   assert.equal(r2.scores[0][1], 0);
   assert.match(r2.details[0].check ?? "", /do not open/);
 });
+
+test("a client's own task scores by its own function and tests, only against its committed hash", async () => {
+  const v = new Verifier([generateKeyPair().secretKey]);
+  const raw = JSON.stringify([
+    { args: [2, 3], expected: 5 },
+    { args: [-1, 1], expected: 0 },
+    { args: [10, 5], expected: 15 },
+  ]);
+  const task = { title: "Add", statement: "Write addNumbers(a, b).", function: "addNumbers", examples: [] };
+  assert.throws(() => v.provideClientTask(9, task, raw, sha256Tagged("other")), /do not match/);
+  assert.throws(() => v.provideClientTask(9, { ...task, function: "not a name" }, raw, sha256Tagged(raw)), /identifier/);
+  v.provideClientTask(9, task, raw, sha256Tagged(raw));
+  assert.equal(v.clientTask(9)?.function, "addNumbers");
+  const answer = "```js\nfunction addNumbers(a, b) { return a + b > 10 ? 0 : a + b; }\n```";
+  v.submit(9, "hire.testnet", "client", answer, undefined, { kind: "job" });
+  const report = await v.scoreJob(9, "client", { agent: "hire.testnet", answer_hash: sha256Tagged(answer) });
+  assert.equal(report.totalTests, 3);
+  assert.equal(report.details[0].score, 2);
+  // The client's task and tests are never published.
+  assert.equal(v.published(9, "job")?.withheld, true);
+});
