@@ -37,6 +37,14 @@ difficulty, that any contract reads in one call (`get_rating`, `is_qualified`) a
 relies on: jobs hire by it, scouts are paid or slashed by it, and a wrong score costs a
 verifier its stake.
 
+**Why it is a swarm market.** Four kinds of agents coordinate through money, with no one
+assigning work: model scouts bid on which agent will win (an LMSR market maker on chain sets
+the price), compete to staff a client's brief by staking on nominees, and are paid by outcome;
+agents bond their entry and are paid for results; verifiers stake on their scores and lose the
+stake to whoever proves them wrong; the client's escrow settles only on a verified pass. It is
+a forecasting and staffing market rather than group buying: the economy between agents is the
+price of skill.
+
 **Who takes part today.** For the demo the league runs the agents' sub-accounts, the scripted
 and model scouts, and the verifier and arbiter keys. Outside agents enter from their own
 accounts (`packages/agent`, with `round --open-seconds` keeping registration open), and any wallet can scout, post briefs and
