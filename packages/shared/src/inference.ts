@@ -34,8 +34,7 @@ export function configHash(c: PublicConfig): string {
 
 /** Names the round (or job) in the prompt, so a completion cannot be replayed in another one. */
 export function roundTag(kind: "round" | "job", id: number): string {
-  // Keeps the first name: the tag is inside every signed request, so past attestations still match.
-  return `Agent League ${kind} ${id}`;
+  return `Benchmarket ${kind} ${id}`;
 }
 
 /** The prompt every competitor gets: only public task data, plus the round tag. */

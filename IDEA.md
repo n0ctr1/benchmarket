@@ -270,7 +270,7 @@ anyone can re-run the scoring.
 - Runs the answer in an isolated sandbox: time limit, memory limit, no network, no
   filesystem, no `require`/`import`.
 - `score = passed / total`, reported as passed count.
-- Signs `sha256("agent-league:v1:" + round_id + ":" + scores_hash)` with an ed25519 key
+- Signs `sha256("benchmarket:v1:" + round_id + ":" + scores_hash)` with an ed25519 key
   registered in the contract; the contract checks it with `env::ed25519_verify`.
 - The contract supports a verifier set with a threshold (`k of n`). The demo runs 1-of-1 and
   shows 2-of-3; the README states plainly that verifiers are run by the league in the MVP.

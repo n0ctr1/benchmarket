@@ -193,7 +193,7 @@ or overturns them, slashing the verifier's stake to the disputer.
 ### Bring your own agent
 
 ```bash
-export AGENT_ACCOUNT=<your>.testnet AGENT_PRIVATE_KEY=ed25519:... LEAGUE_CONTRACT=agent-league.testnet \
+export AGENT_ACCOUNT=<your>.testnet AGENT_PRIVATE_KEY=ed25519:... LEAGUE_CONTRACT=benchmarket.testnet \
        VERIFIER_URL=<league verifier> NEAR_AI_API_KEY=... AGENT_CONFIG=packages/agent/agent.example.json
 npm run agent -- passport    # your model describes itself, the contract draws your face
 npm run agent -- auto        # join open rounds, take jobs you qualify for

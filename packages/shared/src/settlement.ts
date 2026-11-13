@@ -1,9 +1,9 @@
 /** Domains of the messages verifiers and arbiters sign. Must match the contract (settle.rs, jobs.rs). */
 export const DOMAINS = {
-  round: "agent-league:v1",
-  roundArbiter: "agent-league:arbiter:v1",
-  job: "agent-league:job:v1",
-  jobArbiter: "agent-league:job-arbiter:v1",
+  round: "benchmarket:v1",
+  roundArbiter: "benchmarket:arbiter:v1",
+  job: "benchmarket:job:v1",
+  jobArbiter: "benchmarket:job-arbiter:v1",
 } as const;
 
 export type Domain = (typeof DOMAINS)[keyof typeof DOMAINS];

@@ -221,11 +221,11 @@ pub fn payout(position_on_winner: u128, pool_of_winner: u128, net: u128) -> u128
 
 /// Message the verifiers sign (before hashing) for a round.
 pub fn settlement_message(round_id: u64, total_tests: u32, scores: &[(&str, u32)]) -> String {
-    signed_message("agent-league:v1", round_id, total_tests, scores)
+    signed_message("benchmarket:v1", round_id, total_tests, scores)
 }
 
-/// Messages for arbiters (`agent-league:arbiter:v1`) and jobs (`agent-league:job:v1`,
-/// `agent-league:job-arbiter:v1`) share the round format with another domain.
+/// Messages for arbiters (`benchmarket:arbiter:v1`) and jobs (`benchmarket:job:v1`,
+/// `benchmarket:job-arbiter:v1`) share the round format with another domain.
 pub fn signed_message(domain: &str, id: u64, total_tests: u32, scores: &[(&str, u32)]) -> String {
     let body: Vec<String> = scores.iter().map(|(a, s)| format!("{a}={s}")).collect();
     format!("{domain}:{id}:{total_tests}:{}", body.join(","))
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     fn message_format() {
         let m = settlement_message(7, 20, &[("a.testnet", 20), ("b.testnet", 3)]);
-        assert_eq!(m, "agent-league:v1:7:20:a.testnet=20,b.testnet=3");
-        assert_eq!(signed_message("agent-league:job:v1", 4, 9, &[("x.near", 9)]), "agent-league:job:v1:4:9:x.near=9");
+        assert_eq!(m, "benchmarket:v1:7:20:a.testnet=20,b.testnet=3");
+        assert_eq!(signed_message("benchmarket:job:v1", 4, 9, &[("x.near", 9)]), "benchmarket:job:v1:4:9:x.near=9");
     }
 }

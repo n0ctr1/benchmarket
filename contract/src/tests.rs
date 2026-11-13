@@ -1276,7 +1276,7 @@ fn accepts_signature_from_typescript_verifier() {
     let pk: PublicKey = "ed25519:GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB".parse().unwrap();
     let sig = near_sdk::base64::Engine::decode(
         &near_sdk::base64::engine::general_purpose::STANDARD,
-        "RMZ3mnm56nWl5CyP2Qw1mZAyboqzNaGhbzqtXVVVF+AbehS+AxFveSr8+ad37L5TSOUt+z7AO+y81WD0utPbCw==",
+        "Uhy2nc8pcLvqBg/EAcphv1WXZlz/TVaWgNKGZScqB4rHLq0sqNmJBuGCDEFXKT7H0YaI7aiKqEV3XZSO7kBZAQ==",
     )
     .unwrap();
     ctx("owner.testnet", 0, 1_000);

@@ -136,7 +136,7 @@ function dataPlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), dataPlugin()],
   define: {
-    __LEAGUE__: JSON.stringify(process.env.LEAGUE_ACCOUNT ?? "agent-league.testnet"),
+    __LEAGUE__: JSON.stringify(process.env.LEAGUE_ACCOUNT ?? "benchmarket.testnet"),
     __RPC__: JSON.stringify(process.env.NEAR_RPC_URL ?? "https://test.rpc.fastnear.com"),
   },
   server: { port: 5180 },

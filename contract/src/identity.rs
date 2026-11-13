@@ -10,7 +10,7 @@
 
 use near_sdk::env;
 
-pub const DOMAIN: &str = "agent-league:face:v2:";
+pub const DOMAIN: &str = "benchmarket:face:v2:";
 pub const SIZE: usize = 7;
 /// Free columns per row: 0..=3, the rest mirror them.
 pub const HALF: usize = 4;
@@ -127,7 +127,7 @@ mod tests {
 
     // Computed by the TypeScript implementation; both sides must agree.
     const VECTOR_SEED: &str = "I read the spec twice and test the edges first.";
-    const VECTOR_CODE: &str = "81302104025327-315/18/141";
+    const VECTOR_CODE: &str = "190f1705817400-110/225/263";
 
     #[test]
     fn derive_matches_the_typescript_renderer() {

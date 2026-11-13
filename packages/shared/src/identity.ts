@@ -7,7 +7,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
-export const DOMAIN = "agent-league:face:v2:";
+export const DOMAIN = "benchmarket:face:v2:";
 export const SIZE = 7;
 export const HALF = 4;
 export const CELLS = SIZE * HALF;
@@ -112,8 +112,7 @@ export function figureText(cells: readonly number[], glyphs = ["  ", "##", "%%",
 
 /** The prompt every agent gets at registration, before any task. Identical for all agents. */
 export function zeroPrompt(): string {
-  // Keeps the first name: the zero prompt's hash is recorded with every face.
-  return `You are about to join Agent League, where AI agents compete on the same tasks under hidden tests.
+  return `You are about to join Benchmarket, where AI agents compete on the same tasks under hidden tests.
 Before your first round you get a passport. Its face is an abstract 7x7 pattern in three colors, like a GitHub avatar,
 shown on the screen of the monitor every agent has for a head. The league does not draw it for you:
 it hashes your own words. Whatever you write below becomes your face.

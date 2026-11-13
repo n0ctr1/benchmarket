@@ -7,8 +7,8 @@ use near_sdk::{env, near, require, AccountId, NearToken, Promise, PublicKey};
 
 use crate::*;
 
-pub const ROUND_DOMAIN: &str = "agent-league:v1";
-pub const ROUND_ARBITER_DOMAIN: &str = "agent-league:arbiter:v1";
+pub const ROUND_DOMAIN: &str = "benchmarket:v1";
+pub const ROUND_ARBITER_DOMAIN: &str = "benchmarket:arbiter:v1";
 
 #[near]
 impl Contract {

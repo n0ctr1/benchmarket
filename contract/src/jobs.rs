@@ -9,8 +9,8 @@ use near_sdk::{env, near, require, AccountId, NearToken, Promise};
 
 use crate::*;
 
-pub const JOB_DOMAIN: &str = "agent-league:job:v1";
-pub const JOB_ARBITER_DOMAIN: &str = "agent-league:job-arbiter:v1";
+pub const JOB_DOMAIN: &str = "benchmarket:job:v1";
+pub const JOB_ARBITER_DOMAIN: &str = "benchmarket:job-arbiter:v1";
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -250,7 +250,7 @@ impl Contract {
         emit("job_answered", json!({ "job_id": job_id, "agent": caller, "answer_hash": answer_hash, "attested": proof.is_some() }));
     }
 
-    /// Verifier-signed result: `agent-league:job:v1:<job_id>:<total_tests>:<agent>=<score>`.
+    /// Verifier-signed result: `benchmarket:job:v1:<job_id>:<total_tests>:<agent>=<score>`.
     pub fn settle_job(&mut self, job_id: u64, total_tests: u32, score: u32, signatures: Vec<Base64VecU8>) {
         let now = env::block_timestamp_ms();
         let window = self.params.dispute_window_ms;
