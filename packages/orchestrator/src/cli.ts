@@ -4,16 +4,17 @@ import { DOMAINS } from "@benchmarket/shared";
 import { loadTask } from "@benchmarket/shared";
 import fs from "node:fs";
 import { llmSolve } from "./llm.js";
-import { ROSTER, type AgentConfig } from "./roster.js";
+import { agentAccount, ROSTER, type AgentConfig } from "./roster.js";
 import { LeagueChain } from "./chain.js";
 import { config, DATA_DIR } from "./config.js";
 import { llmSolver, runRound, simSolver, type RoundOptions } from "./round.js";
-import { llmScout, modelScouts, SCRIPTED_SCOUTS, scoutableModels, syncModelScouts } from "./scouts.js";
+import { allScoutIds, llmScout, modelScouts, SCRIPTED_SCOUTS, scoutableModels, syncModelScouts } from "./scouts.js";
 import { scoutChat } from "./llm.js";
+import { chat } from "./nearai.js";
 import { configure, setup, upgrade } from "./setup.js";
 import { runJob } from "./job.js";
 import { runBrief } from "./brief.js";
-import { near } from "./config.js";
+import { formatNear, near } from "./config.js";
 import { issueIdentity } from "./identity.js";
 import path from "node:path";
 
@@ -112,6 +113,21 @@ async function published(roundId: number): Promise<PublishedReport> {
 }
 
 /** Re-runs a round's published answers on its published tests; disputes on a mismatch if asked. */
+/** Every league-run account with a position in the round claims it. */
+async function claimAll(chain: LeagueChain, id: number): Promise<void> {
+  const league = config.leagueAccount;
+  const holders = [league, ...ROSTER.map((a) => agentAccount(a, league)), ...allScoutIds().map((s) => `${s}.${league}`)];
+  for (const h of holders) {
+    if ((await chain.getPosition(id, h)).length === 0) continue;
+    try {
+      const got = String(await chain.claim(h, id));
+      if (BigInt(got) > 0n) console.log(`  ${h} claimed ${formatNear(got)} NEAR`);
+    } catch (e) {
+      console.log(`  ${h}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+}
+
 async function watch(chain: LeagueChain, roundId: number, dispute: boolean): Promise<void> {
   if (!roundId) throw new Error("--round <id> is required");
   const round = await chain.getRound(roundId);
@@ -214,6 +230,34 @@ async function main(): Promise<void> {
     case "watch":
       await watch(chain, Number(arg("round")), process.argv.includes("--dispute"));
       break;
+    case "cancel": {
+      // The manager cancels an unsettled round; every purchase, bond, subsidy and bounty goes back.
+      const id = Number(arg("round"));
+      if ((await chain.getRound(id))?.status !== "Cancelled") await chain.cancelRound(config.leagueAccount, id);
+      console.log(`round ${id} cancelled`);
+      await claimAll(chain, id);
+      break;
+    }
+    case "finalize": {
+      // Closes a round whose dispute window passed without a dispute, then pays every position.
+      const id = Number(arg("round"));
+      const before = (await chain.getRound(id))!;
+      // The re-check and the outcome go into the round's record, stamped with the real time.
+      const logPath = path.join(DATA_DIR, "rounds", `${id}.json`);
+      const log = fs.existsSync(logPath) ? (JSON.parse(fs.readFileSync(logPath, "utf8")) as { events: Array<{ at: number; kind: string; data: Record<string, unknown> }> }) : null;
+      if (before.proposal) {
+        const check = await recheck(await published(id), before);
+        log?.events.push({ at: Date.now(), kind: "watcher_check", data: { ok: check.ok, problems: check.problems } });
+        if (!check.ok) throw new Error(`posted scores do not match a re-run: ${check.problems.join("; ")}`);
+      }
+      if (before.status === "Proposed") await chain.finalize(config.leagueAccount, id);
+      const r = (await chain.getRound(id))!;
+      log?.events.push({ at: Date.now(), kind: "round_settled", data: { winners: r.winners, scores: r.proposal?.scores ?? [], finalized_late: true } });
+      if (log) fs.writeFileSync(logPath, JSON.stringify(log, null, 2));
+      console.log(`round ${id} ${r.status}, winners: ${r.winners.join(", ") || "none"} (${r.payout_mode})`);
+      await claimAll(chain, id);
+      break;
+    }
     case "arbitrate":
       await arbitrate(chain, Number(arg("round")));
       break;
@@ -243,7 +287,23 @@ async function main(): Promise<void> {
       // A scout for every new chat model in the NEAR AI catalog, up to --max, cheapest first.
       const res = await fetch(`${config.nearAiBaseUrl}/models`, { headers: { Authorization: `Bearer ${config.nearAiApiKey}` } });
       const list = ((await res.json()) as { data: Array<{ id: string; pricing?: { output?: number } }> }).data;
-      const added = syncModelScouts(scoutableModels(list, Number(arg("max-price", "2"))), Number(arg("max", "8")));
+      // The catalog does not say which models answer plain chat; a one-line probe does.
+      const answers: string[] = [];
+      const known = new Set(modelScouts().map((m) => m.model));
+      for (const model of scoutableModels(list, Number(arg("max-price", "2")))) {
+        if (known.has(model)) {
+          answers.push(model);
+          continue;
+        }
+        if (answers.length >= Number(arg("max", "8"))) break;
+        try {
+          await chat(model, [{ role: "user", content: "Reply with OK." }], { maxTokens: 400, timeoutMs: 60_000 });
+          answers.push(model);
+        } catch (e) {
+          console.log(`skip ${model}: ${(e instanceof Error ? e.message : String(e)).slice(0, 120)}`);
+        }
+      }
+      const added = syncModelScouts(answers, Number(arg("max", "8")));
       console.log(added.length ? added.map((a) => `new scout ${a.id} on ${a.model}`).join("\n") : "no new models to scout with");
       if (added.length) await setup();
       break;
@@ -252,7 +312,7 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     default:
-      console.log("usage: league <setup|upgrade|configure|identities|round|demo|job|brief|watch|arbitrate|code-hash|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm] [--round n] [--dispute]");
+      console.log("usage: league <setup|upgrade|configure|identities|round|demo|job|brief|watch|arbitrate|cancel|finalize|code-hash|status|bench> [--task id] [--rounds n] [--offset k] [--market-seconds s] [--llm] [--round n] [--dispute]");
       process.exit(cmd ? 1 : 0);
   }
 }

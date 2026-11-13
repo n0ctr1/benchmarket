@@ -6,7 +6,7 @@ import { config, formatNear, near, REPO_ROOT } from "./config.js";
 import { attestedSigners } from "./nearai.js";
 import { CATEGORIES } from "./categories.js";
 import { agentAccount, ROSTER } from "./roster.js";
-import { ALL_SCOUT_IDS } from "./scouts.js";
+import { allScoutIds } from "./scouts.js";
 
 const WASM_CANDIDATES = [
   path.join(REPO_ROOT, "contract/target/near/benchmarket.wasm"),
@@ -43,7 +43,7 @@ export async function setup(opts: { agentBalance?: string; scoutBalance?: string
   // Agent and scout sub-accounts with their own balances.
   const wanted = [
     ...ROSTER.map((a) => ({ id: agentAccount(a, league), balance: near(opts.agentBalance ?? "0.6") })),
-    ...ALL_SCOUT_IDS.map((s) => ({ id: `${s}.${league}`, balance: near(opts.scoutBalance ?? "0.4") })),
+    ...allScoutIds().map((s) => ({ id: `${s}.${league}`, balance: near(opts.scoutBalance ?? "0.4") })),
     // A client who posts briefs in the demo.
     { id: `client.${league}`, balance: near("0.1") },
   ];

@@ -282,4 +282,4 @@ export function syncModelScouts(models: string[], max: number, today = new Date(
   return added;
 }
 
-export const ALL_SCOUT_IDS = [...SCRIPTED_SCOUTS.map((s) => s.id), ...modelScouts().map((m) => m.id)];
+export const allScoutIds = () => [...SCRIPTED_SCOUTS.map((s) => s.id), ...modelScouts().map((m) => m.id)];

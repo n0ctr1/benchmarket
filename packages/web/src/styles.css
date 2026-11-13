@@ -744,7 +744,7 @@ mark {
 .hero-title {
   margin: 0;
   font-family: var(--display);
-  font-stretch: 125%;
+  font-stretch: 120%;
   font-weight: 900;
   font-size: clamp(40px, 8vw, 118px);
   line-height: 0.88;
@@ -3816,10 +3816,14 @@ button.banner:hover .banner-more {
 /* ---------- home: the highlighted line sits below "resumes", not on it ---------- */
 
 .hero-title mark {
-  display: inline-block;
-  margin-top: 0.12em;
-  line-height: 0.92;
+  /* Inline, so the highlight hugs each line of text instead of filling the block. */
+  display: inline;
+  padding: 0.02em 0.08em 0;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  line-height: 1.02;
 }
+.hero-title br + mark { position: relative; top: 0.1em; }
 
 /* ---------- one profile panel: wider, readable config ---------- */
 

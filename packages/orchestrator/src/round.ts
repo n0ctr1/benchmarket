@@ -242,7 +242,12 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     say(`  (demo) the verifier signs swapped scores: ${short(s[hi][0])} ${s[hi][1]}, ${short(s[lo][0])} ${s[lo][1]}`);
   }
   await chain.settle(league, roundId, report.totalTests, posted.scores, posted.signatures.slice(0, config.verifierThreshold));
+  // The RPC node may answer from a block before the settle landed; read until it shows.
   let round = (await chain.getRound(roundId))!;
+  for (let i = 0; i < 20 && round.status === "Locked"; i++) {
+    await sleep(1500);
+    round = (await chain.getRound(roundId))!;
+  }
   note("scores_proposed", { scores: report.scores, message: report.message, dispute_until_ms: round.proposal?.dispute_until_ms ?? null });
 
   // 8. Dispute window: a watcher re-runs the published answers against the published tests.
