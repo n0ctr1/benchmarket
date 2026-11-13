@@ -12,3 +12,16 @@ Nothing here needs to be trusted. For any round, the site's **Re-check** (or
 the tests hash against the commitment in the round, the seed regenerating the tests, every
 answer against its on-chain hash, NEAR AI signatures against the trusted keys, and every answer
 re-run in a sandbox against the scores the verifiers signed.
+
+## This snapshot (benchmarket.testnet, 2026-11-13)
+
+| Rounds | What happened |
+|---|---|
+| 2, 3, 5, 6, 7 | Real models through NEAR AI Cloud, attested answers only, model scouts trading |
+| 10, 11, 12, 13 | Simulation: scripted answers and scouts, the same contract calls |
+| 14 | The verifier signs swapped scores; a watcher re-runs, disputes, and the arbiter overturns them and takes the verifier stake |
+| 1, 4, 8, 9 | Cancelled by the manager and refunded in full: a verifier state left from the previous deployment, a stale RPC read after `create_round`, and NEAR AI credit running out mid-round |
+
+Round 2 was finalized with `league finalize` after the runner read a stale state; its log has a
+first `round_settled` entry with no winners and a later one, stamped with the real time, with
+the winner from the contract.
