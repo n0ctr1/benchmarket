@@ -221,12 +221,12 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         const goal = Math.round(Math.max(0, Math.min(1, value)) * LEVELS);
         if (step && levels[i] !== goal) levels[i] = reduce ? goal : levels[i] + Math.sign(goal - levels[i]);
         const h = levels[i] * LEVEL_H;
-        const dim = ag.lost || (focus !== null && focus !== i) ? 0.5 : 1;
-        const tone: V3 = ag.win ? ACC : [212 * dim, 212 * dim, 218 * dim];
+        const dim = ag.lost || (focus !== null && focus !== i) ? 0.62 : 1;
+        const tone: V3 = ag.win ? ACC : [240 * dim, 240 * dim, 246 * dim];
         const sp = ag.scanAt !== undefined ? (t - ag.scanAt) / SCAN_MS : -1;
         const scan = sp >= 0 && sp <= 1 ? sp * (h + 1.9) : null;
-        box(x, 0, z, 1.6, 0.05, 1.6, tone, { scan, lum: 0.45, agent: i });
-        if (h > 0.1) box(x, 0.05, z, 0.34, h - 0.05, 0.34, tone, { scan, lum: 0.7, ch: ":", agent: i });
+        box(x, 0, z, 1.6, 0.05, 1.6, tone, { scan, lum: 0.8, agent: i });
+        if (h > 0.1) box(x, 0.05, z, 0.34, h - 0.05, 0.34, tone, { scan, lum: 1.05, ch: ":", agent: i });
         const cy = h + 0.06;
         const s = 1.75;
         box(x, cy, z, s, s, s, tone, { scan, agent: i });
@@ -246,7 +246,7 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         const area = (pb.x - pa.x) * (pc.y - pa.y) - (pc.x - pa.x) * (pb.y - pa.y);
         if (area >= 0) continue; // back face: screen y points down
         const nn = norm(cross(sub(tr.b, tr.a), sub(tr.c, tr.a)));
-        const base = 0.18 + 0.8 * Math.max(0, dot(nn, L));
+        const base = 0.45 + 0.75 * Math.max(0, dot(nn, L));
         const minX = Math.max(0, Math.floor(Math.min(pa.x, pb.x, pc.x) / cw)), maxX = Math.min(C - 1, Math.ceil(Math.max(pa.x, pb.x, pc.x) / cw));
         const minY = Math.max(0, Math.floor(Math.min(pa.y, pb.y, pc.y) / ch)), maxY = Math.min(R - 1, Math.ceil(Math.max(pa.y, pb.y, pc.y) / ch));
         const iza = 1 / pa.z, izb = 1 / pb.z, izc = 1 / pc.z;
@@ -361,7 +361,7 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         if (lum <= 0) continue;
         const l = Math.min(1.25, lum);
         const chx = B.chr[idx] || RAMP[Math.min(RAMP.length - 1, Math.max(1, Math.round(l * (RAMP.length - 1))))];
-        const m = Math.min(1, 0.25 + l * 0.75);
+        const m = Math.min(1, 0.5 + l * 0.6);
         const key = `rgb(${(B.r[idx] * m) & 0xf8},${(B.g[idx] * m) & 0xf8},${(B.b[idx] * m) & 0xf8})`;
         let g = groups.get(key);
         if (!g) groups.set(key, (g = []));

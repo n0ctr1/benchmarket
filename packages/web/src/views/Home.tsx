@@ -1,7 +1,6 @@
 import type { Round } from "../chain";
-import { featured, pct, stats, story, type Names } from "../league";
+import { stats, type Names } from "../league";
 import { LogoMark } from "../Logo";
-import { Identicon } from "../Figure";
 
 const ROUND_STEPS: Array<[string, string]> = [
   ["Same task, hidden tests", "Every agent gets the same spec. The tests stay hidden; their hash is committed on chain before anyone answers."],
@@ -17,37 +16,6 @@ const HIRE_STEPS: Array<[string, string]> = [
   ["Hire", "Only the winner gets your task; a confidential one is sealed to its model enclave."],
   ["Pay on pass", "Escrow pays the agent and its scouts, or refunds you and slashes them."],
 ];
-
-/** The featured round as a small board: each agent's face, then its score, or its price while it trades. */
-function Board({ r, n }: { r: Round; n: Names }) {
-  const scored = r.status === "Settled" || r.status === "Proposed" || r.status === "Disputed";
-  const settled = r.status === "Settled";
-  const rows = r.entries
-    .map((e) => {
-      const value = scored ? (e.answer_hash && r.total_tests ? (e.score ?? 0) / r.total_tests : 0) : e.market_ppm / 1e6;
-      const label = scored ? (e.answer_hash ? `${e.score ?? 0}/${r.total_tests}` : "no answer") : pct(e.market_ppm / 1e6);
-      return { e, value, label, won: settled && r.winners.includes(e.agent), price: e.market_ppm / 1e6 };
-    })
-    .sort((a, b) => b.value - a.value || b.price - a.price);
-  return (
-    <ol className="mini-board">
-      {rows.map(({ e, value, label, won, price }) => {
-        const id = n.identity(e.agent);
-        return (
-          <li key={e.agent} data-win={won}>
-            {id ? <Identicon cells={id.cells} palette={id.palette} size={22} /> : <span className="identicon-blank" />}
-            <span className="mini-name">{n.name(e.agent)}</span>
-            <span className="mini-bar" aria-hidden="true">
-              <i style={{ width: `${Math.round(value * 100)}%` }} />
-            </span>
-            <span className="mini-val">{label}</span>
-            {scored && <span className="mini-price">from {pct(price)}</span>}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
 
 /** The front page: what the league is, who it is for, and the round worth watching. */
 export function HomeView({
@@ -65,21 +33,14 @@ export function HomeView({
   onPost: () => void;
   onEnter: () => void;
 }) {
-  const top = featured(rounds, n);
-  const st = top ? story(top, n) : null;
-  const live = !!top && top.status !== "Settled" && top.status !== "Cancelled";
   const s = stats(rounds, n);
   return (
     <div className="page-scroll">
       <div className="page home">
         <section className="hero">
-          <div className="hero-meta">
-            <span>[ A skill league for AI agents on NEAR ]</span>
-            <span className="hero-meta-rule" />
-            <span>{s.settled} rounds · {s.agents} agents · {s.traded} NEAR traded</span>
-          </div>
           <h1 className="hero-title">
-            Agents don't have resumes. <mark>They have markets.</mark>
+            Agents don't have resumes. <br />
+            <mark>They have markets.</mark>
           </h1>
           <div className="hero-row">
             <p className="hero-text">
@@ -99,33 +60,6 @@ export function HomeView({
             </div>
           </div>
 
-          <div className="frame hero-stage" data-live={live}>
-            <div className="frame-bar">
-              <span>
-                <i className="dot" data-live={live} /> {live ? "Live" : "Featured"}
-              </span>
-              <span>feed://round/{top?.id ?? "—"}</span>
-              <span className="grow" />
-              <span className="hide-sm">{top ? `${top.entries.length} agents · ${top.task_ref}` : ""}</span>
-            </div>
-            <div className="frame-body">
-              {top && st ? (
-                <Board r={top} n={n} />
-              ) : (
-                <div className="hero-stage-empty">Loading rounds from the contract…</div>
-              )}
-            </div>
-            {top && st && (
-              <button className="frame-foot" onClick={() => onReplay(top.id)}>
-                <span className="frame-foot-id">R{top.id}</span>
-                <span className="frame-foot-main">
-                  <span className="hero-stage-title">{st.headline}</span>
-                  <span className="hero-stage-text">{st.text}</span>
-                </span>
-                <span className="frame-foot-cta">▶ {live ? "Watch" : "Replay"}</span>
-              </button>
-            )}
-          </div>
         </section>
 
         <section className="statbar" aria-label="League totals">

@@ -44,6 +44,9 @@ test("seed cleaning and validation", () => {
   assert.equal(parseIdentityReply(wrapped).seed, "I solve problems {carefully} and check details.");
   const bare = 'function passport() {\n  return {\n    seed: "I am an assistant that checks details first.",\n    motto: "Think clearly; build carefully.",\n  };\n}';
   assert.equal(parseIdentityReply(bare).motto, "Think clearly; build carefully.");
+  // Or assigns the fields to variables.
+  const assigned = '```javascript\nfunction generatePassportJSON() {\n  const seed = "I am a careful assistant who \\"checks\\" details first.";\n  const motto = \'Think clearly.\';\n}\n```';
+  assert.deepEqual(parseIdentityReply(assigned), { seed: 'I am a careful assistant who "checks" details first.', motto: "Think clearly." });
 });
 
 test("finds the scout's JSON after prose with braces", () => {

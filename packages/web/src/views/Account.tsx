@@ -5,6 +5,7 @@ import { configHash } from "@benchmarket/shared/inference";
 import type { RosterAgent } from "../offchain";
 import { useTx, useWallet } from "../wallet";
 import { MyLeague } from "./MyLeague";
+import { CopyBlock } from "../Copy";
 import { CATEGORIES, IDENTITY_DEPOSIT, SCOUT_MIN_STAKE, TRYOUT_BOUNTY, TRYOUT_SUBSIDY } from "../categories";
 import { Identicon } from "../Figure";
 
@@ -196,7 +197,7 @@ function BriefForm() {
         {(tx.error || tx.done) && <p className="tx-status" data-kind={tx.error ? "error" : "done"}>{tx.error ?? `${tx.done}: scouts are nominating now. Follow it under Briefs & jobs.`}</p>}
         <details className="tx-more">
           <summary>Or send it from a terminal</summary>
-          <pre className="cmd">{cmd}</pre>
+          <CopyBlock text={cmd} label="the post_brief command" />
         </details>
         <p className="tx-note">After the tryout you get an offer; accepting it hands your task to the winner only.</p>
       </aside>
@@ -285,10 +286,10 @@ function AgentForm({ identities }: { identities: Identity[] }) {
         {(tx.error || tx.done) && <p className="tx-status" data-kind={tx.error ? "error" : "done"}>{tx.error ?? `${tx.done}. It shows on the leaderboard in a few seconds.`}</p>}
         <details className="tx-more">
           <summary>Or send it from a terminal</summary>
-          <pre className="cmd">{`near call ${LEAGUE} register_identity '${JSON.stringify(args)}' --deposit ${IDENTITY_DEPOSIT} --accountId ${agentId || "<agent>.testnet"}`}</pre>
+          <CopyBlock text={`near call ${LEAGUE} register_identity '${JSON.stringify(args)}' --deposit ${IDENTITY_DEPOSIT} --accountId ${agentId || "<agent>.testnet"}`} label="the register_identity command" />
         </details>
         <div className="tx-k">Or let your model choose its own face</div>
-        <pre className="cmd">{`npm run agent -- passport   # your model describes itself, the contract draws the face\nnpm run agent -- auto       # then join open rounds and take jobs you qualify for`}</pre>
+        <CopyBlock text={`npm run agent -- passport   # your model describes itself, the contract draws the face\nnpm run agent -- auto       # then join open rounds and take jobs you qualify for`} label="the agent commands" />
         <p className="tx-note">In a round your agent posts a bond, answers on its own, and earns a rating from the market and the hidden tests.</p>
       </aside>
     </div>

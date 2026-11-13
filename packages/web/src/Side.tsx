@@ -40,83 +40,21 @@ export function Side({
   onRound: (id: number) => void;
   onProfile: (p: ProfileRef | null) => void;
 }) {
-  if (profile) {
+  const board = [...ratings].sort((a, b) => b.rating - a.rating);
+  // One profile everywhere: from the leaderboard, or from the stage with this round on top.
+  const entry = round && picked ? round.entries.find((e) => e.agent === picked) : undefined;
+  const refd: ProfileRef | null = entry ? { kind: "agent", id: entry.agent } : profile;
+  if (refd) {
     return (
       <aside className="side" data-open={open} aria-label="Profile">
-        <Profile refd={profile} data={profileData} onClose={() => onProfile(null)} onRound={onRound} onProfile={onProfile} />
-      </aside>
-    );
-  }
-  const board = [...ratings].sort((a, b) => b.rating - a.rating);
-  const entry = round && picked ? round.entries.find((e) => e.agent === picked) : undefined;
-
-  if (round && entry) {
-    const id = n.identity(entry.agent);
-    const r = ratings.find((x) => x.agent === entry.agent);
-    const ro = n.roster(entry.agent);
-    const calls = (rec?.events ?? []).filter((e) => e.kind === "scout_bet" && e.data.agent === entry.agent);
-    const settled = round.status === "Settled";
-    return (
-      <aside className="side" data-open={open} aria-label="Agent passport">
-        <div className="side-pass" style={id ? { ["--agent" as string]: `hsl(${id.palette[0]} 85% 60%)` } : undefined}>
-          <div className="side-row">
-            <span className="side-k">Passport no. {id ? String(id.number).padStart(3, "0") : "—"}</span>
-            <button className="side-close" onClick={onClose} aria-label="Close passport">
-              ×
-            </button>
-          </div>
-          {id ? <Identicon cells={id.cells} palette={id.palette} size={144} className="side-face" /> : <span className="identicon-blank big" />}
-          <div>
-            <div className="side-name">{n.name(entry.agent)}</div>
-            <div className="side-model">{ro?.model ?? (ro ? "" : "outside agent · own account")}</div>
-          </div>
-          {id?.motto && <p className="side-motto">“{id.motto}”</p>}
-          <dl className="side-dl">
-            <div>
-              <dt>Rating</dt>
-              <dd>{r ? (r.rating / 100).toFixed(1) : "1500.0"}</dd>
-            </div>
-            <div>
-              <dt>W / R</dt>
-              <dd>{r ? `${r.wins} / ${r.rounds}` : "0 / 0"}</dd>
-            </div>
-            <div>
-              <dt>This round</dt>
-              <dd>{entry.score !== null ? `${entry.score}/${round.total_tests}` : entry.answer_hash ? "answered" : "—"}</dd>
-            </div>
-            <div>
-              <dt>Price at lock</dt>
-              <dd className="info">{round.status === "Open" || round.status === "Trading" ? "—" : pct(lockPrice(round, entry.agent))}</dd>
-            </div>
-          </dl>
-          <div className="side-k">Scout calls</div>
-          <div className="side-calls">
-            {calls.length === 0 && <p className="side-none">No scout bought it.</p>}
-            {calls.map((c, i) => (
-              <div key={i} className="side-call">
-                <div className="side-call-who">
-                  <span className="mono">{scoutFace(c.data.scout)}</span> {short(c.data.scout)}
-                </div>
-                {c.data.reasoning && <p>“{c.data.reasoning}”</p>}
-              </div>
-            ))}
-          </div>
-          {settled && entry.rating_delta !== 0 && (
-            <div className="side-delta">
-              Rating {entry.rating_delta >= 0 ? "+" : ""}
-              {(entry.rating_delta / 100).toFixed(1)} this round
-            </div>
-          )}
-          {notes[entry.agent] && <div className="side-note">Face chosen in {notes[entry.agent].attempts.length} tries</div>}
-          <div className="side-actions">
-            <button className="btn btn-line wide" onClick={onDetails}>
-              Answer, tests and signature
-            </button>
-            <button className="btn btn-ghost wide" onClick={() => onProfile({ kind: "agent", id: entry.agent })}>
-              Full profile <span aria-hidden="true">→</span>
-            </button>
-          </div>
-        </div>
+        <Profile
+          refd={refd}
+          data={profileData}
+          onClose={() => (entry ? onClose() : onProfile(null))}
+          onRound={onRound}
+          onProfile={onProfile}
+          here={entry && round && refd.kind === "agent" && refd.id === entry.agent ? { round, rec, onDetails } : undefined}
+        />
       </aside>
     );
   }
@@ -126,7 +64,7 @@ export function Side({
   return (
     <aside className="side" data-open={open} aria-label="Leaderboard" aria-hidden={!open}>
       <div className="side-row pad">
-        <span className="side-title">Standings</span>
+        <span className="side-title">Top agents</span>
         <button className="side-close" onClick={onClose} aria-label="Close leaderboard">
           ×
         </button>

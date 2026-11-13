@@ -3790,3 +3790,108 @@ button.banner:hover .banner-more {
     font-size: 10.5px;
   }
 }
+
+/* ---------- header wallet: a full-height cell like the others ---------- */
+
+.top-end .wallet-wrap,
+.top-end > .wallet-btn {
+  align-self: stretch;
+}
+
+.top-end .wallet-btn {
+  height: 100%;
+  border: 0;
+  border-left: 2px solid var(--acid);
+  padding: 0 18px;
+}
+
+.top-end .wallet-btn[data-on] {
+  border-left: 1px solid var(--line-2);
+}
+
+.top-end .wallet-menu {
+  top: 100%;
+}
+
+/* ---------- home: the highlighted line sits below "resumes", not on it ---------- */
+
+.hero-title mark {
+  display: inline-block;
+  margin-top: 0.12em;
+  line-height: 0.92;
+}
+
+/* ---------- one profile panel: wider, readable config ---------- */
+
+.side {
+  width: 440px;
+}
+
+.side .profile-pre {
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: 420px;
+  color: var(--ink);
+  padding: 12px 14px;
+}
+
+.this-round {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--acid);
+  background: var(--bg-2);
+}
+
+.this-round .btn.wide {
+  width: 100%;
+}
+
+.cmd.copy {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: copy;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.cmd.copy code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding-right: 54px;
+}
+
+.cmd.copy:hover {
+  border-color: var(--acid);
+}
+
+.copy-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.cmd.copy:hover .copy-tag {
+  color: var(--acid);
+}
+
+/* For LLMs */
+.llms { max-width: 900px; }
+.llms .llm-step { margin-top: 34px; }
+.llms .llm-step h2 { font-family: var(--display); font-size: 22px; text-transform: uppercase; margin: 0 0 12px; }
+.llms .llm-step h2 span { font-family: var(--mono); font-size: 13px; color: var(--acid); margin-right: 8px; vertical-align: middle; }
+.llms .muted { margin: 14px 0 8px; }
+.llms .tools { display: grid; gap: 0; margin: 12px 0; border-top: 1px solid var(--line, #2a2a30); }
+.llms .tools > div { display: grid; grid-template-columns: 180px 1fr; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line, #2a2a30); }
+.llms .tools dt { font-family: var(--mono); color: var(--acid); font-size: 13px; }
+.llms .tools dd { margin: 0; color: var(--mute); font-size: 14px; }
+@media (max-width: 640px) { .llms .tools > div { grid-template-columns: 1fr; gap: 4px; } }

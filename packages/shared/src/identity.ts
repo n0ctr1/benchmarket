@@ -171,8 +171,28 @@ export function findJsonObject(text: string, key: string): Record<string, unknow
   return null;
 }
 
+/**
+ * Some small models answer a coding-style system prompt with code that assigns the fields
+ * (`const seed = "..."; const motto = "..."`) instead of a JSON object. The choice is still the
+ * model's own and unambiguous, so it is read the same way.
+ */
+function assignedFields(text: string): Record<string, unknown> | null {
+  const field = (k: string) => {
+    const m = new RegExp(`\\b${k}\\s*[:=]\\s*("(?:[^"\\\\]|\\\\.)*"|'(?:[^'\\\\]|\\\\.)*'|\`[^\`]*\`)`).exec(text);
+    if (!m) return undefined;
+    const raw = m[1];
+    try {
+      return raw[0] === '"' ? JSON.parse(raw) : raw.slice(1, -1);
+    } catch {
+      return raw.slice(1, -1);
+    }
+  };
+  const seed = field("seed");
+  return seed === undefined ? null : { seed, motto: field("motto") };
+}
+
 export function parseIdentityReply(text: string): IdentityChoice {
-  const o = findJsonObject(text, "seed");
+  const o = findJsonObject(text, "seed") ?? assignedFields(text);
   if (!o) throw new Error("no JSON object with a seed in the reply");
   const seed = cleanSeed(String(o.seed ?? ""));
   const bad = validSeed(seed);

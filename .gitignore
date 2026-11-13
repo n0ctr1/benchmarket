@@ -25,3 +25,4 @@ dist/
 .data/
 .data-*/
 .claude/
+.logs/

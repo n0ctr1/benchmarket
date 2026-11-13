@@ -84,7 +84,10 @@ export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say:
       attempt.rejected = `invalid reply: ${e instanceof Error ? e.message : e}`;
       save(rec);
       say(`  ${agent.name.padEnd(7)} attempt ${i}: ${attempt.rejected}`);
-      messages.push({ role: "user", content: `That was not valid (${attempt.rejected}). Reply with the JSON object only.` });
+      messages.push({
+        role: "user",
+        content: `That was not valid (${attempt.rejected}). This is not a coding task: do not write code. Choose your own seed and motto and reply with one JSON object only, shaped like {"seed": "I am ... . I ... .", "motto": "..."}.`,
+      });
       continue;
     }
 

@@ -20,7 +20,14 @@ interface Data {
 const settledOf = (rounds: Round[]) => [...rounds].filter((r) => r.status === "Settled").sort((a, b) => b.id - a.id);
 
 /** A profile of anyone in the league, read from the contract and the round logs. */
-export function Profile({ refd, data, onClose, onRound, onProfile }: { refd: ProfileRef; data: Data; onClose: () => void; onRound: (id: number) => void; onProfile: (p: ProfileRef) => void }) {
+/** When the profile opens from a round's stage: that round, and the answer panel for it. */
+export interface RoundContext {
+  round: Round;
+  rec: RoundRecord | null;
+  onDetails: () => void;
+}
+
+export function Profile({ refd, data, onClose, onRound, onProfile, here }: { refd: ProfileRef; data: Data; onClose: () => void; onRound: (id: number) => void; onProfile: (p: ProfileRef) => void; here?: RoundContext }) {
   return (
     <div className="side-pass profile">
       <div className="side-row">
@@ -29,14 +36,14 @@ export function Profile({ refd, data, onClose, onRound, onProfile }: { refd: Pro
           ×
         </button>
       </div>
-      {refd.kind === "agent" && <AgentProfile id={refd.id} data={data} onRound={onRound} />}
+      {refd.kind === "agent" && <AgentProfile id={refd.id} data={data} onRound={onRound} here={here} />}
       {refd.kind === "scout" && <ScoutProfile id={refd.id} data={data} onRound={onRound} onProfile={onProfile} />}
       {refd.kind === "task" && <TaskProfile id={refd.id} data={data} onRound={onRound} onProfile={onProfile} />}
     </div>
   );
 }
 
-function AgentProfile({ id, data, onRound }: { id: string; data: Data; onRound: (id: number) => void }) {
+function AgentProfile({ id, data, onRound, here }: { id: string; data: Data; onRound: (id: number) => void; here?: RoundContext }) {
   const { n } = data;
   const ident = n.identity(id);
   const ro = n.roster(id);
@@ -56,6 +63,8 @@ function AgentProfile({ id, data, onRound }: { id: string; data: Data; onRound: 
         <div className="side-model">{id}</div>
       </div>
       {ident?.motto && <p className="side-motto">“{ident.motto}”</p>}
+      {here && <ThisRound id={id} here={here} />}
+      <div className="side-k">Record</div>
       <dl className="side-dl">
         <div>
           <dt>Rating</dt>
@@ -103,6 +112,57 @@ function AgentProfile({ id, data, onRound }: { id: string; data: Data; onRound: 
         </>
       )}
     </>
+  );
+}
+
+/** The agent in the round it was picked in: score, price at the lock, who backed it and why. */
+function ThisRound({ id, here }: { id: string; here: RoundContext }) {
+  const { round, rec } = here;
+  const e = round.entries.find((x) => x.agent === id);
+  if (!e) return null;
+  const calls = (rec?.events ?? []).filter((ev) => ev.kind === "scout_bet" && ev.data.agent === id);
+  const trading = round.status === "Open" || round.status === "Trading";
+  return (
+    <section className="this-round">
+      <div className="side-k">Round {round.id}</div>
+      <dl className="side-dl">
+        <div>
+          <dt>Score</dt>
+          <dd>{e.score !== null ? `${e.score}/${round.total_tests}` : e.answer_hash ? "answered" : "—"}</dd>
+        </div>
+        <div>
+          <dt>Price at lock</dt>
+          <dd className="info">{trading ? "—" : pct(lockPrice(round, id))}</dd>
+        </div>
+        {round.status === "Settled" && (
+          <div>
+            <dt>Rating change</dt>
+            <dd className={e.rating_delta >= 0 ? "good" : "bad"}>
+              {e.rating_delta >= 0 ? "+" : ""}
+              {(e.rating_delta / 100).toFixed(1)}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Answer</dt>
+          <dd>{e.attested ? "attested" : e.answer_hash ? "plain hash" : "none"}</dd>
+        </div>
+      </dl>
+      <div className="side-calls">
+        {calls.length === 0 && <p className="side-none">No scout bought it in this round.</p>}
+        {calls.map((c, i) => (
+          <div key={i} className="side-call">
+            <div className="side-call-who">
+              <span className="mono">{scoutFace(c.data.scout)}</span> {short(c.data.scout)}
+            </div>
+            {c.data.reasoning && <p>“{c.data.reasoning}”</p>}
+          </div>
+        ))}
+      </div>
+      <button className="btn btn-line wide" onClick={here.onDetails}>
+        Answer, tests and signature
+      </button>
+    </section>
   );
 }
 

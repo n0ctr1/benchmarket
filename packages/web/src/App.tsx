@@ -10,6 +10,7 @@ import type { ProfileRef } from "./Profile";
 import { WalletButton } from "./wallet";
 import { AccountView, type AccountTab } from "./views/Account";
 import { HomeView } from "./views/Home";
+import { LlmsView } from "./views/Llms";
 import { LeagueView } from "./views/League";
 import { LeaderboardView } from "./views/Pages";
 import { RoundView } from "./views/Round";
@@ -18,13 +19,14 @@ import { useRecheck, VerifyView } from "./views/VerifyView";
 // Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
 const POLL_MS = 15000;
 
-type View = "home" | "league" | "round" | "verify" | "leaderboard" | "account";
+type View = "home" | "league" | "round" | "verify" | "leaderboard" | "account" | "llms";
 // A round, and its re-check, open from the League feed; they have no tab of their own.
 const TABS: Array<[View, string]> = [
   ["home", "Home"],
   ["league", "League"],
   ["leaderboard", "Leaderboard"],
   ["account", "Account"],
+  ["llms", "For LLMs"],
 ];
 const ACCOUNT_TABS: AccountTab[] = ["brief", "agent", "activity"];
 
@@ -39,7 +41,7 @@ function parseHash(): Route {
   const h = location.hash;
   const old = /round=(\d+)/.exec(h);
   if (old) return { view: "round", round: Number(old[1]), account: "brief" };
-  const m = /^#\/(home|league|round|verify|leaderboard|account)(?:\/(\w+))?/.exec(h);
+  const m = /^#\/(home|league|round|verify|leaderboard|account|llms)(?:\/(\w+))?/.exec(h);
   if (!m) return { view: "home", round: null, account: "brief" };
   const view = m[1] as View;
   const tail = m[2] ?? "";
@@ -187,7 +189,7 @@ export function App() {
           {route.view !== "leaderboard" && (
             <button className="top-board" aria-pressed={panel} onClick={() => (panel ? (setPanel(false), setPicked(null)) : setPanel(true))} aria-label="Toggle the standings panel">
               <span aria-hidden="true">{panel ? "[×]" : "[≡]"}</span>
-              <span className="top-board-label">Standings</span>
+              <span className="top-board-label">Top agents</span>
             </button>
           )}
         </div>
@@ -262,6 +264,7 @@ export function App() {
           {route.view === "account" && (
             <AccountView tab={route.account} onTab={(t) => go("account", null, t)} briefs={briefs} jobs={jobs} identities={identities} ratings={ratings} tasks={tasks} roster={roster} onRound={(id) => go("round", id)} />
           )}
+          {route.view === "llms" && <LlmsView />}
           {route.view === "verify" && <VerifyView round={current} recheck={recheck} verifiable={verifiable} onBack={() => go("round", current?.id ?? null)} />}
         </main>
       </div>

@@ -6,13 +6,13 @@
 set -euo pipefail
 FROM="${1:?funded account}"
 TO="${2:-benchmarket.testnet}"
-AMOUNT="${3:-17}"
+AMOUNT="${3:-14.5}"
 cd "$(dirname "$0")/.."
 
 npm run build:contract
 npm run league -- bootstrap --from "$FROM" --to "$TO" --amount "$AMOUNT"
 sed -i "s/^LEAGUE_ACCOUNT=.*/LEAGUE_ACCOUNT=$TO/" .env
-npm run setup -- --agent-balance 0.35 --scout-balance 0.3
+npm run setup -- --agent-balance 0.25 --scout-balance 0.2
 npm run identities
 npm run league -- scouts-sync --max 6
 npm run demo -- --rounds 6 --llm --market-seconds 30

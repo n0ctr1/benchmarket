@@ -43,16 +43,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     (async () => {
       const network = (typeof __NETWORK__ === "string" ? __NETWORK__ : "testnet") as "testnet" | "mainnet";
       // The wallet code is large; it loads after the page, in its own chunk.
-      const [{ setupWalletSelector }, { setupModal }, { setupMyNearWallet }, { setupHereWallet }, { setupIntearWallet }] = await Promise.all([
+      const [{ setupWalletSelector }, { setupModal }, { setupMeteorWallet }, { setupIntearWallet }, { setupHereWallet }] = await Promise.all([
         import("@near-wallet-selector/core"),
         import("@near-wallet-selector/modal-ui"),
-        import("@near-wallet-selector/my-near-wallet"),
-        import("@near-wallet-selector/here-wallet"),
+        import("@near-wallet-selector/meteor-wallet"),
         import("@near-wallet-selector/intear-wallet"),
+        import("@near-wallet-selector/here-wallet"),
       ]);
+      // MyNearWallet no longer connects to apps (it points users to Meteor); HERE is mainnet only.
       const s = await setupWalletSelector({
         network,
-        modules: [setupMyNearWallet(), setupHereWallet(), setupIntearWallet()],
+        modules: network === "mainnet" ? [setupMeteorWallet(), setupIntearWallet(), setupHereWallet()] : [setupMeteorWallet(), setupIntearWallet()],
       });
       if (!live) return;
       const m = setupModal(s, { contractId: LEAGUE });
