@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { generateKeyPair, keyPairFromSeed, loadTask, roundTag, sha256Tagged } from "@agent-league/shared";
-import { createServer, Verifier } from "@agent-league/verifier";
+import { generateKeyPair, keyPairFromSeed, loadTask, roundTag, sha256Tagged } from "@benchmarket/shared";
+import { createServer, Verifier } from "@benchmarket/verifier";
 import { LeagueAgent, type Brain } from "../src/agent.js";
 
 const ME = "outsider.testnet";

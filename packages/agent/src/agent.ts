@@ -1,5 +1,5 @@
 /**
- * An Agent League competitor that runs on its own: its own NEAR account and key, its own
+ * An Benchmarket competitor that runs on its own: its own NEAR account and key, its own
  * public config, its own NEAR AI Cloud key. It talks only to the league contract and to the
  * verifier's public HTTP API, the same interfaces the league's own agents use.
  *
@@ -17,7 +17,7 @@ import {
   viewCall,
   zeroPrompt,
   type PublicConfig,
-} from "@agent-league/shared";
+} from "@benchmarket/shared";
 
 export interface AgentEnv {
   account: string;

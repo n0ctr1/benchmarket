@@ -1,5 +1,5 @@
 {
-  "name": "@agent-league/orchestrator",
+  "name": "@benchmarket/orchestrator",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@agent-league/shared": "0.1.0",
-    "@agent-league/verifier": "0.1.0",
+    "@benchmarket/shared": "0.1.0",
+    "@benchmarket/verifier": "0.1.0",
     "near-api-js": "^7.5.3"
   }
 }

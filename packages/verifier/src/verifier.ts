@@ -18,7 +18,7 @@ import {
   type Domain,
   type PublicConfig,
   type TestCase,
-} from "@agent-league/shared";
+} from "@benchmarket/shared";
 import { normalizeCode, runTests, type RunResult, type SandboxOptions } from "./sandbox.js";
 import { FRESH_TESTS, generateTests } from "./families.js";
 

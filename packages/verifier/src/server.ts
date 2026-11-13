@@ -1,5 +1,5 @@
 import http from "node:http";
-import { listTaskIds, loadTask, publicView, roundTag, sha256Tagged, taskPrompt, viewCall } from "@agent-league/shared";
+import { listTaskIds, loadTask, publicView, roundTag, sha256Tagged, taskPrompt, viewCall } from "@benchmarket/shared";
 import { Verifier, type Kind } from "./verifier.js";
 
 /**

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { conflictPrompt, faceCode, figureText, parseIdentityReply, zeroPrompt, type IdentityChoice } from "@agent-league/shared";
+import { conflictPrompt, faceCode, figureText, parseIdentityReply, zeroPrompt, type IdentityChoice } from "@benchmarket/shared";
 import { IDENTITY_DEPOSIT, type LeagueChain } from "./chain.js";
 import { config, DATA_DIR } from "./config.js";
 import { chat, completionSignature, type ChatMessage, type CompletionSignature } from "./nearai.js";

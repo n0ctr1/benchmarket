@@ -1,7 +1,7 @@
-import { listTaskIds } from "@agent-league/shared";
-import { createServer, normalizeCode, recheck, rpcChain, runTests, signScores, Verifier, type PublishedReport } from "@agent-league/verifier";
-import { DOMAINS } from "@agent-league/shared";
-import { loadTask } from "@agent-league/shared";
+import { listTaskIds } from "@benchmarket/shared";
+import { createServer, normalizeCode, recheck, rpcChain, runTests, signScores, Verifier, type PublishedReport } from "@benchmarket/verifier";
+import { DOMAINS } from "@benchmarket/shared";
+import { loadTask } from "@benchmarket/shared";
 import fs from "node:fs";
 import { llmSolve } from "./llm.js";
 import { ROSTER } from "./roster.js";
@@ -194,7 +194,7 @@ async function main(): Promise<void> {
       // NEAR reports a contract's code hash as base58(sha256(wasm)): compare with the local build.
       const { createHash } = await import("node:crypto");
       const { base58 } = await import("@scure/base");
-      const wasm = path.join(DATA_DIR, "..", "contract/target/near/agent_league.wasm");
+      const wasm = path.join(DATA_DIR, "..", "contract/target/near/benchmarket.wasm");
       const local = base58.encode(createHash("sha256").update(fs.readFileSync(wasm)).digest());
       const acct = (await chain.provider.viewAccount({ accountId: config.leagueAccount, blockQuery: { finality: "final" } })) as { code_hash?: string; codeHash?: string };
       const onChain = acct.code_hash ?? acct.codeHash;

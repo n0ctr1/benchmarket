@@ -111,7 +111,7 @@ function loadRoster(): unknown {
 
 function dataPlugin(): Plugin {
   return {
-    name: "agent-league-data",
+    name: "benchmarket-data",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (!req.url?.startsWith("/data/")) return next();

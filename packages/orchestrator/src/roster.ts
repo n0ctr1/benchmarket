@@ -1,4 +1,4 @@
-import { configHash as hashConfig, type PublicConfig } from "@agent-league/shared";
+import { configHash as hashConfig, type PublicConfig } from "@benchmarket/shared";
 
 /** One Open League agent: the full config the league knows about. */
 export interface AgentConfig {
@@ -14,6 +14,7 @@ export interface AgentConfig {
   sim: { failPermille: number; strengthBonus: number };
 }
 
+// The prompt keeps the league's first name: it is hashed into every agent's config_hash on chain.
 const BASE_PROMPT = `You are a careful JavaScript engineer competing in Agent League.
 You get one task. Write exactly one JavaScript function with the requested name.
 Rules: plain JavaScript (no TypeScript), no imports, no require, no eval, no network, no console output.

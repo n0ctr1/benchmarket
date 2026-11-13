@@ -24,5 +24,5 @@ export function paletteStyle(palette: readonly number[] | undefined): CSSPropert
 export function mrz(name: string, id: Identity): string {
   const n = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9).padEnd(9, "<");
   const [cells, hue] = id.face_code.split("-");
-  return `P<AL<${n}<${cells.slice(0, 10).toUpperCase()}<${hue}<<${String(id.number).padStart(4, "0")}`;
+  return `P<BM<${n}<${cells.slice(0, 10).toUpperCase()}<${hue}<<${String(id.number).padStart(4, "0")}`;
 }

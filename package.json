@@ -1,5 +1,5 @@
 {
-  "name": "agent-league",
+  "name": "benchmarket",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -13,8 +13,8 @@
     "test:contract": "cd contract && cargo test",
     "build:contract": "cd contract && cargo near build non-reproducible-wasm",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/web/tsconfig.json --noEmit",
-    "verifier": "npm run start -w @agent-league/verifier",
-    "verifier:keygen": "npm run keygen -w @agent-league/verifier",
+    "verifier": "npm run start -w @benchmarket/verifier",
+    "verifier:keygen": "npm run keygen -w @benchmarket/verifier",
     "setup": "tsx packages/orchestrator/src/cli.ts setup",
     "round": "tsx packages/orchestrator/src/cli.ts round",
     "demo": "tsx packages/orchestrator/src/cli.ts demo",

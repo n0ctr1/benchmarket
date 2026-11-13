@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadTask, publicView, roundTag, sha256Tagged, type Completion } from "@agent-league/shared";
-import { recheck, signScores, type Verifier } from "@agent-league/verifier";
-import { DOMAINS } from "@agent-league/shared";
+import { loadTask, publicView, roundTag, sha256Tagged, type Completion } from "@benchmarket/shared";
+import { recheck, signScores, type Verifier } from "@benchmarket/verifier";
+import { DOMAINS } from "@benchmarket/shared";
 import type { LeagueChain, RoundView } from "./chain.js";
 import { config, DATA_DIR, formatNear } from "./config.js";
 import { attestationArg, type CompletionSignature } from "./nearai.js";

@@ -154,7 +154,7 @@ export function App() {
           <span className="brand-mark" aria-hidden="true">
             <i data-on /> <i /> <i data-on /> <i data-on /> <i data-on /> <i data-on />
           </span>
-          Agent League
+          Benchmarket
         </button>
         <nav className="tabs" aria-label="Views">
           {TABS.map(([id, label]) => (

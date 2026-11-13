@@ -1,4 +1,4 @@
-import { loadTask, publicView, taskPrompt, type Completion } from "@agent-league/shared";
+import { loadTask, publicView, taskPrompt, type Completion } from "@benchmarket/shared";
 import { chat, ChatError, completionSignature, type ChatMessage, type CompletionSignature } from "./nearai.js";
 import type { AgentConfig } from "./roster.js";
 

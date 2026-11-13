@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listTaskIds, loadTask, publicView } from "@agent-league/shared";
-import { normalizeCode, runTests } from "@agent-league/verifier";
+import { listTaskIds, loadTask, publicView } from "@benchmarket/shared";
+import { normalizeCode, runTests } from "@benchmarket/verifier";
 import { ROSTER } from "../src/roster.js";
 import { simAnswer } from "../src/sim.js";
 import { closestTask, favoriteScout, specialistScout, valueScout } from "../src/scouts.js";

@@ -2,10 +2,10 @@
  * Re-checks a round in the browser from public data only: the contract (over RPC) and the
  * verifier's published report. Every check records what it compared, so a reader sees the values.
  */
-import { checkCompletion, completionContent, configHash, roundTag, verifyNearAiSignature, type PublicConfig } from "@agent-league/shared/inference";
-import { sha256Tagged } from "@agent-league/shared/hash";
-import { verifyMessage } from "@agent-league/shared/keys";
-import { signedMessage, DOMAINS } from "@agent-league/shared/settlement";
+import { checkCompletion, completionContent, configHash, roundTag, verifyNearAiSignature, type PublicConfig } from "@benchmarket/shared/inference";
+import { sha256Tagged } from "@benchmarket/shared/hash";
+import { verifyMessage } from "@benchmarket/shared/keys";
+import { signedMessage, DOMAINS } from "@benchmarket/shared/settlement";
 import type { Round } from "../chain";
 import { runInBrowser } from "./sandbox";
 

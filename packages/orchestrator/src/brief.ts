@@ -1,5 +1,5 @@
-import { loadTask, publicView, roundTag, sha256Tagged, taskPrompt } from "@agent-league/shared";
-import type { Verifier } from "@agent-league/verifier";
+import { loadTask, publicView, roundTag, sha256Tagged, taskPrompt } from "@benchmarket/shared";
+import type { Verifier } from "@benchmarket/verifier";
 import type { BriefView, LeagueChain } from "./chain.js";
 import { config, formatNear, near } from "./config.js";
 import { workJob } from "./job.js";

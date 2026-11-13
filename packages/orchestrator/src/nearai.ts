@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import https from "node:https";
-import { clientKey, modelX25519, openField, sealField } from "@agent-league/shared";
+import { clientKey, modelX25519, openField, sealField } from "@benchmarket/shared";
 import { config } from "./config.js";
 
 /** OpenAI-compatible client for NEAR AI Cloud. */

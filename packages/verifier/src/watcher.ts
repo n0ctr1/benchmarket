@@ -1,4 +1,4 @@
-import { roundTag, sha256Tagged, type TestCase } from "@agent-league/shared";
+import { roundTag, sha256Tagged, type TestCase } from "@benchmarket/shared";
 import { runRaw } from "./sandbox.js";
 import { scoreAnswers, type ChainEntry, type Kind, type PublishedReport } from "./verifier.js";
 

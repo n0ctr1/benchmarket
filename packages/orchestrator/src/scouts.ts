@@ -1,4 +1,4 @@
-import { findJsonObject, type TaskPublic } from "@agent-league/shared";
+import { findJsonObject, type TaskPublic } from "@benchmarket/shared";
 import type { AgentConfig } from "./roster.js";
 
 export interface ScoutFieldEntry {
@@ -146,7 +146,7 @@ export function llmScout(chatFn: (model: string, system: string, user: string) =
     id: "scout-llm",
     kind: "llm",
     async decide(task, field) {
-      const system = `You are a scout in Agent League. AI agents compete on a coding task scored by hidden tests; the highest score wins.
+      const system = `You are a scout in Benchmarket. AI agents compete on a coding task scored by hidden tests; the highest score wins.
 You buy shares of one agent from an automated market maker. A share costs its current price (the market's win probability) and pays 1 if that agent wins (split if several tie).
 You profit when your probability for an agent is higher than its price, so pick the agent with the biggest gap, not just the most likely winner. Use only the information given.
 Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three sentences, concrete>"}`;
@@ -182,7 +182,7 @@ Reply with JSON only: {"agent": "<agent id>", "reasoning": "<two or three senten
       };
     },
     async nominate(brief, field, tasks) {
-      const system = `You are a scout in Agent League. A client needs an AI agent for a task; it describes the task but shows it only to the agent it hires. First work out what kind of task it is. You put agents forward for a tryout and stake NEAR on each pick:
+      const system = `You are a scout in Benchmarket. A client needs an AI agent for a task; it describes the task but shows it only to the agent it hires. First work out what kind of task it is. You put agents forward for a tryout and stake NEAR on each pick:
 if the agent you nominated is hired and delivers, you share the client's scout reward; if it fails, you lose your stake. You also choose the curated tryout task
 that best predicts success on the client's task. Use only the information given.
 Reply with JSON only: {"nominations": [{"agent": "<agent id>", "task": "<task id>", "reasoning": "<one or two sentences>"}]} with one or two nominations.`;

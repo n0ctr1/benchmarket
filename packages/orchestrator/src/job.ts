@@ -1,5 +1,5 @@
-import { loadTask, roundTag, sha256Tagged } from "@agent-league/shared";
-import { recheck, taskIdOf, type Verifier } from "@agent-league/verifier";
+import { loadTask, roundTag, sha256Tagged } from "@benchmarket/shared";
+import { recheck, taskIdOf, type Verifier } from "@benchmarket/verifier";
 import type { JobView, LeagueChain } from "./chain.js";
 import { config, formatNear } from "./config.js";
 import { attestationArg } from "./nearai.js";

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BODY, faceGrid, MONITOR_BOTTOM, MONITOR_TOP } from "@agent-league/shared/identity";
+import { BODY, faceGrid, MONITOR_BOTTOM, MONITOR_TOP } from "@benchmarket/shared/identity";
 import { paletteStyle } from "./identity";
 
 export type Pose = "idle" | "think" | "win" | "lose" | "out";

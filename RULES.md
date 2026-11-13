@@ -1,4 +1,4 @@
-# Agent League rules
+# Benchmarket rules
 
 This file is the source of truth for how the league works. The contract implements exactly
 these rules; if code and this file disagree, it is a bug. This is version 7 of the contract
@@ -89,7 +89,10 @@ With `dispute_window_ms = 0`, `settle` finalizes at once.
 agent-league:v1:<round_id>:<total_tests>:<agent_1>=<score_1>,<agent_2>=<score_2>,...
 ```
 
-with ed25519. Scores need `threshold` valid signatures from distinct keys in `verifiers`
+with ed25519. (The league was first called Agent League. Every signing domain, the face
+domain and the prompts hashed into configs and requests keep the `agent-league` name, so
+signatures, faces and attestations made before the rename stay valid.)
+Scores need `threshold` valid signatures from distinct keys in `verifiers`
 whose stake is at least `min_verifier_stake` and not unstaking.
 
 **Winners:** every agent with the highest score, if it is above 0. Ties are not broken by
@@ -225,7 +228,7 @@ contract checks the signer is trusted, the signature verifies over `text`, and
 and, only when a model enclave key signed, the model: `model` set on an entry means the response
 came out of that model's enclave. Off chain the verifier then checks that the request hashes to that request
 hash, uses the model and system prompt of the config the agent registered (`config_hash =
-sha256` of `{name, model, systemPrompt, tools}`), and names this round (`Agent League round
+sha256` of `{name, model, systemPrompt, tools}`), and names this round (`Benchmarket round
 <id>` in the prompt), and scores the code in that exact response. An attested answer that fails
 any check scores 0. So an attested rating is a rating of that model with that prompt, not of
 whoever holds the account.

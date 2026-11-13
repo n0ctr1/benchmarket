@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { cellsApart, deriveFace, fillOf, MAX_MOTTO, MIN_CELLS, validFill, validSeed } from "@agent-league/shared/identity";
+import { cellsApart, deriveFace, fillOf, MAX_MOTTO, MIN_CELLS, validFill, validSeed } from "@benchmarket/shared/identity";
 import { LEAGUE, short, type Brief, type Identity, type Job } from "../chain";
 import { CATEGORIES, IDENTITY_DEPOSIT, SCOUT_MIN_STAKE, TRYOUT_BOUNTY, TRYOUT_SUBSIDY } from "../categories";
 import { Identicon } from "../Figure";

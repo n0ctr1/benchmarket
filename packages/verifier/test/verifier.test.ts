@@ -20,7 +20,7 @@ import {
   modelX25519,
   sealField,
   type PublicConfig,
-} from "@agent-league/shared";
+} from "@benchmarket/shared";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { createServer, normalizeCode, recheck, runTests, scoreAnswers, Verifier } from "../src/index.js";

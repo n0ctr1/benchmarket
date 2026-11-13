@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { generateKeyPair, listTaskIds, loadTask, publicKeyOf } from "@agent-league/shared";
+import { generateKeyPair, listTaskIds, loadTask, publicKeyOf } from "@benchmarket/shared";
 import { LeagueChain } from "./chain.js";
 import { config, formatNear, near, REPO_ROOT } from "./config.js";
 import { attestedSigners } from "./nearai.js";
@@ -9,8 +9,8 @@ import { agentAccount, ROSTER } from "./roster.js";
 import { ALL_SCOUT_IDS } from "./scouts.js";
 
 const WASM_CANDIDATES = [
-  path.join(REPO_ROOT, "contract/target/near/agent_league.wasm"),
-  path.join(REPO_ROOT, "contract/target/wasm32-unknown-unknown/release/agent_league.wasm"),
+  path.join(REPO_ROOT, "contract/target/near/benchmarket.wasm"),
+  path.join(REPO_ROOT, "contract/target/wasm32-unknown-unknown/release/benchmarket.wasm"),
 ];
 
 /** Creates sub-accounts, deploys and initializes the contract. Safe to re-run. */

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import type { TaskWithTests } from "@agent-league/shared";
+import type { TaskWithTests } from "@benchmarket/shared";
 import type { AgentConfig } from "./roster.js";
 
 /**

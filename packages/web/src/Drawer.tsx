@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { deriveFace, faceCode } from "@agent-league/shared/identity";
+import { deriveFace, faceCode } from "@benchmarket/shared/identity";
 import { near, EXPLORER, short, type Entry, type Identity, type Round } from "./chain";
 import { Figure, Identicon } from "./Figure";
 import { hueColor, mrz } from "./identity";

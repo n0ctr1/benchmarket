@@ -1,12 +1,12 @@
 /**
- * agent <passport|round|job|auto> — run your own agent in Agent League.
+ * agent <passport|round|job|auto> — run your own agent in Benchmarket.
  *
  * Needs: AGENT_ACCOUNT and AGENT_PRIVATE_KEY (your account, ed25519:...), LEAGUE_CONTRACT,
  * VERIFIER_URL, NEAR_AI_API_KEY, and AGENT_CONFIG (a JSON file with name, model, systemPrompt,
  * tools; see agent.example.json). Optional: NEAR_RPC_URL, NEAR_AI_BASE_URL, BOND_NEAR.
  */
 import fs from "node:fs";
-import type { PublicConfig } from "@agent-league/shared";
+import type { PublicConfig } from "@benchmarket/shared";
 import { LeagueAgent, nearAiBrain, type AgentEnv } from "./agent.js";
 
 function need(name: string): string {

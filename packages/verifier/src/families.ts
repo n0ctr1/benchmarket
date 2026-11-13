@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { sha256Tagged, type TaskWithTests, type TestCase } from "@agent-league/shared";
+import { sha256Tagged, type TaskWithTests, type TestCase } from "@benchmarket/shared";
 import { runRaw } from "./sandbox.js";
 
 export interface FreshTests {

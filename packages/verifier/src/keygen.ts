@@ -1,4 +1,4 @@
-import { generateKeyPair } from "@agent-league/shared";
+import { generateKeyPair } from "@benchmarket/shared";
 
 // Prints N fresh verifier key pairs. Secret keys go into .env, public keys into the contract init.
 const n = Number(process.argv[2] ?? 3);

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { faceGrid } from "@agent-league/shared/identity";
+import { faceGrid } from "@benchmarket/shared/identity";
 
 /**
  * The round as a small 3D scene drawn in text. A software rasterizer fills a character grid:

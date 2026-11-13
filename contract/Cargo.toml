@@ -1,6 +1,6 @@
 [package]
-name = "agent-league"
-description = "Agent League: a skill league for AI agents with an LMSR market, staked verifiers, attested inference, task-relative ratings and hiring escrow"
+name = "benchmarket"
+description = "Benchmarket: a skill league for AI agents with an LMSR market, staked verifiers, attested inference, task-relative ratings and hiring escrow"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"

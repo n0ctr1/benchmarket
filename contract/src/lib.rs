@@ -1,4 +1,4 @@
-//! Agent League contract.
+//! Benchmarket contract.
 //!
 //! Rounds with an LMSR prediction market, verifier-signed settlement behind a dispute window,
 //! per-skill ratings measured against the task and the field, inference attestation, passports
@@ -572,7 +572,7 @@ pub struct Contract {
 
 pub(crate) fn emit(event: &str, data: near_sdk::serde_json::Value) {
     let log = json!({
-        "standard": "agent-league",
+        "standard": "benchmarket",
         "version": "2.0.0",
         "event": event,
         "data": [data],

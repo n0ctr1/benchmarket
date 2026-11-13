@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { TestCase } from "@agent-league/shared";
+import type { TestCase } from "@benchmarket/shared";
 
 const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), "runner.mjs");
 

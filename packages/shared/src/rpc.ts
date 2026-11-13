@@ -7,7 +7,7 @@ export async function viewCall<T>(rpcUrl: string, contractId: string, method: st
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         jsonrpc: "2.0",
-        id: "agent-league",
+        id: "benchmarket",
         method: "query",
         params: { request_type: "call_function", finality: "optimistic", account_id: contractId, method_name: method, args_base64: argsBase64 },
       }),

@@ -1,4 +1,4 @@
-# Agent League
+# Benchmarket
 
 > **Agents don't have resumes. They have markets.**
 
@@ -7,7 +7,7 @@ Working spec for NEAR HACKATHON 2026. This replaces the first draft after a revi
 
 | Field | Value |
 |---|---|
-| Name | **Agent League** |
+| Name | **Benchmarket** |
 | One-liner | A skill league for AI agents: objective, comparable, on-chain ratings that hiring contracts and marketplaces can query |
 | Tracks | `swarms` (primary), `agents` (secondary), `privacy` (attested inference: answers bound to signed NEAR AI completions) |
 | Network | NEAR testnet for the league; one recorded mainnet round with Agent Market agents (tiny USDC amounts) |
@@ -18,7 +18,7 @@ Working spec for NEAR HACKATHON 2026. This replaces the first draft after a revi
 
 ## 1. Summary
 
-Swarm-for-Hire answers *how* to hire a swarm of agents. Agent League answers *whom* to hire.
+Swarm-for-Hire answers *how* to hire a swarm of agents. Benchmarket answers *whom* to hire.
 
 Agents compete on the same task under the same hidden tests. Before the result, scouts
 (agent builders, buyers and scout agents) put money on who will win. The market's odds
@@ -37,7 +37,7 @@ a = the agent's pass rate,  E = expected pass rate against the task's own rating
 
 ### 2.1 The gap
 
-| Buyer's question | Agent Market reputation (0-100) | Agent League |
+| Buyer's question | Agent Market reputation (0-100) | Benchmarket |
 |---|---|---|
 | Is this agent a reliable contractor? | Yes: delivery, disputes, timeliness, reviews | Not the goal |
 | Who is *better* at skill X? | No: every job is different, scores are not comparable | Yes: same task, same hidden tests |
@@ -48,7 +48,7 @@ a = the agent's pass rate,  E = expected pass rate against the task's own rating
 
 Positioning: **a qualification and skill-rating layer that complements Agent Market**, not a
 competing marketplace. Agent Market tells you whether an agent is a reliable contractor.
-Agent League tells you whether it is good at a specific skill compared with others, before
+Benchmarket tells you whether it is good at a specific skill compared with others, before
 its first job. It solves the cold-start problem for new agents.
 
 ### 2.2 Prior art and how we differ
@@ -70,7 +70,7 @@ base/tools", with guardrails or AI review. The Open League is exactly that entry
 the missing piece: a reason to trust one agent over another.
 
 Track `swarms` asks for coordination markets, bidding and emergent economies between agents,
-leaning on multi-agent systems, NEAR Intents and sub-accounts. Agent League has three roles
+leaning on multi-agent systems, NEAR Intents and sub-accounts. Benchmarket has three roles
 that earn by being accurate: competitors (solve), scouts (predict and recruit), verifiers
 (check). Coordination happens through prices.
 
@@ -340,7 +340,7 @@ OutLayer) is the next step.
 ### 8.1 Repository layout
 
 ```text
-agent-league/
+benchmarket/
   contract/            Rust, near-sdk: league contract
   contracts/hiring/    Rust: demo hiring contract that gates on rating (stretch)
   packages/

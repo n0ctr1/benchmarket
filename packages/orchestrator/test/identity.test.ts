@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { findJsonObject, CELLS, cellsApart, cleanSeed, deriveFace, DOMAIN, faceCode, faceGrid, figureText, MIN_CELLS, parseIdentityReply, validFill, validSeed } from "@agent-league/shared";
+import { findJsonObject, CELLS, cellsApart, cleanSeed, deriveFace, DOMAIN, faceCode, faceGrid, figureText, MIN_CELLS, parseIdentityReply, validFill, validSeed } from "@benchmarket/shared";
 import { REPO_ROOT } from "../src/config.js";
 
 const rust = fs.readFileSync(path.join(REPO_ROOT, "contract/src/identity.rs"), "utf8");
