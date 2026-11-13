@@ -4,6 +4,8 @@ import { Drawer } from "./Drawer";
 import { names } from "./league";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Side } from "./Side";
+import { sfx } from "./sound";
+import { SoundControl } from "./SoundControl";
 import { LeagueView } from "./views/League";
 import { BriefsView, StandingsView } from "./views/Pages";
 import { RoundView } from "./views/Round";
@@ -139,6 +141,7 @@ export function App() {
         <a className="top-link" href={`${EXPLORER}/address/${LEAGUE}`} target="_blank" rel="noreferrer">
           {LEAGUE}
         </a>
+        <SoundControl />
         <span className="top-net" title="Latest optimistic block on NEAR testnet">
           <i className="dot" data-live />
           testnet {height ? `#${height.toLocaleString("en-US")}` : "…"}
@@ -159,6 +162,7 @@ export function App() {
               n={n}
               onOpen={(id) => go("round", id)}
               onReplay={(id) => {
+                sfx.unlock();
                 go("round", id);
                 setAutoplay(id);
               }}
