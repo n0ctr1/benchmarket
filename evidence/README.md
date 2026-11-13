@@ -20,6 +20,8 @@ re-run in a sandbox against the scores the verifiers signed.
 | 2, 3, 5, 6, 7 | Real models through NEAR AI Cloud, attested answers only, model scouts trading |
 | 10, 11, 12, 13 | Simulation: scripted answers and scouts, the same contract calls |
 | 14 | The verifier signs swapped scores; a watcher re-runs, disputes, and the arbiter overturns them and takes the verifier stake |
+| 15 | The tryout of brief 1 (confidential): scouts nominate Iris, Mono, Cipher and Bolt, Mono wins and is hired; the client's task runs sealed in the model's enclave and the public report holds the score and hashes only |
+| job 1 | A direct hire on eval-expr (rating 1500+, 90% of hidden tests): Halo is paid from escrow and gains rating |
 | 1, 4, 8, 9 | Cancelled by the manager and refunded in full: a verifier state left from the previous deployment, a stale RPC read after `create_round`, and NEAR AI credit running out mid-round |
 
 Round 2 was finalized with `league finalize` after the runner read a stale state; its log has a
