@@ -13,6 +13,8 @@ import {
   conflictPrompt,
   configHash,
   parseIdentityReply,
+  publicKeyOf,
+  signMessage,
   sha256Tagged,
   viewCall,
   zeroPrompt,
@@ -176,7 +178,9 @@ export class LeagueAgent {
   }
 
   private async answer(kind: "rounds" | "jobs", id: number, attested: boolean, commit: (hash: string, attestation: unknown) => Promise<unknown>): Promise<string> {
-    const t = await this.http<{ prompt: string; tag: string }>(`/${kind}/${id}/task`);
+    // A client's own task is served only to its hired agent, which proves it holds a key of its account.
+    const sig = { "x-agent": this.env.account, "x-agent-key": publicKeyOf(this.env.privateKey), "x-agent-sig": signMessage(this.env.privateKey, `benchmarket:job-task:${id}`) };
+    const t = await this.http<{ prompt: string; tag: string }>(`/${kind}/${id}/task`, undefined, kind === "jobs" ? sig : {});
     const c = await this.brain(this.config.systemPrompt, t.prompt);
     if (attested && !c.signature) throw new Error("this round needs an attested answer and the cloud returned no signature");
     // With a signature the committed hash is the response hash NEAR AI signed; otherwise the plain answer.
@@ -189,8 +193,8 @@ export class LeagueAgent {
     return hash;
   }
 
-  private async http<T>(path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.env.verifierUrl}${path}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  private async http<T>(path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+    const res = await fetch(`${this.env.verifierUrl}${path}`, body === undefined ? { headers } : { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
     const j = await res.json();
     if (!res.ok) throw new Error(`verifier ${path}: ${j.error ?? res.status}`);
     return j as T;

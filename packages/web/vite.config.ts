@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { createHash } from "node:crypto";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -133,11 +133,16 @@ function dataPlugin(): Plugin {
   };
 }
 
+// The site reads the same .env as the orchestrator (contract account, RPC, network).
+const ENV = { ...loadEnv("production", ROOT, ""), ...process.env };
+
 export default defineConfig({
   plugins: [react(), dataPlugin()],
   define: {
-    __LEAGUE__: JSON.stringify(process.env.LEAGUE_ACCOUNT ?? "benchmarket.testnet"),
-    __RPC__: JSON.stringify(process.env.NEAR_RPC_URL ?? "https://test.rpc.fastnear.com"),
+    __LEAGUE__: JSON.stringify(ENV.LEAGUE_ACCOUNT ?? "benchmarket.testnet"),
+    __RPC__: JSON.stringify(ENV.NEAR_RPC_URL ?? "https://test.rpc.fastnear.com"),
+    __NETWORK__: JSON.stringify(ENV.NEAR_NETWORK ?? "testnet"),
+    __VERIFIER__: JSON.stringify(ENV.PUBLIC_VERIFIER_URL ?? "http://localhost:8787"),
   },
   server: { port: 5180 },
 });

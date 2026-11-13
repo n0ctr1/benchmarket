@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { clock } from "./clock";
 import { faceGrid } from "@benchmarket/shared/identity";
 
 /**
@@ -21,7 +22,7 @@ export interface StageAgent {
   win: boolean;
   /** Settled and not a winner. */
   lost: boolean;
-  /** performance.now() when its answer went in: a scan line climbs it. */
+  /** clock.now() when its answer went in: a scan line climbs it. */
   scanAt?: number;
 }
 
@@ -29,12 +30,14 @@ export interface StageScout {
   id: string;
   face: string;
   line: string;
+  /** What the scout says right now: shown in a bubble above it. */
+  says?: string;
 }
 
 export interface StageBet {
   scout: number;
   agent: number;
-  /** performance.now() when the bet was placed. */
+  /** clock.now() when the bet was placed. */
   at: number;
   /** The target's value and label before the bet lands. */
   before: { value: number; label: string };
@@ -44,7 +47,7 @@ export interface Scene {
   agents: StageAgent[];
   scouts: StageScout[];
   bet: StageBet | null;
-  /** performance.now() when the dispute window opened: a re-check sweeps the floor. */
+  /** clock.now() when the dispute window opened: a re-check sweeps the floor. */
   sweepAt: number | null;
   settled: boolean;
 }
@@ -96,6 +99,7 @@ interface Tri {
   ch?: string;
   scan?: number | null;
   face?: { grid: Array<Array<V3 | null>>; x0: number; y1: number; s: number; dim: number };
+  agent?: number;
 }
 
 interface Buf {
@@ -106,47 +110,15 @@ interface Buf {
   g: Uint8Array;
   b: Uint8Array;
   chr: Array<string | null>;
+  ag: Int16Array;
 }
 
-const GLYPH_KEY = "bm.stage.glyph";
-const glyphListeners = new Set<(v: number) => void>();
-
-/** Size of one stage character in device pixels. Browser zoom does not change it. */
-export function getGlyph(): number {
-  try {
-    const v = Number(localStorage.getItem(GLYPH_KEY));
-    if (v >= 3 && v <= 48) return v;
-  } catch {
-    /* storage blocked */
-  }
-  return Math.round(9 * Math.min(2, window.devicePixelRatio || 1));
-}
-
-export function setGlyph(v: number) {
-  try {
-    localStorage.setItem(GLYPH_KEY, String(v));
-  } catch {
-    /* storage blocked */
-  }
-  glyphListeners.forEach((f) => f(v));
-}
-
-export function useGlyph(): [number, (v: number) => void] {
-  const [v, setV] = useState(getGlyph);
-  useEffect(() => {
-    glyphListeners.add(setV);
-    return () => {
-      glyphListeners.delete(setV);
-    };
-  }, []);
-  return [v, setGlyph];
-}
+/** Size of one stage character in device pixels, so page zoom shows more of them, not bigger ones. */
+const GLYPH = 4;
 
 export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: number | null; onPick: (i: number) => void; label: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [glyph] = useGlyph();
-  const glyphRef = useRef(glyph);
-  glyphRef.current = glyph;
+  const hoverRef = useRef<number | null>(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
   const pickedRef = useRef(picked);
@@ -168,8 +140,9 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
     }
     const reduceQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
 
-    const draw = (t: number) => {
+    const draw = () => {
       raf = requestAnimationFrame(draw);
+      const t = clock.now();
       const S = sceneRef.current;
       const W = cv.clientWidth;
       const H = cv.clientHeight;
@@ -183,18 +156,19 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const reduce = !!reduceQuery?.matches;
       // Characters are sized in device pixels, so page zoom shows more of them, not bigger ones.
-      const gf = glyphRef.current / (window.devicePixelRatio || 1);
+      const gf = GLYPH / (window.devicePixelRatio || 1);
       ctx.font = `${gf}px 'IBM Plex Mono', monospace`;
       const cw = ctx.measureText("M").width || 5.4;
       const ch = gf * (10 / 9);
       const C = Math.floor(W / cw);
       const R = Math.floor(H / ch);
       const N = C * R;
-      if (!buf || buf.n !== N) buf = { n: N, z: new Float32Array(N), lum: new Float32Array(N), r: new Uint8Array(N), g: new Uint8Array(N), b: new Uint8Array(N), chr: new Array(N) };
+      if (!buf || buf.n !== N) buf = { n: N, z: new Float32Array(N), lum: new Float32Array(N), r: new Uint8Array(N), g: new Uint8Array(N), b: new Uint8Array(N), chr: new Array(N), ag: new Int16Array(N) };
       const B = buf;
       B.z.fill(0);
       B.lum.fill(0);
       B.chr.fill(null);
+      B.ag.fill(-1);
 
       // Camera: a slow sway left and right, so parallax gives the scene depth.
       const sway = reduce ? 0 : Math.sin(t / 7000);
@@ -203,7 +177,8 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
       const f = norm(sub(T, E));
       const r = norm(cross(f, [0, 1, 0]));
       const u = cross(r, f);
-      const F = H / 2 / Math.tan((38 * Math.PI) / 360);
+      // Narrow screens: pull back until the outer agents fit across the width.
+      const F = Math.min(H / 2 / Math.tan((38 * Math.PI) / 360), (W / 2) * (19 / 9.8));
       const proj = (P: V3) => {
         const d = sub(P, E);
         const z = dot(d, f);
@@ -250,15 +225,16 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         const tone: V3 = ag.win ? ACC : [212 * dim, 212 * dim, 218 * dim];
         const sp = ag.scanAt !== undefined ? (t - ag.scanAt) / SCAN_MS : -1;
         const scan = sp >= 0 && sp <= 1 ? sp * (h + 1.9) : null;
-        box(x, 0, z, 1.6, 0.05, 1.6, tone, { scan, lum: 0.45 });
-        if (h > 0.1) box(x, 0.05, z, 0.34, h - 0.05, 0.34, tone, { scan, lum: 0.7, ch: ":" });
+        box(x, 0, z, 1.6, 0.05, 1.6, tone, { scan, lum: 0.45, agent: i });
+        if (h > 0.1) box(x, 0.05, z, 0.34, h - 0.05, 0.34, tone, { scan, lum: 0.7, ch: ":", agent: i });
         const cy = h + 0.06;
         const s = 1.75;
-        box(x, cy, z, s, s, s, tone, { scan });
+        box(x, cy, z, s, s, s, tone, { scan, agent: i });
         const grid = faceGrid(ag.cells).map((row) => row.map((v) => (v && ag.palette ? faceRgb(ag.palette[v - 1]) : null)));
         const fz = z + s / 2 + 0.002;
         quad(v3(x - s / 2, cy, fz), v3(x + s / 2, cy, fz), v3(x + s / 2, cy + s, fz), v3(x - s / 2, cy + s, fz), tone, {
           scan,
+          agent: i,
           face: { grid, x0: x - s / 2, y1: cy + s, s, dim: dim < 1 ? 0.55 : 1 },
         });
         heads.push({ i, top: v3(x, cy + s + 0.45, z), base: v3(x, 0, z + 1.35) });
@@ -310,8 +286,25 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
             B.g[idx] = col[1];
             B.b[idx] = col[2];
             B.chr[idx] = chr;
+            B.ag[idx] = tr.agent ?? -1;
           }
         }
+      }
+
+      // Hover: the agent under the cursor gets an outline in the signal colour.
+      const hov = hoverRef.current;
+      if (hov !== null) {
+        for (let cy = 1; cy < R - 1; cy++)
+          for (let cx = 1; cx < C - 1; cx++) {
+            const idx = cy * C + cx;
+            if (B.ag[idx] !== hov) continue;
+            if (B.ag[idx - 1] === hov && B.ag[idx + 1] === hov && B.ag[idx - C] === hov && B.ag[idx + C] === hov) continue;
+            B.r[idx] = 212;
+            B.g[idx] = 255;
+            B.b[idx] = 0;
+            B.lum[idx] = 1.25;
+            B.chr[idx] = "#";
+          }
       }
 
       // Floor: a sparse field of points. In the dispute window a re-check sweeps across it.
@@ -468,6 +461,42 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         text(p.x, p.y - 12, sc.face, `600 18px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#ECEBE4");
         text(p.x, p.y + 10, sc.id, `500 11px 'IBM Plex Mono', monospace`, "#5A5A55");
         text(p.x, p.y + 26, sc.line, `600 11px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#8B8B85");
+        if (sc.says) {
+          // Word-wrapped bubble above the scout, kept inside the stage.
+          ctx.font = `500 11.5px 'IBM Plex Mono', monospace`;
+          const maxW = Math.min(300, W * 0.42);
+          const words = sc.says.split(/\s+/);
+          const lines: string[] = [];
+          let cur = "";
+          for (const wd of words) {
+            const next = cur ? cur + " " + wd : wd;
+            if (ctx.measureText(next).width > maxW && cur) {
+              lines.push(cur);
+              cur = wd;
+            } else cur = next;
+            if (lines.length === 4) break;
+          }
+          if (lines.length < 4 && cur) lines.push(cur);
+          else if (lines.length === 4) lines[3] = lines[3].replace(/.{0,2}$/, "…");
+          const bw = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 20;
+          const bh = lines.length * 15 + 14;
+          const bx = Math.max(6, Math.min(W - bw - 6, p.x - bw / 2));
+          const by = Math.max(6, p.y - 36 - bh);
+          ctx.fillStyle = "rgba(11,11,11,0.94)";
+          ctx.fillRect(bx, by, bw, bh);
+          ctx.strokeStyle = "#D4FF00";
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+          ctx.beginPath();
+          ctx.moveTo(p.x - 6, by + bh);
+          ctx.lineTo(p.x, by + bh + 8);
+          ctx.lineTo(p.x + 6, by + bh);
+          ctx.fillStyle = "#D4FF00";
+          ctx.fill();
+          ctx.fillStyle = "#ECEBE4";
+          ctx.textAlign = "left";
+          lines.forEach((l, k) => ctx.fillText(l, bx + 10, by + 8 + k * 15));
+        }
       });
     };
     raf = requestAnimationFrame(draw);
@@ -482,5 +511,25 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
     if (hit && Math.abs(hit.x - x) < 70) onPick(hit.i);
   };
 
-  return <canvas ref={canvas} className="stage-canvas" onClick={click} role="img" aria-label={label} />;
+  const move = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const hit = hits.current.filter((h) => y >= h.y0 && y <= h.y1).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
+    const i = hit && Math.abs(hit.x - x) < 70 ? hit.i : null;
+    hoverRef.current = i;
+    e.currentTarget.style.cursor = i === null ? "default" : "pointer";
+  };
+
+  return (
+    <canvas
+      ref={canvas}
+      className="stage-canvas"
+      onClick={click}
+      onMouseMove={move}
+      onMouseLeave={() => (hoverRef.current = null)}
+      role="img"
+      aria-label={label}
+    />
+  );
 }

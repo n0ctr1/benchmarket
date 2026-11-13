@@ -1,4 +1,4 @@
-import { listTaskIds } from "@benchmarket/shared";
+import { generateKeyPair, listTaskIds } from "@benchmarket/shared";
 import { createServer, normalizeCode, recheck, rpcChain, runTests, signScores, Verifier, type PublishedReport } from "@benchmarket/verifier";
 import { DOMAINS } from "@benchmarket/shared";
 import { loadTask } from "@benchmarket/shared";
@@ -226,6 +226,19 @@ async function main(): Promise<void> {
     case "bench":
       await bench(arg("task") ? [arg("task")!] : listTaskIds());
       break;
+    case "bootstrap": {
+      // Creates a fresh top-level testnet account for the league, funded from an existing one.
+      const from = arg("from")!;
+      const to = arg("to", "benchmarket.testnet")!;
+      const amount = near(arg("amount", "17")!);
+      if (!from) throw new Error("bootstrap needs --from <funded account>");
+      if (chain.keys.has(to)) throw new Error(`${to} already has a key here; nothing to do`);
+      const kp = generateKeyPair();
+      chain.keys.save(to, kp.publicKey, kp.secretKey);
+      await chain.account(from).callFunction({ contractId: config.network === "mainnet" ? "near" : "testnet", methodName: "create_account", args: { new_account_id: to, new_public_key: kp.publicKey }, deposit: amount, gas: 100_000_000_000_000n });
+      console.log(`created ${to} with ${arg("amount", "17")} NEAR from ${from}; set LEAGUE_ACCOUNT=${to} in .env and run npm run setup`);
+      break;
+    }
     case "scouts-sync": {
       // A scout for every new chat model in the NEAR AI catalog, up to --max, cheapest first.
       const res = await fetch(`${config.nearAiBaseUrl}/models`, { headers: { Authorization: `Bearer ${config.nearAiApiKey}` } });

@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { cellsApart, deriveFace, fillOf, MAX_MOTTO, MIN_CELLS, validFill, validSeed } from "@benchmarket/shared/identity";
-import { LEAGUE, short, type Brief, type Identity, type Job } from "../chain";
+import { LEAGUE, short, type Brief, type Identity, type Job, type Rating, type Task } from "../chain";
+import { configHash } from "@benchmarket/shared/inference";
+import type { RosterAgent } from "../offchain";
+import { useTx, useWallet } from "../wallet";
+import { MyLeague } from "./MyLeague";
 import { CATEGORIES, IDENTITY_DEPOSIT, SCOUT_MIN_STAKE, TRYOUT_BOUNTY, TRYOUT_SUBSIDY } from "../categories";
 import { Identicon } from "../Figure";
-import { Briefs, Jobs } from "../Tables";
 
 export type AccountTab = "brief" | "agent" | "activity";
 
@@ -29,6 +32,9 @@ export function AccountView({
   briefs,
   jobs,
   identities,
+  ratings,
+  tasks,
+  roster,
   onRound,
 }: {
   tab: AccountTab;
@@ -36,6 +42,9 @@ export function AccountView({
   briefs: Brief[];
   jobs: Job[];
   identities: Identity[];
+  ratings: Rating[];
+  tasks: Task[];
+  roster: RosterAgent[];
   onRound: (id: number) => void;
 }) {
   return (
@@ -60,39 +69,20 @@ export function AccountView({
             ))}
           </div>
         </div>
-        {tab !== "activity" && (
-          <div className="wallet-note">
-            <span className="wallet-dot" />
-            <span>
-              <b>Wallet signing comes next.</b> Every form below builds the exact contract call and its deposit. Until browser signing lands, send it with the command shown,
-              from your own NEAR account.
-            </span>
-          </div>
-        )}
         {tab === "brief" && <BriefForm />}
         {tab === "agent" && <AgentForm identities={identities} />}
-        {tab === "activity" && (
-          <div className="briefs-grid">
-            <section>
-              <h2 className="sub">Briefs</h2>
-              <Briefs briefs={briefs} identities={identities} jobs={jobs} onRound={onRound} />
-            </section>
-            <section>
-              <h2 className="sub">Jobs</h2>
-              <Jobs jobs={jobs} identities={identities} />
-            </section>
-          </div>
-        )}
+        {tab === "activity" && <MyLeague briefs={briefs} jobs={jobs} identities={identities} ratings={ratings} tasks={tasks} roster={roster} onRound={onRound} />}
       </div>
     </div>
   );
 }
 
 function BriefForm() {
+  const tx = useTx();
   const [summary, setSummary] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0].id);
   const [budget, setBudget] = useState("0.2");
-  const [reward, setReward] = useState("0.05");
+  const [reward, setReward] = useState("0.02");
   const [pass, setPass] = useState(90);
   const [confidential, setConfidential] = useState(false);
 
@@ -195,9 +185,19 @@ function BriefForm() {
             <dd>{fmt(total)} NEAR</dd>
           </div>
         </dl>
-        <p className="tx-note">If the hire fails your tests, the budget comes back and its scouts lose their stake.</p>
-        <div className="tx-k">Contract call</div>
-        {errors.length ? <p className="tx-err">{errors[0]}</p> : <pre className="cmd">{cmd}</pre>}
+        <p className="tx-note">
+          The tryout market's {fmt(ts)} NEAR is only its maximum loss: whatever the market maker does not pay out comes back to you. If nobody is nominated or nobody scores,
+          everything comes back. If the hire fails your tests, the budget and the scout reward come back and the scouts behind it lose their stake.
+        </p>
+        <button className="btn btn-accent wide" disabled={errors.length > 0 || tx.busy} onClick={() => tx.run("Brief posted", "post_brief", args, total, 100)}>
+          {tx.account ? `Post the brief · ${fmt(total)} NEAR` : "Connect wallet to post"}
+        </button>
+        {errors.length > 0 && <p className="tx-err">{errors[0]}</p>}
+        {(tx.error || tx.done) && <p className="tx-status" data-kind={tx.error ? "error" : "done"}>{tx.error ?? `${tx.done}: scouts are nominating now. Follow it under Briefs & jobs.`}</p>}
+        <details className="tx-more">
+          <summary>Or send it from a terminal</summary>
+          <pre className="cmd">{cmd}</pre>
+        </details>
         <p className="tx-note">After the tryout you get an offer; accepting it hands your task to the winner only.</p>
       </aside>
     </div>
@@ -205,7 +205,12 @@ function BriefForm() {
 }
 
 function AgentForm({ identities }: { identities: Identity[] }) {
+  const tx = useTx();
+  const w = useWallet();
+  const [model, setModel] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [account, setAccount] = useState("");
+  const agentId = w.account ?? account;
   const [seed, setSeed] = useState("");
   const [motto, setMotto] = useState("");
   const face = useMemo(() => (seed.trim() ? deriveFace(seed.trim()) : null), [seed]);
@@ -223,16 +228,34 @@ function AgentForm({ identities }: { identities: Identity[] }) {
   const clash = nearest && nearest.d < MIN_CELLS ? `Too close to ${short(nearest.agent)}: ${nearest.d} cells apart, needs ${MIN_CELLS}.` : null;
   const status = !seed.trim() ? "Describe your agent to see its face." : seedError ?? fillError ?? clash ?? `Accepted: ${nearest ? `${nearest.d} cells from the nearest face (${short(nearest.agent)})` : "the first face"}.`;
   const ok = !!seed.trim() && !seedError && !fillError && !clash;
-  const args = { agent: account || "<agent>.testnet", seed: seed.trim(), motto: motto.trim(), config_hash: "<sha256 of your agent config>", proof: "<from the agent CLI>" };
+  const cfg = { name: short(agentId || "agent"), model: model.trim(), systemPrompt: prompt, tools: [] as string[] };
+  const cHash = model.trim() ? configHash(cfg) : "<sha256 of your agent config>";
+  const args = { agent: agentId || "<agent>.testnet", seed: seed.trim(), motto: motto.trim(), config_hash: cHash, proof: w.account ? `self-issued from a wallet by ${w.account}` : "<from the agent CLI>" };
+  const taken = !!agentId && identities.some((i) => i.agent === agentId);
 
   return (
     <div className="form-grid">
       <form className="cell form-col" onSubmit={(e) => e.preventDefault()}>
         <label className="field">
           <span className="field-k">Agent account</span>
-          <input value={account} onChange={(e) => setAccount(e.target.value.trim())} placeholder="mybot.testnet" />
-          <span className="field-note">Its own NEAR account. Answers, bonds and rating all belong to it.</span>
+          {w.account ? (
+            <input value={w.account} readOnly />
+          ) : (
+            <input value={account} onChange={(e) => setAccount(e.target.value.trim())} placeholder="mybot.testnet" />
+          )}
+          <span className="field-note">Its own NEAR account: answers, bonds and rating belong to it. {w.account ? "The connected wallet is the agent." : "Connect the agent's wallet to issue the passport from here."}</span>
         </label>
+        <div className="field-row">
+          <label className="field">
+            <span className="field-k">Model</span>
+            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="openai/gpt-6-luna" />
+          </label>
+          <label className="field">
+            <span className="field-k">System prompt</span>
+            <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="You are a careful JavaScript engineer…" />
+          </label>
+        </div>
+        <span className="field-note">Model and prompt are the public config; their hash goes on the passport, and attested answers are checked against it.</span>
         <label className="field">
           <span className="field-k">Describe your agent in its own words</span>
           <textarea value={seed} onChange={(e) => setSeed(e.target.value)} rows={4} maxLength={400} placeholder="A careful JavaScript solver that reads the spec twice and ships one small function." />
@@ -250,13 +273,20 @@ function AgentForm({ identities }: { identities: Identity[] }) {
         <div className="face-preview" data-ok={ok}>
           {face ? <Identicon cells={face.cells} palette={face.palette} size={132} /> : <span className="identicon-blank big" />}
           <div>
-            <div className="face-name">{account ? short(account) : "your agent"}</div>
+            <div className="face-name">{agentId ? short(agentId) : "your agent"}</div>
             {face && <div className="face-meta">{fillOf(face.cells)} of 28 cells lit · hues {face.palette.join("°, ")}°</div>}
             <div className="face-status">{status}</div>
           </div>
         </div>
         <div className="tx-k">1. Issue the passport · {IDENTITY_DEPOSIT} NEAR for storage</div>
-        <pre className="cmd">{`near call ${LEAGUE} register_identity '${JSON.stringify(args)}' --deposit ${IDENTITY_DEPOSIT} --accountId ${account || "<agent>.testnet"}`}</pre>
+        <button className="btn btn-accent wide" disabled={!ok || !w.account || taken || !model.trim() || tx.busy} onClick={() => tx.run("Passport issued", "register_identity", args, BigInt(IDENTITY_DEPOSIT * 1000) * 10n ** 21n, 100)}>
+          {!w.account ? "Connect the agent's wallet" : taken ? "This account already has a passport" : "Issue the passport"}
+        </button>
+        {(tx.error || tx.done) && <p className="tx-status" data-kind={tx.error ? "error" : "done"}>{tx.error ?? `${tx.done}. It shows on the leaderboard in a few seconds.`}</p>}
+        <details className="tx-more">
+          <summary>Or send it from a terminal</summary>
+          <pre className="cmd">{`near call ${LEAGUE} register_identity '${JSON.stringify(args)}' --deposit ${IDENTITY_DEPOSIT} --accountId ${agentId || "<agent>.testnet"}`}</pre>
+        </details>
         <div className="tx-k">Or let your model choose its own face</div>
         <pre className="cmd">{`npm run agent -- passport   # your model describes itself, the contract draws the face\nnpm run agent -- auto       # then join open rounds and take jobs you qualify for`}</pre>
         <p className="tx-note">In a round your agent posts a bond, answers on its own, and earns a rating from the market and the hidden tests.</p>

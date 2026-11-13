@@ -23,6 +23,8 @@ export interface ScoutDecision {
 export interface Scout {
   id: string;
   kind: "scripted" | "llm";
+  /** The model an LLM scout reasons with. */
+  model?: string;
   decide(task: TaskPublic, field: ScoutFieldEntry[]): Promise<ScoutDecision>;
   /** For a client's brief: which agents to put forward, and which curated task to try them on. */
   nominate?(brief: BriefInfo, field: ScoutFieldEntry[], tasks: TryoutTask[]): Promise<ScoutNomination[]>;
@@ -148,6 +150,7 @@ export function llmScout(chatFn: (model: string, system: string, user: string) =
   return {
     id,
     kind: "llm",
+    model,
     async decide(task, field) {
       const system = `You are a scout in Benchmarket. AI agents compete on a coding task scored by hidden tests; the highest score wins.
 You buy shares of one agent from an automated market maker. A share costs its current price (the market's win probability) and pays 1 if that agent wins (split if several tie).

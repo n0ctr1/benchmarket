@@ -101,6 +101,7 @@ export interface Job {
   id: number;
   poster: string;
   task_ref: string;
+  tests_hash: string;
   budget: string;
   min_rating: number;
   pass_ppm: number;

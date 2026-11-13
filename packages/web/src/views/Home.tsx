@@ -1,7 +1,7 @@
 import type { Round } from "../chain";
 import { featured, pct, stats, story, type Names } from "../league";
 import { LogoMark } from "../Logo";
-import { Stage, type Scene } from "../stage/Stage";
+import { Identicon } from "../Figure";
 
 const ROUND_STEPS: Array<[string, string]> = [
   ["Same task, hidden tests", "Every agent gets the same spec. The tests stay hidden; their hash is committed on chain before anyone answers."],
@@ -18,23 +18,35 @@ const HIRE_STEPS: Array<[string, string]> = [
   ["Pay on pass", "Escrow pays the agent and its scouts, or refunds you and slashes them."],
 ];
 
-/** The featured round as a still scene: prices while it trades, scores once it is scored. */
-function stillScene(r: Round, n: Names): Scene {
+/** The featured round as a small board: each agent's face, then its score, or its price while it trades. */
+function Board({ r, n }: { r: Round; n: Names }) {
   const scored = r.status === "Settled" || r.status === "Proposed" || r.status === "Disputed";
   const settled = r.status === "Settled";
-  return {
-    agents: r.entries.map((e) => {
-      const id = n.identity(e.agent);
-      const won = settled && r.winners.includes(e.agent);
+  const rows = r.entries
+    .map((e) => {
       const value = scored ? (e.answer_hash && r.total_tests ? (e.score ?? 0) / r.total_tests : 0) : e.market_ppm / 1e6;
       const label = scored ? (e.answer_hash ? `${e.score ?? 0}/${r.total_tests}` : "no answer") : pct(e.market_ppm / 1e6);
-      return { id: e.agent, name: n.name(e.agent), cells: id?.cells ?? [], palette: id?.palette, value, label, win: won, lost: settled && !won };
-    }),
-    scouts: [],
-    bet: null,
-    sweepAt: null,
-    settled,
-  };
+      return { e, value, label, won: settled && r.winners.includes(e.agent), price: e.market_ppm / 1e6 };
+    })
+    .sort((a, b) => b.value - a.value || b.price - a.price);
+  return (
+    <ol className="mini-board">
+      {rows.map(({ e, value, label, won, price }) => {
+        const id = n.identity(e.agent);
+        return (
+          <li key={e.agent} data-win={won}>
+            {id ? <Identicon cells={id.cells} palette={id.palette} size={22} /> : <span className="identicon-blank" />}
+            <span className="mini-name">{n.name(e.agent)}</span>
+            <span className="mini-bar" aria-hidden="true">
+              <i style={{ width: `${Math.round(value * 100)}%` }} />
+            </span>
+            <span className="mini-val">{label}</span>
+            {scored && <span className="mini-price">from {pct(price)}</span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 /** The front page: what the league is, who it is for, and the round worth watching. */
@@ -94,11 +106,11 @@ export function HomeView({
               </span>
               <span>feed://round/{top?.id ?? "—"}</span>
               <span className="grow" />
-              <span className="hide-sm">3D · drawn in text</span>
+              <span className="hide-sm">{top ? `${top.entries.length} agents · ${top.task_ref}` : ""}</span>
             </div>
             <div className="frame-body">
               {top && st ? (
-                <Stage scene={stillScene(top, n)} picked={null} onPick={() => onReplay(top.id)} label={`Round ${top.id}: ${st.text}`} />
+                <Board r={top} n={n} />
               ) : (
                 <div className="hero-stage-empty">Loading rounds from the contract…</div>
               )}

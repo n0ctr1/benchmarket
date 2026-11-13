@@ -182,7 +182,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     const shares = await chain.buy(account, roundId, d.agent, config.scoutBet);
     const after = (await chain.getRound(roundId))!.entries.find((e) => e.agent === d.agent)!.odds_ppm;
     say(`  ${scout.id.padEnd(12)} buys ${short(d.agent)} at ${(before * 100).toFixed(1)}% -> ${pct(after)}: ${d.reasoning}`);
-    note("scout_bet", { scout: account, kind: scout.kind, agent: d.agent, reasoning: d.reasoning, amount: config.scoutBet.toString(), shares, price_before: before, price_after_ppm: after, ...(d.fallback ? { fallback: d.fallback } : {}) });
+    note("scout_bet", { scout: account, kind: scout.kind, ...(scout.model ? { model: scout.model } : {}), agent: d.agent, reasoning: d.reasoning, amount: config.scoutBet.toString(), shares, price_before: before, price_after_ppm: after, ...(d.fallback ? { fallback: d.fallback } : {}) });
     if (d.fallback) say(`    (${scout.id} fallback: ${d.fallback.reason})`);
     await sleep(1500);
   }

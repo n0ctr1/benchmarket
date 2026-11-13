@@ -6,6 +6,8 @@ import { Ticker } from "./Ticker";
 import { names } from "./league";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Side } from "./Side";
+import type { ProfileRef } from "./Profile";
+import { WalletButton } from "./wallet";
 import { AccountView, type AccountTab } from "./views/Account";
 import { HomeView } from "./views/Home";
 import { LeagueView } from "./views/League";
@@ -64,6 +66,11 @@ export function App() {
   const [route, setRoute] = useState(parseHash);
   const [picked, setPicked] = useState<string | null>(null);
   const [panel, setPanel] = useState(false);
+  const [profile, setProfile] = useState<ProfileRef | null>(null);
+  const openProfile = (p: ProfileRef | null) => {
+    setProfile(p);
+    if (p) setPanel(true);
+  };
   const [details, setDetails] = useState(false);
   const [autoplay, setAutoplay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +81,7 @@ export function App() {
       setRoute(parseHash());
       setPanel(false);
       setPicked(null);
+      setProfile(null);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -131,6 +139,7 @@ export function App() {
 
   const go = (view: View, round: number | null = current?.id ?? null, account: AccountTab = route.account) => {
     setPicked(null);
+    setProfile(null);
     setDetails(false);
     setPanel(false);
     const hash = view === "round" || view === "verify" ? `#/${view}/${round}` : view === "account" ? `#/account/${account}` : `#/${view}`;
@@ -174,6 +183,7 @@ export function App() {
             <span className="top-k">testnet</span>
             <span className="top-height">{height ? `#${height.toLocaleString("en-US")}` : "…"}</span>
           </span>
+          <WalletButton />
           {route.view !== "leaderboard" && (
             <button className="top-board" aria-pressed={panel} onClick={() => (panel ? (setPanel(false), setPicked(null)) : setPanel(true))} aria-label="Toggle the standings panel">
               <span aria-hidden="true">{panel ? "[×]" : "[≡]"}</span>
@@ -246,16 +256,17 @@ export function App() {
               records={Object.values(records).filter((r): r is RoundRecord => !!r)}
               picks={picks}
               tasks={tasks}
+              onProfile={openProfile}
             />
           )}
           {route.view === "account" && (
-            <AccountView tab={route.account} onTab={(t) => go("account", null, t)} briefs={briefs} jobs={jobs} identities={identities} onRound={(id) => go("round", id)} />
+            <AccountView tab={route.account} onTab={(t) => go("account", null, t)} briefs={briefs} jobs={jobs} identities={identities} ratings={ratings} tasks={tasks} roster={roster} onRound={(id) => go("round", id)} />
           )}
           {route.view === "verify" && <VerifyView round={current} recheck={recheck} verifiable={verifiable} onBack={() => go("round", current?.id ?? null)} />}
         </main>
       </div>
 
-      {panel && <div className="side-scrim" onClick={() => (setPanel(false), setPicked(null))} />}
+      {panel && <div className="side-scrim" onClick={() => (setPanel(false), setPicked(null), setProfile(null))} />}
       <Side
         open={panel}
           ratings={ratings}
@@ -268,6 +279,10 @@ export function App() {
           onClose={() => (picked ? setPicked(null) : setPanel(false))}
           onDetails={() => setDetails(true)}
           onPost={() => go("account", null, "brief")}
+          profile={profile}
+          profileData={{ rounds, records, ratings, bettors, picks, tasks, notes, n }}
+          onRound={(id) => go("round", id)}
+          onProfile={(p) => (p ? openProfile(p) : (setProfile(null), setPanel(false)))}
         />
 
       {details && current && entry && (

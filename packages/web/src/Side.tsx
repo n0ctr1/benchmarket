@@ -2,6 +2,9 @@ import { near, short, type Bettor, type Rating, type Round } from "./chain";
 import { Identicon } from "./Figure";
 import { lockPrice, pct, scoutFace, type Names } from "./league";
 import type { IdentityNotes, RoundRecord } from "./offchain";
+import { Profile, type ProfileRef } from "./Profile";
+
+type ProfileData = Parameters<typeof Profile>[0]["data"];
 
 /** The right column: the leaderboard, or the passport of the agent picked on the stage. */
 export function Side({
@@ -16,6 +19,10 @@ export function Side({
   onClose,
   onDetails,
   onPost,
+  profile,
+  profileData,
+  onRound,
+  onProfile,
 }: {
   open: boolean;
   ratings: Rating[];
@@ -28,7 +35,18 @@ export function Side({
   onClose: () => void;
   onDetails: () => void;
   onPost: () => void;
+  profile: ProfileRef | null;
+  profileData: ProfileData;
+  onRound: (id: number) => void;
+  onProfile: (p: ProfileRef | null) => void;
 }) {
+  if (profile) {
+    return (
+      <aside className="side" data-open={open} aria-label="Profile">
+        <Profile refd={profile} data={profileData} onClose={() => onProfile(null)} onRound={onRound} onProfile={onProfile} />
+      </aside>
+    );
+  }
   const board = [...ratings].sort((a, b) => b.rating - a.rating);
   const entry = round && picked ? round.entries.find((e) => e.agent === picked) : undefined;
 
@@ -90,9 +108,14 @@ export function Side({
             </div>
           )}
           {notes[entry.agent] && <div className="side-note">Face chosen in {notes[entry.agent].attempts.length} tries</div>}
-          <button className="btn btn-line wide" onClick={onDetails}>
-            Answer, tests and signature
-          </button>
+          <div className="side-actions">
+            <button className="btn btn-line wide" onClick={onDetails}>
+              Answer, tests and signature
+            </button>
+            <button className="btn btn-ghost wide" onClick={() => onProfile({ kind: "agent", id: entry.agent })}>
+              Full profile <span aria-hidden="true">→</span>
+            </button>
+          </div>
         </div>
       </aside>
     );
@@ -112,7 +135,7 @@ export function Side({
         {board.map((r, i) => {
           const id = n.identity(r.agent);
           return (
-            <li key={r.agent}>
+            <li key={r.agent} onClick={() => onProfile({ kind: "agent", id: r.agent })} role="button" tabIndex={0}>
               <span className="side-pos" data-first={i === 0}>
                 {i + 1}
               </span>

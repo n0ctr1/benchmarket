@@ -5,11 +5,11 @@ import { paletteStyle } from "./identity";
 export type Pose = "idle" | "think" | "win" | "lose" | "out";
 
 /** The shared body with a monitor for a head; the screen shows the agent's 7x7 face. */
-export function Figure({ cells, palette, pose, seed = 0 }: { cells: number[]; palette?: number[]; pose: Pose; seed?: number }) {
+export function Figure({ cells, palette, pose, seed = 0, still = false }: { cells: number[]; palette?: number[]; pose: Pose; seed?: number; still?: boolean }) {
   // Occasional flicker, like an old screen.
   const [flicker, setFlicker] = useState(false);
   useEffect(() => {
-    if (pose === "out") return;
+    if (pose === "out" || still) return;
     let t: ReturnType<typeof setTimeout>;
     const loop = () => {
       setFlicker(true);
@@ -18,7 +18,7 @@ export function Figure({ cells, palette, pose, seed = 0 }: { cells: number[]; pa
     };
     t = setTimeout(loop, 900 + ((seed * 389) % 2200));
     return () => clearTimeout(t);
-  }, [pose, seed]);
+  }, [pose, seed, still]);
 
   const grid = faceGrid(cells);
   return (

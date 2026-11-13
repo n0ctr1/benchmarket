@@ -116,6 +116,14 @@ export interface PublishedReport {
   withheld?: boolean;
 }
 
+/** A client's own task for a job: what the hired agent is shown. Never published. */
+export interface ClientTask {
+  title: string;
+  statement: string;
+  function: string;
+  examples: Array<{ args: unknown[]; expected: unknown }>;
+}
+
 /** Fresh tests generated for a round or job before it exists, bound to it once created. */
 interface PreparedTests {
   taskId: string;
@@ -194,6 +202,8 @@ export class Verifier {
   private bound = new Map<string, PreparedTests>();
   /** Rounds or jobs whose task, tests and answers stay private: only scores and hashes are published. */
   private private = new Set<string>();
+  /** Client tasks for jobs, by job: the statement the hired agent gets. */
+  private clientTasks = new Map<string, ClientTask>();
 
   constructor(
     private readonly secretKeys: string[],
@@ -260,6 +270,24 @@ export class Verifier {
     this.save();
   }
 
+  /**
+   * A client's own task for a job: the statement for the hired agent and the hidden tests,
+   * accepted only if the tests hash to what the job committed on chain. Kept private.
+   */
+  provideClientTask(id: number, task: ClientTask, raw: string, committedHash: string): void {
+    if (!/^[A-Za-z_$][\w$]*$/.test(task.function)) throw new Error("the function name must be a JavaScript identifier");
+    if (!task.statement || task.statement.length > 20_000) throw new Error("the statement must be 1..20000 characters");
+    const tests = JSON.parse(raw) as TestCase[];
+    if (!Array.isArray(tests) || tests.length === 0 || tests.length > 500 || !tests.every((t) => Array.isArray(t.args) && "expected" in t)) throw new Error("tests must be a JSON array of {args, expected}, 1 to 500 of them");
+    this.provideTests("job", id, raw, committedHash, "client");
+    this.clientTasks.set(key("job", id), task);
+    this.save();
+  }
+
+  clientTask(id: number): ClientTask | undefined {
+    return this.clientTasks.get(key("job", id));
+  }
+
   /** Binds prepared tests to the round (or job) that committed their hash. */
   bindTests(kind: Kind, id: number, hash: string): void {
     const p = this.pending.get(hash);
@@ -314,18 +342,20 @@ export class Verifier {
   private async scoreKind(kind: Kind, id: number, taskId: string, entries: ChainEntry[]): Promise<ScoreReport> {
     const existing = this.reports.get(key(kind, id));
     if (existing) return existing;
-    const task = loadTask(taskId);
+    const client = this.clientTasks.get(key(kind, id));
+    const task = client ? null : loadTask(taskId);
     const fresh = this.bound.get(key(kind, id));
-    const tests = fresh ? (JSON.parse(fresh.raw) as TestCase[]) : task.tests;
+    if (!fresh && !task) throw new Error(`no tests for ${key(kind, id)}`);
+    const tests = fresh ? (JSON.parse(fresh.raw) as TestCase[]) : task!.tests;
     const answers = this.answers.get(key(kind, id)) ?? new Map<string, StoredAnswer>();
-    const details = await scoreAnswers(task.function, tests, entries, answers, roundTag(kind, id), this.sandbox);
+    const details = await scoreAnswers(client ? client.function : task!.function, tests, entries, answers, roundTag(kind, id), this.sandbox);
     const scores: Array<[string, number]> = details.map((d) => [d.agent, d.score]);
     const { message, signatures } = signScores(this.secretKeys, kind === "round" ? DOMAINS.round : DOMAINS.job, id, tests.length, scores);
     const report: ScoreReport = {
       kind,
       roundId: id,
       taskId,
-      testsHash: fresh ? fresh.hash : task.testsHash,
+      testsHash: fresh ? fresh.hash : task!.testsHash,
       totalTests: tests.length,
       scores,
       details,
@@ -353,6 +383,7 @@ export class Verifier {
       pending: [...this.pending],
       bound: [...this.bound],
       private: [...this.private],
+      clientTasks: [...this.clientTasks],
     };
     fs.writeFileSync(f, JSON.stringify(state, null, 2));
   }
@@ -366,6 +397,7 @@ export class Verifier {
       pending?: Array<[string, PreparedTests]>;
       bound?: Array<[string, PreparedTests]>;
       private?: string[];
+      clientTasks?: Array<[string, ClientTask]>;
     };
     // Version 1 keyed rounds by number.
     const k = (id: number | string) => (typeof id === "number" ? key("round", id) : id);
@@ -374,5 +406,6 @@ export class Verifier {
     for (const [h, p] of state.pending ?? []) this.pending.set(h, p);
     for (const [id, p] of state.bound ?? []) this.bound.set(id, p);
     for (const id of state.private ?? []) this.private.add(id);
+    for (const [id, t] of state.clientTasks ?? []) this.clientTasks.set(id, t);
   }
 }

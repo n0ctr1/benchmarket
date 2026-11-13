@@ -50,7 +50,7 @@ export function Drawer({
           ×
         </button>
         <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-          {identity && <Figure cells={identity.cells} palette={identity.palette} pose={won ? "win" : entry.answer_hash ? "idle" : "out"} />}
+          {identity && <Figure cells={identity.cells} palette={identity.palette} pose={entry.answer_hash ? "idle" : "out"} still />}
           <div>
             <div className="muted mono" style={{ fontSize: 12 }}>
               ROUND {round.id} · {round.task_ref}

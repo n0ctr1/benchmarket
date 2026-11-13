@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { near, short, type Round } from "../chain";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { near, short, view, type Round } from "../chain";
 import { lockPrice, pct, roundTitle, scoutFace, type Names } from "../league";
 import type { RoundRecord } from "../offchain";
 import { buildReplay, type Phase, type Replay } from "../replay";
-import { Stage, useGlyph, type Scene } from "../stage/Stage";
+import { Stage, type Scene } from "../stage/Stage";
+import { clock } from "../stage/clock";
+import { useTx } from "../wallet";
+import { Timeline } from "./Timeline";
+import type { LogEvent } from "../offchain";
 
 const PHASES: Array<{ id: Phase; label: string; title: string }> = [
   { id: "market", label: "Market", title: "Market open" },
@@ -14,8 +18,9 @@ const PHASES: Array<{ id: Phase; label: string; title: string }> = [
   { id: "settled", label: "Final", title: "Final" },
 ];
 
-const STEP_MS: Record<Phase, number> = { market: 1400, locked: 1800, solving: 1200, scored: 2600, window: 2400, settled: 0 };
-const BET_MS = 2600;
+// Long enough to read: a bet stays on screen while its scout's reasoning is shown.
+const STEP_MS: Record<Phase, number> = { market: 2200, locked: 2600, solving: 1600, scored: 3400, window: 3200, settled: 0 };
+const BET_MS = 4200;
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
 
@@ -80,38 +85,39 @@ export function RoundView({
   const shownIdx = useRef(-1);
   if (shownIdx.current !== idx) {
     shownIdx.current = idx;
-    frameAt.current = performance.now();
+    frameAt.current = clock.now();
   }
+  const ctl = useSyncExternalStore(clock.subscribe, () => `${clock.paused}:${clock.speed}`);
+  const paused = ctl.startsWith("true");
+  const speed = Number(ctl.split(":")[1]);
+  useEffect(() => () => clock.setPaused(false), []);
 
-  // Playback clock: one frame of the real round at a time.
+  const durationOf = (i: number): number => {
+    const f = replay?.frames[i];
+    if (!f) return 0;
+    const next = replay!.frames[i + 1];
+    // Answers follow the real gaps between them, compressed about 40x.
+    return f.bet !== undefined ? BET_MS : f.phase === "solving" && f.at && next?.at ? Math.min(3200, Math.max(1300, (next.at - f.at) / 40)) : STEP_MS[f.phase];
+  };
+
+  // Playback: one frame of the real round at a time, on the replay clock (pause and speed apply).
   useEffect(() => {
     if (!playing || !replay) return;
-    const f = replay.frames[idx];
     if (idx >= replay.frames.length - 1) {
       setPlaying(false);
       return;
     }
-    if (f.phase === "scored") {
-      setReveal(0);
-      const started = performance.now();
-      let raf = 0;
-      const step = (t: number) => {
-        const k = Math.min(1, (t - started) / (STEP_MS.scored - 400));
-        setReveal(k);
-        if (k < 1) raf = requestAnimationFrame(step);
-      };
-      raf = requestAnimationFrame(step);
-      const t = setTimeout(() => setIdx((i) => i + 1), STEP_MS.scored);
-      return () => {
-        cancelAnimationFrame(raf);
-        clearTimeout(t);
-      };
-    }
-    // Answers follow the real gaps between them, compressed about 60x.
-    const next = replay.frames[idx + 1];
-    const ms = f.bet !== undefined ? BET_MS : f.phase === "solving" && f.at && next?.at ? Math.min(2600, Math.max(900, (next.at - f.at) / 60)) : STEP_MS[f.phase];
-    const t = setTimeout(() => setIdx((i) => i + 1), ms);
-    return () => clearTimeout(t);
+    const f = replay.frames[idx];
+    let raf = 0;
+    const tick = () => {
+      const age = clock.now() - frameAt.current;
+      if (f.phase === "scored") setReveal(Math.min(1, age / (STEP_MS.scored - 500)));
+      if (age >= durationOf(idx)) setIdx((i) => i + 1);
+      else raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, idx, replay]);
 
   const frames = replay?.frames ?? [];
@@ -179,7 +185,8 @@ export function RoundView({
       const pickName = n.name(b.agent);
       const e = round.entries.find((x) => x.agent === b.agent);
       const line = !placed ? "watching" : scored && e ? `${pickName} · ${e.answer_hash ? `${e.score ?? 0}/${totalTests}` : "no answer"}` : `bet on ${pickName} at ${pct(paid[j] ?? 0)}`;
-      return { id: short(s), face: scoutFace(s), line };
+      const speaking = frame?.bet !== undefined && bets[frame.bet].bettor === s && !!bets[frame.bet].reasoning;
+      return { id: short(s), face: scoutFace(s), line, says: speaking ? clip(bets[frame!.bet!].reasoning!, 220) : undefined };
     }),
     bet:
       playing && frame?.bet !== undefined
@@ -238,10 +245,51 @@ export function RoundView({
   const start = () => {
     if (!replay) return;
     onPick(null);
+    clock.setPaused(false);
     setIdx(0);
     setReveal(0);
     setPlaying(true);
   };
+  const stepTo = (i: number) => {
+    if (!replay) return;
+    const k = Math.max(0, Math.min(replay.frames.length - 1, i));
+    setReveal(replay.frames[k].phase === "scored" ? 1 : 1);
+    setIdx(k);
+  };
+  const [showLog, setShowLog] = useState(false);
+  const seek = (e: LogEvent, i: number) => {
+    if (!replay) return;
+    const fs = replay.frames;
+    const before = (rec?.events ?? []).slice(0, i).filter((x) => x.kind === "scout_bet").length;
+    const find = (pred: (f: (typeof fs)[number]) => boolean) => Math.max(0, fs.findIndex(pred));
+    let k = fs.length - 1;
+    if (e.kind === "round_created") k = 0;
+    else if (e.kind === "scout_bet") k = find((f) => f.bet === before);
+    else if (e.kind === "answer_submitted" || e.kind === "answer_failed") k = find((f) => f.phase === "solving" && f.label.startsWith(short(e.data.agent)));
+    else if (e.kind === "scores_proposed") k = find((f) => f.phase === "scored");
+    else if (e.kind === "watcher_check" || e.kind === "disputed" || e.kind === "dispute_resolved") k = find((f) => f.phase === "window");
+    setShowLog(false);
+    clock.setPaused(true);
+    setPlaying(true);
+    stepTo(k);
+  };
+
+  // Acting on the round from a wallet: back an agent while the market trades, dispute posted scores.
+  const tx = useTx();
+  const [amount, setAmount] = useState("0.05");
+  const [bond, setBond] = useState<bigint | null>(null);
+  useEffect(() => {
+    view<{ params?: { dispute_bond?: string } }>("get_config")
+      .then((c) => c.params?.dispute_bond && setBond(BigInt(c.params.dispute_bond)))
+      .catch(() => {});
+  }, []);
+  const yocto = (t: string) => {
+    const m = /^(\d*)(?:\.(\d*))?$/.exec(t.trim());
+    return m ? BigInt(m[1] || "0") * 10n ** 24n + BigInt((m[2] ?? "").slice(0, 24).padEnd(24, "0") || "0") : 0n;
+  };
+  const trading = round.status === "Trading" && Date.now() < round.bet_deadline_ms;
+  const disputable = round.status === "Proposed" && !!round.proposal && Date.now() < round.proposal.dispute_until_ms;
+  const pickedEntry = picked ? round.entries.find((e) => e.agent === picked) : undefined;
 
   return (
     <div className="round">
@@ -301,27 +349,97 @@ export function RoundView({
             onPick={(i) => onPick(round.entries[i].agent === picked ? null : round.entries[i].agent)}
             label={`Round ${round.id} in 3D, drawn in text: ${round.entries.length} agents on beams of light; the beam is the market price, then the score.`}
           />
-          <div className="stage-hint">Click an agent → passport</div>
-          <GlyphDebug />
+          <div className="stage-hint">Hover an agent to outline it · click for its passport</div>
         </div>
       </div>
 
       <div className="dock" data-final={settled && round.winners.length > 0}>
         <div className="dock-actions">
-          <button className="btn btn-accent" onClick={start} disabled={!replay || playing || cancelled}>
-            <span aria-hidden="true">{playing ? "❚❚" : "▶"}</span> {playing ? "Playing" : "Replay"}
-          </button>
+          {playing ? (
+            <button className="btn btn-accent" onClick={() => clock.setPaused(!paused)} aria-label={paused ? "Resume" : "Pause"}>
+              <span aria-hidden="true">{paused ? "▶" : "❚❚"}</span> {paused ? "Resume" : "Pause"}
+            </button>
+          ) : (
+            <button className="btn btn-accent" onClick={start} disabled={!replay || cancelled}>
+              <span aria-hidden="true">▶</span> Replay
+            </button>
+          )}
+          <span className="player" role="group" aria-label="Replay controls">
+            <button onClick={() => (clock.setPaused(true), setPlaying(true), stepTo(idx - 1))} disabled={!replay || idx <= 0} aria-label="Previous step">
+              ⏮
+            </button>
+            <button onClick={() => (clock.setPaused(true), setPlaying(true), stepTo(idx + 1))} disabled={!replay || idx >= frames.length - 1} aria-label="Next step">
+              ⏭
+            </button>
+            {[0.5, 1, 2].map((v) => (
+              <button key={v} aria-pressed={speed === v} onClick={() => clock.setSpeed(v)}>
+                {v}×
+              </button>
+            ))}
+            <span className="player-pos">
+              {frames.length ? idx + 1 : 0}/{frames.length}
+            </span>
+          </span>
           {verifiable && (
             <button className="btn btn-line" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
               <span aria-hidden="true">✓</span> Re-check
             </button>
           )}
         </div>
-        <div className="banner" aria-live="polite">
+        <button className="banner" aria-live="polite" onClick={() => setShowLog(true)} title="Open the full timeline of this round">
           <span className="banner-title">{title}</span>
           <span className="banner-text">{text}</span>
-        </div>
+          <span className="banner-more">Timeline →</span>
+        </button>
       </div>
+
+      {(trading || disputable || round.dispute) && (
+        <div className="round-act">
+          {trading && (
+            <div className="act">
+              <span className="act-k">Market open until {new Date(round.bet_deadline_ms).toISOString().slice(11, 16)} UTC</span>
+              {pickedEntry ? (
+                <span className="act-row">
+                  Back <b>{n.name(pickedEntry.agent)}</b> at {pct(pickedEntry.odds_ppm / 1e6)} with
+                  <input className="act-input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount in NEAR" /> NEAR
+                  <button className="btn btn-accent" disabled={tx.busy} onClick={() => tx.run(`Bought ${n.name(pickedEntry.agent)}`, "buy", { round_id: round.id, agent: pickedEntry.agent, min_shares: null }, yocto(amount))}>
+                    {tx.account ? "Buy shares" : "Connect wallet"}
+                  </button>
+                </span>
+              ) : (
+                <span className="act-row muted">Click an agent on the stage to back it. A share pays 1 if that agent wins.</span>
+              )}
+            </div>
+          )}
+          {disputable && (
+            <div className="act">
+              <span className="act-k">Dispute window open until {new Date(round.proposal!.dispute_until_ms).toISOString().slice(11, 19)} UTC</span>
+              <span className="act-row">
+                Re-run the published answers first (Re-check). If a score is wrong, dispute it with a {bond !== null ? near(bond) : "…"} NEAR bond: arbiters re-run everything; a wrong score slashes the verifier and returns your bond.
+                <button className="btn btn-line" disabled={tx.busy || bond === null} onClick={() => tx.run("Dispute filed", "dispute", { round_id: round.id }, bond ?? 0n)}>
+                  {tx.account ? "Dispute scores" : "Connect wallet"}
+                </button>
+              </span>
+            </div>
+          )}
+          {round.dispute && (
+            <div className="act" data-kind="dispute">
+              <span className="act-k">Disputed</span>
+              <span className="act-row">
+                {short(round.dispute.by)} disputed the posted scores with a {near(round.dispute.bond)} NEAR bond.{" "}
+                {round.dispute.overturned === null ? "Arbiters are re-running the answers." : round.dispute.overturned ? "The arbiters overturned them: the verifier that signed them was slashed." : "The arbiters upheld them: the bond went to the league."}
+              </span>
+            </div>
+          )}
+          {(tx.error || tx.done) && (
+            <span className="tx-status" data-kind={tx.error ? "error" : "done"}>
+              {tx.error ?? `${tx.done}. The page updates within a few seconds.`}
+            </span>
+          )}
+        </div>
+      )}
+
+      {showLog && <Timeline round={round} rec={rec} n={n} onSeek={seek} onClose={() => setShowLog(false)} />}
     </div>
   );
 }
@@ -335,36 +453,5 @@ function Stat({ k, v, u }: { k: string; v: string; u?: string }) {
         {u && <small>{u}</small>}
       </div>
     </div>
-  );
-}
-
-/** Debug: the size of one stage character in device pixels, kept across reloads. */
-function GlyphDebug() {
-  const [glyph, setGlyph] = useGlyph();
-  // Page zoom changes devicePixelRatio and fires resize; show the current value.
-  const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
-  useEffect(() => {
-    const on = () => setDpr(window.devicePixelRatio || 1);
-    window.addEventListener("resize", on);
-    return () => window.removeEventListener("resize", on);
-  }, []);
-  return (
-    <label className="glyph-debug" title="Stage character size in device pixels; browser zoom does not change it">
-      <span className="glyph-debug-k">debug · glyph</span>
-      <input type="range" min={4} max={32} step={0.5} value={glyph} onChange={(e) => setGlyph(Number(e.target.value))} />
-      <input
-        className="glyph-debug-n"
-        type="number"
-        min={4}
-        max={32}
-        step={0.5}
-        value={glyph}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (v >= 4 && v <= 32) setGlyph(v);
-        }}
-      />
-      <span className="glyph-debug-u">dev px · dpr {dpr.toFixed(2)}</span>
-    </label>
   );
 }
