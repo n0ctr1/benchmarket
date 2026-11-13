@@ -154,6 +154,8 @@ function dataPlugin(): Plugin {
 const ENV = { ...loadEnv("production", ROOT, ""), ...process.env };
 
 export default defineConfig({
+  // GitHub Pages serves the site under /<repo>/; set BASE_PATH there, "/" elsewhere.
+  base: ENV.BASE_PATH ?? "/",
   plugins: [react(), dataPlugin()],
   define: {
     __LEAGUE__: JSON.stringify(ENV.LEAGUE_ACCOUNT ?? "benchmarket.testnet"),
