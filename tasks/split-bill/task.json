@@ -1,0 +1,12 @@
+{
+  "id": "split-bill",
+  "skill": "code.js",
+  "function": "splitBill",
+  "title": "Split an amount by weights, to the cent",
+  "statement": "Write a JavaScript function `splitBill(total, weights)` that splits an amount of cents between parties in proportion to their weights, so that the shares add up exactly to the total.\n\nRules:\n- `total` is an integer number of cents, `0 <= total <= 1000000000000`.\n- `weights` is an array of 1 to 100 integers, each `0 <= w <= 1000000`, with a positive sum `W`.\n- Each party first gets `floor(total * w / W)` cents. The cents left over (fewer than the number of parties) go one each to the parties with the largest remainders `total * w mod W`; among equal remainders, the party with the lower index goes first. No party gets more than one extra cent.\n- Compute exactly: `total * w` can exceed `Number.MAX_SAFE_INTEGER`, and the answer must still be exact.\n- Return the array of shares, in the order of `weights`.\n- Return `null` for invalid input: a total or weight that is not an integer or is out of range, an empty or too long array, or weights that sum to zero.",
+  "examples": [
+    { "args": [100, [1, 1, 1]], "expected": [34, 33, 33] },
+    { "args": [1000, [3, 0, 1]], "expected": [750, 0, 250] },
+    { "args": [5, [0, 0]], "expected": null }
+  ]
+}

@@ -46,8 +46,8 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
   const league = config.leagueAccount;
   const client = `${CLIENT_ID}.${league}`;
   const task = loadTask(opts.taskId);
-  const bounty = config.bounty;
-  const subsidy = config.subsidy;
+  const bounty = config.tryoutBounty;
+  const subsidy = config.tryoutSubsidy;
   const nominateSeconds = 60;
 
   // The client and the scouts need funds for the escrow and the stakes.

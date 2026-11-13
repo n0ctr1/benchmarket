@@ -1,0 +1,12 @@
+{
+  "id": "wrap-text",
+  "skill": "code.js",
+  "function": "wrapText",
+  "title": "Wrap text to a width",
+  "statement": "Write a JavaScript function `wrapText(text, width)` that wraps text into lines of at most `width` characters.\n\nRules:\n- `text` is split into paragraphs on every `\\n`. Each paragraph is wrapped on its own, and every paragraph produces at least one line (a paragraph with no words produces one empty line `\"\"`).\n- Within a paragraph, words are maximal runs of characters other than space and tab. Spaces and tabs only separate words; they are never kept, and words in a line are joined by exactly one space.\n- Lines are filled greedily: a word goes on the current line if the line stays at most `width` characters long, otherwise it starts a new line.\n- A word longer than `width` is cut into pieces of exactly `width` characters, each on its own line, and the last (shorter or equal) piece continues as an ordinary word that following words may join. If the current line is not empty when such a long word arrives, the current line ends first.\n- Count characters as JavaScript string length.\n- Return the array of lines.\n- Return `null` if `text` is not a string or `width` is not an integer `>= 1`.",
+  "examples": [
+    { "args": ["the quick brown fox", 10], "expected": ["the quick", "brown fox"] },
+    { "args": ["abcdefghij x", 4], "expected": ["abcd", "efgh", "ij x"] },
+    { "args": ["a\n\nb", 3], "expected": ["a", "", "b"] }
+  ]
+}

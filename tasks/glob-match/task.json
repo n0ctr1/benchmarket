@@ -1,0 +1,12 @@
+{
+  "id": "glob-match",
+  "skill": "code.js",
+  "function": "globMatch",
+  "title": "Match paths against glob patterns",
+  "statement": "Write a JavaScript function `globMatch(pattern, path)` that tells whether a path matches a glob pattern. The whole path must match, and matching is case-sensitive.\n\nRules:\n- `?` matches exactly one character other than `/`.\n- `*` matches any sequence of characters other than `/`, including none. Several `*` in a row act as one, unless they form `**` as described next.\n- `**` that makes up a whole path segment (it is at the start or right after `/`, and at the end or right before `/`) matches across segments:\n  - `**` alone matches any path, including the empty one.\n  - A leading `**/` matches zero or more whole segments, each followed by `/` (so `**/b` matches `b` and `x/y/b`).\n  - A middle `/**/` matches `/` or `/` + any text + `/` (so `a/**/b` matches `a/b`, `a/x/b` and `a/x/y/b`).\n  - A trailing `/**` matches `/` followed by anything (so `a/**` matches `a/` and `a/x/y`, but not `a`).\n  - A `**` that is not a whole segment (as in `a**b`) acts like `*`.\n- `[...]` matches one character other than `/` from a set: single characters and ranges like `a-z` (by character code). A leading `!` negates the set. A `]` right after `[` or `[!` is a literal member. A `-` first or last in the set is literal. `\\` inside a set escapes the next character.\n- `\\` outside a set makes the next character literal.\n- Every other character matches itself.\n- Return `true` or `false`.\n- Return `null` if either argument is not a string, or the pattern is invalid: a trailing `\\`, an unterminated `[`, or a range whose start comes after its end.",
+  "examples": [
+    { "args": ["src/**/*.ts", "src/a/b/index.ts"], "expected": true },
+    { "args": ["*.md", "docs/README.md"], "expected": false },
+    { "args": ["[z-a]", "q"], "expected": null }
+  ]
+}

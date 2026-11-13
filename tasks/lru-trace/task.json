@@ -1,0 +1,12 @@
+{
+  "id": "lru-trace",
+  "skill": "code.js",
+  "function": "lruTrace",
+  "title": "Trace an LRU cache",
+  "statement": "Write a JavaScript function `lruTrace(capacity, ops)` that simulates a least-recently-used cache and returns the results of its operations.\n\nRules:\n- `capacity` is the maximum number of keys the cache holds; it must be an integer `>= 0`.\n- `ops` is an array of operations, each an array:\n  - `[\"put\", key, value]` stores an integer `value` under a string `key`. Putting an existing key replaces its value and makes it the most recently used. Putting a new key when the cache is full first evicts the least recently used key. With capacity 0 a put stores nothing. A put produces no result.\n  - `[\"get\", key]` produces the stored value, or `null` if the key is absent. A successful get makes the key the most recently used.\n  - `[\"del\", key]` removes the key and produces `true`, or produces `false` if it was absent.\n  - `[\"keys\"]` produces an array of all keys from most to least recently used. It does not change the order.\n- Return the array of results in order.\n- Return `null` if `capacity` is not an integer `>= 0`, if `ops` is not an array, or if any operation is malformed: an unknown name, the wrong number of elements, a key that is not a string or a value that is not an integer.",
+  "examples": [
+    { "args": [2, [["put", "a", 1], ["put", "b", 2], ["get", "a"], ["put", "c", 3], ["get", "b"], ["keys"]]], "expected": [1, null, ["c", "a"]] },
+    { "args": [0, [["put", "a", 1], ["get", "a"]]], "expected": [null] },
+    { "args": [1, [["put", "a", 1.5]]], "expected": null }
+  ]
+}

@@ -4,11 +4,11 @@ import { DOMAINS } from "@benchmarket/shared";
 import { loadTask } from "@benchmarket/shared";
 import fs from "node:fs";
 import { llmSolve } from "./llm.js";
-import { ROSTER } from "./roster.js";
+import { ROSTER, type AgentConfig } from "./roster.js";
 import { LeagueChain } from "./chain.js";
 import { config, DATA_DIR } from "./config.js";
 import { llmSolver, runRound, simSolver, type RoundOptions } from "./round.js";
-import { llmScout, SCRIPTED_SCOUTS } from "./scouts.js";
+import { llmScout, modelScouts, SCRIPTED_SCOUTS, scoutableModels, syncModelScouts } from "./scouts.js";
 import { scoutChat } from "./llm.js";
 import { configure, setup, upgrade } from "./setup.js";
 import { runJob } from "./job.js";
@@ -33,11 +33,20 @@ async function withVerifier<T>(fn: (v: Verifier) => Promise<T>): Promise<T> {
   }
 }
 
-/** `--llm`: real models on NEAR AI Cloud for agents, plus an LLM scout next to the scripted ones. */
+/** `--llm`: real models on NEAR AI Cloud for agents, and a scout per model next to the scripted ones. */
 function mode(): Pick<RoundOptions, "solver" | "scouts"> {
   if (!process.argv.includes("--llm")) return {};
   if (!config.nearAiApiKey) throw new Error("--llm needs NEAR_AI_API_KEY in .env");
-  return { solver: llmSolver, scouts: [...SCRIPTED_SCOUTS, llmScout(scoutChat)] };
+  return { solver: llmSolver, scouts: [...SCRIPTED_SCOUTS, ...modelScouts().map((m) => llmScout(scoutChat, m.model, m.id))] };
+}
+
+/**
+ * Agents for the n-th round: a window of `--field` agents (default 8) that moves by five each
+ * round, so with 13 agents every one plays most rounds and no two rounds field the same set.
+ */
+function fieldFor(n: number): AgentConfig[] {
+  const size = Math.min(ROSTER.length, Number(arg("field", "8")));
+  return Array.from({ length: size }, (_, k) => ROSTER[(n * 5 + k) % ROSTER.length]);
 }
 
 async function leaderboard(chain: LeagueChain): Promise<void> {
@@ -141,7 +150,7 @@ async function main(): Promise<void> {
       break;
     case "round": {
       const taskId = arg("task", "parse-duration")!;
-      await withVerifier((verifier) => runRound({ chain, verifier, taskId, taskRef: arg("ref"), openSeconds: Number(arg("open-seconds", "0")), lie: process.argv.includes("--lie"), ...mode(), marketSeconds: Number(arg("market-seconds", "20")) }));
+      await withVerifier((verifier) => runRound({ chain, verifier, taskId, agents: fieldFor(Number(arg("rotation", String(Math.floor(Date.now() / 1000))))), taskRef: arg("ref"), openSeconds: Number(arg("open-seconds", "0")), lie: process.argv.includes("--lie"), ...mode(), marketSeconds: Number(arg("market-seconds", "20")) }));
       await leaderboard(chain);
       break;
     }
@@ -150,7 +159,8 @@ async function main(): Promise<void> {
       const tasks = listTaskIds();
       await withVerifier(async (verifier) => {
         for (let i = 0; i < n; i++) {
-          await runRound({ chain, verifier, taskId: tasks[(i + Number(arg("offset", "0"))) % tasks.length], ...mode(), marketSeconds: Number(arg("market-seconds", "20")) });
+          const k = i + Number(arg("offset", "0"));
+          await runRound({ chain, verifier, taskId: tasks[k % tasks.length], agents: fieldFor(k), ...mode(), marketSeconds: Number(arg("market-seconds", "20")) });
           console.log("");
         }
       });
@@ -216,6 +226,15 @@ async function main(): Promise<void> {
     case "bench":
       await bench(arg("task") ? [arg("task")!] : listTaskIds());
       break;
+    case "scouts-sync": {
+      // A scout for every new chat model in the NEAR AI catalog, up to --max, cheapest first.
+      const res = await fetch(`${config.nearAiBaseUrl}/models`, { headers: { Authorization: `Bearer ${config.nearAiApiKey}` } });
+      const list = ((await res.json()) as { data: Array<{ id: string; pricing?: { output?: number } }> }).data;
+      const added = syncModelScouts(scoutableModels(list, Number(arg("max-price", "2"))), Number(arg("max", "8")));
+      console.log(added.length ? added.map((a) => `new scout ${a.id} on ${a.model}`).join("\n") : "no new models to scout with");
+      if (added.length) await setup();
+      break;
+    }
     case "status":
       await leaderboard(chain);
       break;

@@ -79,7 +79,15 @@ export const config = {
   },
   /** Stake a scout puts behind each nomination on a brief. */
   get scoutStake() {
-    return near(env("SCOUT_STAKE_NEAR", "0.05"));
+    return near(env("SCOUT_STAKE_NEAR", "0.02"));
+  },
+  /** A brief's tryout round: a small bounty for its winner... */
+  get tryoutBounty() {
+    return near(env("TRYOUT_BOUNTY_NEAR", "0.02"));
+  },
+  /** ...and the tryout market's subsidy, its maximum loss; what the maker keeps goes back to the client. */
+  get tryoutSubsidy() {
+    return near(env("TRYOUT_SUBSIDY_NEAR", "0.05"));
   },
   get verifierStake() {
     return near(env("VERIFIER_STAKE_NEAR", "0.2"));

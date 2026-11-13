@@ -60,6 +60,6 @@ test("scripted scouts nominate real agents on curated tryout tasks close to the 
     }
   }
   // The favorite nominates the top-rated agent; value the runner-up.
-  assert.equal((await favoriteScout.nominate!(brief, field, tasks))[0].agent, field[4].agent);
-  assert.equal((await valueScout.nominate!(brief, field, tasks))[0].agent, field[3].agent);
+  assert.equal((await favoriteScout.nominate!(brief, field, tasks))[0].agent, field[field.length - 1].agent);
+  assert.equal((await valueScout.nominate!(brief, field, tasks))[0].agent, field[field.length - 2].agent);
 });

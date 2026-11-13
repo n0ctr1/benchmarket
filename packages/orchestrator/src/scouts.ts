@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { DATA_DIR } from "./config.js";
 import { findJsonObject, type TaskPublic } from "@benchmarket/shared";
 import type { AgentConfig } from "./roster.js";
 
@@ -141,9 +144,9 @@ export const LLM_SCOUT_MODEL = "anthropic/claude-sonnet-5-5";
  * agent's model, prompt, claimed strengths, rating, rounds played and current odds) and
  * must explain its pick. Falls back to the value scout if the model's reply is unusable.
  */
-export function llmScout(chatFn: (model: string, system: string, user: string) => Promise<string>, model = LLM_SCOUT_MODEL): Scout {
+export function llmScout(chatFn: (model: string, system: string, user: string) => Promise<string>, model = LLM_SCOUT_MODEL, id = "scout-llm"): Scout {
   return {
-    id: "scout-llm",
+    id,
     kind: "llm",
     async decide(task, field) {
       const system = `You are a scout in Benchmarket. AI agents compete on a coding task scored by hidden tests; the highest score wins.
@@ -212,4 +215,68 @@ Reply with JSON only: {"nominations": [{"agent": "<agent id>", "task": "<task id
 }
 
 /** Every scout that needs an account, scripted or not. */
-export const ALL_SCOUT_IDS = [...SCRIPTED_SCOUTS.map((s) => s.id), "scout-llm"];
+/**
+ * Model scouts: one scout per model on NEAR AI Cloud, each reasoning with its own model. A new
+ * model in the catalog gets a scout of its own (`league scouts-sync`), so the pool of forecasters
+ * grows with the models, and each one builds a public record of how well that model prices agents.
+ * Anyone else becomes a scout simply by buying in a round or nominating on a brief.
+ */
+export interface ModelScout {
+  id: string;
+  model: string;
+  since: string;
+}
+
+export const DEFAULT_MODEL_SCOUTS: ModelScout[] = [
+  { id: "scout-sonnet", model: "anthropic/claude-sonnet-5-5", since: "2026-11-13" },
+  { id: "scout-haiku", model: "anthropic/claude-haiku-5-5", since: "2026-11-13" },
+  { id: "scout-luna", model: "openai/gpt-6-luna", since: "2026-11-13" },
+  { id: "scout-gemini", model: "google/gemini-3.1-flash-lite", since: "2026-11-13" },
+  { id: "scout-qwen", model: "Qwen/Qwen3.8-27B", since: "2026-11-13" },
+];
+
+const MODEL_SCOUTS_FILE = path.join(DATA_DIR, "model-scouts.json");
+
+export function modelScouts(): ModelScout[] {
+  const extra: ModelScout[] = fs.existsSync(MODEL_SCOUTS_FILE) ? JSON.parse(fs.readFileSync(MODEL_SCOUTS_FILE, "utf8")) : [];
+  const seen = new Set(DEFAULT_MODEL_SCOUTS.map((m) => m.model));
+  return [...DEFAULT_MODEL_SCOUTS, ...extra.filter((m) => !seen.has(m.model))];
+}
+
+/** Account-safe scout id for a model: `scout-` and the model's name, lowercased. */
+export function scoutIdForModel(model: string): string {
+  return ("scout-" + model.split("/").pop()!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).slice(0, 40);
+}
+
+/** Chat models from a NEAR AI /models listing that a scout can use, cheapest first. */
+export function scoutableModels(list: Array<{ id: string; pricing?: { output?: number } }>, maxOutputPerM: number): string[] {
+  const notChat = /embedding|reranker|whisper|flux|privacy-filter|vl-|-vl|abliterated|image/i;
+  return list
+    .filter((m) => !notChat.test(m.id) && (m.pricing?.output ?? Infinity) <= maxOutputPerM)
+    .sort((a, b) => (a.pricing?.output ?? 0) - (b.pricing?.output ?? 0))
+    .map((m) => m.id);
+}
+
+/** Adds a scout for every scoutable model that has none yet; returns the new ones. */
+export function syncModelScouts(models: string[], max: number, today = new Date().toISOString().slice(0, 10)): ModelScout[] {
+  const have = modelScouts();
+  const known = new Set(have.map((m) => m.model));
+  const ids = new Set(have.map((m) => m.id));
+  const added: ModelScout[] = [];
+  for (const model of models) {
+    if (have.length + added.length >= max) break;
+    if (known.has(model)) continue;
+    let id = scoutIdForModel(model);
+    for (let k = 2; ids.has(id); k++) id = `${scoutIdForModel(model)}-${k}`;
+    ids.add(id);
+    added.push({ id, model, since: today });
+  }
+  if (added.length) {
+    const extra: ModelScout[] = fs.existsSync(MODEL_SCOUTS_FILE) ? JSON.parse(fs.readFileSync(MODEL_SCOUTS_FILE, "utf8")) : [];
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(MODEL_SCOUTS_FILE, JSON.stringify([...extra, ...added], null, 2));
+  }
+  return added;
+}
+
+export const ALL_SCOUT_IDS = [...SCRIPTED_SCOUTS.map((s) => s.id), ...modelScouts().map((m) => m.id)];

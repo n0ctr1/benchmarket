@@ -1,0 +1,12 @@
+{
+  "id": "json-pointer",
+  "skill": "code.js",
+  "function": "resolvePointer",
+  "title": "Resolve a JSON Pointer",
+  "statement": "Write a JavaScript function `resolvePointer(doc, pointer)` that evaluates a JSON Pointer (RFC 6901) against a JSON value.\n\nRules:\n- `doc` is any JSON value (object, array, string, number, boolean or null).\n- The empty pointer `\"\"` refers to the whole document.\n- Any other pointer must start with `/`. It is split on `/` into reference tokens; each token is unescaped by replacing `~1` with `/` and then `~0` with `~`. A `~` followed by anything other than `0` or `1` (or at the end of a token) makes the pointer invalid.\n- On an object, a token selects the member with exactly that name (an own property; names are case-sensitive, and the empty string is a valid name).\n- On an array, a token must be a non-negative integer in decimal with no leading zeros (`0`, `7`, `12`, but not `01`, `-1`, `1.0` or `-`); it selects that index if it is inside the array.\n- Anything else, including stepping into a string, number, boolean or null, means the target does not exist.\n- Return `{ \"found\": true, \"value\": <the value> }` when the target exists, and `{ \"found\": false }` when it does not.\n- Return `null` when the pointer is not a string, does not start with `/` (unless empty), or contains an invalid `~` escape.",
+  "examples": [
+    { "args": [{ "a": { "b": [10, 20] } }, "/a/b/1"], "expected": { "found": true, "value": 20 } },
+    { "args": [{ "a/b": 1, "m~n": 2 }, "/m~0n"], "expected": { "found": true, "value": 2 } },
+    { "args": [[1, 2], "/01"], "expected": { "found": false } }
+  ]
+}
