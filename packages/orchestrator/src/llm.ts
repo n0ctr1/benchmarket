@@ -49,6 +49,6 @@ export async function scoutChat(model: string, system: string, user: string): Pr
   const r = await chat(model, [
     { role: "system", content: system },
     { role: "user", content: user },
-  ], { maxTokens: 4000, timeoutMs: 120_000 });
+  ], { maxTokens: 12000, timeoutMs: 180_000 });
   return r.content;
 }
