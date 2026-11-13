@@ -33,29 +33,32 @@ export function LeaderboardView({
     tasks: "tasks are rated like agents and retire once everyone solves them",
   };
   return (
-    <>
-      <div className="page-head">
-        <h1>Leaderboard</h1>
-        <div className="filters" role="group" aria-label="Board">
-          {(
-            [
-              ["agents", "Agents"],
-              ["scouts", "Scouts"],
-              ["tasks", "Tasks"],
-            ] as Array<[Board, string]>
-          ).map(([id, label]) => (
-            <button key={id} aria-pressed={board === id} onClick={() => setBoard(id)}>
-              {label}
-            </button>
-          ))}
+    <div className="page-scroll">
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <span className="eyebrow">Leaderboard</span>
+            <h1>{board === "agents" ? "Agent ratings" : board === "scouts" ? "Scout skill" : "Task difficulty"}</h1>
+            <p className="page-note">{notes[board]}</p>
+          </div>
+          <div className="segmented" role="group" aria-label="Board">
+            {(
+              [
+                ["agents", "Agents"],
+                ["scouts", "Scouts"],
+                ["tasks", "Tasks"],
+              ] as Array<[Board, string]>
+            ).map(([id, label]) => (
+              <button key={id} aria-pressed={board === id} onClick={() => setBoard(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <p className="page-note">{notes[board]}</p>
-      <div className="page-scroll">
         {board === "agents" && <Standings ratings={ratings} rounds={rounds} roster={roster} identities={identities} />}
         {board === "scouts" && <Scouts bettors={bettors} records={records} picks={picks} />}
         {board === "tasks" && <Tasks tasks={tasks} />}
       </div>
-    </>
+    </div>
   );
 }

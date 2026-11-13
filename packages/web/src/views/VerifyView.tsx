@@ -50,43 +50,48 @@ export function VerifyView({ round, recheck, verifiable, onBack }: { round: Roun
   const { failed, total } = recheckSummary(recheck);
   const groups = [...new Set(recheck.checks.map((c) => c.group))];
   return (
-    <>
-      <div className="round-top">
-        <button className="back-link" onClick={onBack}>
-          ← Round {round?.id ?? ""}
-        </button>
+    <div className="page-scroll">
+      <div className="page">
+        <div className="crumbs">
+          <button className="back-link" onClick={onBack}>
+            ← Round {round?.id ?? ""}
+          </button>
+        </div>
+        <div className="page-head">
+          <div>
+            <span className="eyebrow">Independent re-check</span>
+            <h1>Re-check round {round?.id ?? ""}</h1>
+            <p className="page-note">
+              Run in this browser from the contract and the verifier's published report. Answers re-run in a worker with no network. Nothing here asks to be trusted.
+            </p>
+          </div>
+          <span className="verify-count" data-state={recheck.state} data-failed={failed > 0}>
+            {recheck.state === "done" ? `${total - failed} / ${total} passed` : recheck.state === "running" || recheck.state === "loading" ? `${total} checked…` : ""}
+          </span>
+        </div>
+        {!verifiable && <div className="empty">Pick a round that has been scored: its report is what gets re-checked.</div>}
+        {recheck.state === "error" && <div className="empty">{recheck.error}</div>}
+        <div className="checks">
+          {groups.map((g) => (
+            <section key={g} className="check-group">
+              <h2 className="sub">{g}</h2>
+              <div className="check-grid">
+                {recheck.checks
+                  .filter((c) => c.group === g)
+                  .map((c, i) => (
+                    <div key={i} className="check" data-ok={c.ok}>
+                      <span className="check-mark">{c.ok ? "✓" : "✕"}</span>
+                      <span>
+                        <span className="check-label">{c.label}</span>
+                        <span className="check-detail">{c.detail}</span>
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
-      <div className="page-head">
-        <h1>Re-check round {round?.id ?? ""}</h1>
-        <span className="verify-count" data-state={recheck.state} data-failed={failed > 0}>
-          {recheck.state === "done" ? `${total - failed} / ${total}` : recheck.state === "running" || recheck.state === "loading" ? `${total}…` : ""}
-        </span>
-      </div>
-      <p className="page-note">
-        Run in this browser from the contract and the verifier's published report. Answers re-run in a worker with no network. Nothing here asks to be trusted.
-      </p>
-      {!verifiable && <div className="empty">Pick a round that has been scored: its report is what gets re-checked.</div>}
-      {recheck.state === "error" && <div className="empty">{recheck.error}</div>}
-      <div className="page-scroll checks">
-        {groups.map((g) => (
-          <section key={g} className="check-group">
-            <h2 className="sub">{g}</h2>
-            <div className="check-grid">
-              {recheck.checks
-                .filter((c) => c.group === g)
-                .map((c, i) => (
-                  <div key={i} className="check" data-ok={c.ok}>
-                    <span className="check-mark">{c.ok ? "✓" : "✗"}</span>
-                    <span>
-                      <span className="check-label">{c.label}</span>
-                      <span className="check-detail">{c.detail}</span>
-                    </span>
-                  </div>
-                ))}
-            </div>
-          </section>
-        ))}
-      </div>
-    </>
+    </div>
   );
 }

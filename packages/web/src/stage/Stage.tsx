@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { faceGrid } from "@benchmarket/shared/identity";
 
 /**
@@ -62,7 +62,7 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const ease = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
 const RAMP = " .:-=+*";
-const ACC: V3 = [255, 90, 31];
+const ACC: V3 = [212, 255, 0];
 const LEVELS = 14;
 const LEVEL_H = 0.3;
 const BEAM_MS = 700;
@@ -108,8 +108,45 @@ interface Buf {
   chr: Array<string | null>;
 }
 
+const GLYPH_KEY = "bm.stage.glyph";
+const glyphListeners = new Set<(v: number) => void>();
+
+/** Size of one stage character in device pixels. Browser zoom does not change it. */
+export function getGlyph(): number {
+  try {
+    const v = Number(localStorage.getItem(GLYPH_KEY));
+    if (v >= 3 && v <= 48) return v;
+  } catch {
+    /* storage blocked */
+  }
+  return Math.round(9 * Math.min(2, window.devicePixelRatio || 1));
+}
+
+export function setGlyph(v: number) {
+  try {
+    localStorage.setItem(GLYPH_KEY, String(v));
+  } catch {
+    /* storage blocked */
+  }
+  glyphListeners.forEach((f) => f(v));
+}
+
+export function useGlyph(): [number, (v: number) => void] {
+  const [v, setV] = useState(getGlyph);
+  useEffect(() => {
+    glyphListeners.add(setV);
+    return () => {
+      glyphListeners.delete(setV);
+    };
+  }, []);
+  return [v, setGlyph];
+}
+
 export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: number | null; onPick: (i: number) => void; label: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const [glyph] = useGlyph();
+  const glyphRef = useRef(glyph);
+  glyphRef.current = glyph;
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
   const pickedRef = useRef(picked);
@@ -145,10 +182,11 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
       const ctx = cv.getContext("2d")!;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const reduce = !!reduceQuery?.matches;
-      const gf = 9;
+      // Characters are sized in device pixels, so page zoom shows more of them, not bigger ones.
+      const gf = glyphRef.current / (window.devicePixelRatio || 1);
       ctx.font = `${gf}px 'IBM Plex Mono', monospace`;
       const cw = ctx.measureText("M").width || 5.4;
-      const ch = 10;
+      const ch = gf * (10 / 9);
       const C = Math.floor(W / cw);
       const R = Math.floor(H / ch);
       const N = C * R;
@@ -362,11 +400,11 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         if (S.sweepAt !== null && checked) label += " ✓";
         const flash = bet && bet.agent === hd.i && betAge >= BEAM_MS && betAge < BEAM_MS + 1100;
         const picked = pickedRef.current === hd.i;
-        text(pt.x, pt.y - 7, label, `600 13px 'IBM Plex Mono', monospace`, ag.win || flash ? "#FF5A1F" : S.settled ? "#6B6B72" : "#F2F2F0");
-        text(pb.x, pb.y - 9, ag.name.toUpperCase(), `700 22px 'Barlow Condensed', sans-serif`, ag.win ? "#FF5A1F" : picked ? "#F2F2F0" : "#9C9CA2");
+        text(pt.x, pt.y - 7, label, `600 12px 'IBM Plex Mono', monospace`, ag.win || flash ? "#D4FF00" : S.settled ? "#5A5A55" : "#ECEBE4");
+        text(pb.x, pb.y - 9, ag.name.toUpperCase(), `700 13px 'IBM Plex Mono', monospace`, ag.win ? "#D4FF00" : picked ? "#ECEBE4" : "#8B8B85");
         if (picked) {
-          ctx.fillStyle = "#F2F2F0";
-          ctx.fillRect(pb.x - 18, pb.y + 16, 36, 2);
+          ctx.fillStyle = "#ECEBE4";
+          ctx.fillRect(pb.x - 14, pb.y + 14, 28, 2);
         }
         out.push({ i: hd.i, x: pt.x, y0: pt.y - 14, y1: pb.y + 18 });
       }
@@ -392,8 +430,8 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
             else ctx.lineTo(p.x, p.y);
           }
           ctx.lineWidth = wd;
-          ctx.strokeStyle = `rgba(255,90,31,${alpha * fade})`;
-          ctx.shadowColor = "rgba(255,90,31,.9)";
+          ctx.strokeStyle = `rgba(212,255,0,${alpha * fade})`;
+          ctx.shadowColor = "rgba(212,255,0,.9)";
           ctx.shadowBlur = blur;
           ctx.stroke();
         };
@@ -401,8 +439,8 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         trace(1.4, 0.95, 6);
         if (s2 < 1) {
           const hq = at(e);
-          ctx.fillStyle = "#FFE2D4";
-          ctx.shadowColor = "rgba(255,90,31,1)";
+          ctx.fillStyle = "#F4FFC2";
+          ctx.shadowColor = "rgba(212,255,0,1)";
           ctx.shadowBlur = 16;
           ctx.beginPath();
           ctx.arc(hq.x, hq.y, 3.2, 0, Math.PI * 2);
@@ -410,7 +448,7 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         } else {
           const rr = 0.6 + (s2 - 1) * 1.4;
           ctx.shadowBlur = 0;
-          ctx.strokeStyle = `rgba(255,90,31,${0.8 * fade})`;
+          ctx.strokeStyle = `rgba(212,255,0,${0.8 * fade})`;
           ctx.lineWidth = 1.2;
           ctx.beginPath();
           for (let a2 = 0; a2 <= 64; a2++) {
@@ -427,9 +465,9 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         const p = proj(v3(scoutX(j, m), 0, 4.6));
         if (p.z < 0.3) return;
         const betting = !!bet && bet.scout === j && betAge >= 0 && betAge < BEAM_MS + 900;
-        text(p.x, p.y - 12, sc.face, `600 18px 'IBM Plex Mono', monospace`, betting ? "#FF5A1F" : "#F2F2F0");
-        text(p.x, p.y + 10, sc.id, `500 12px 'IBM Plex Mono', monospace`, "#6B6B72");
-        text(p.x, p.y + 26, sc.line, `700 15px 'Barlow Condensed', sans-serif`, betting ? "#FF5A1F" : "#9C9CA2");
+        text(p.x, p.y - 12, sc.face, `600 18px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#ECEBE4");
+        text(p.x, p.y + 10, sc.id, `500 11px 'IBM Plex Mono', monospace`, "#5A5A55");
+        text(p.x, p.y + 26, sc.line, `600 11px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#8B8B85");
       });
     };
     raf = requestAnimationFrame(draw);

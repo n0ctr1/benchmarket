@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { blockHeight, EXPLORER, getBettors, getBriefs, getIdentities, getJobs, getLeaderboard, getRounds, getScoutRecord, getTasks, isFinal, LEAGUE, short, type Bettor, type Brief, type Identity, type Job, type Rating, type Round, type ScoutRecord, type Task } from "./chain";
 import { Drawer } from "./Drawer";
+import { LogoMark } from "./Logo";
+import { Ticker } from "./Ticker";
 import { names } from "./league";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Side } from "./Side";
@@ -150,28 +152,37 @@ export function App() {
   return (
     <div className="app">
       <header className="top">
-        <button className="brand" onClick={() => go("league")}>
-          <span className="brand-mark" aria-hidden="true">
-            <i data-on /> <i /> <i data-on /> <i data-on /> <i data-on /> <i data-on />
-          </span>
-          Benchmarket
+        <button className="brand" onClick={() => go("home")} aria-label="Benchmarket home">
+          <LogoMark />
+          <span className="brand-name">Benchmarket</span>
         </button>
         <nav className="tabs" aria-label="Views">
-          {TABS.map(([id, label]) => (
+          {TABS.map(([id, label], i) => (
             <button key={id} aria-pressed={route.view === id || (id === "league" && (route.view === "round" || route.view === "verify"))} onClick={() => go(id)}>
+              <span className="tab-n">{String(i + 1).padStart(2, "0")}</span>
               {label}
             </button>
           ))}
         </nav>
-        <span className="grow" />
-        <a className="top-link" href={`${EXPLORER}/address/${LEAGUE}`} target="_blank" rel="noreferrer">
-          {LEAGUE}
-        </a>
-        <span className="top-net" title="Latest optimistic block on NEAR testnet">
-          <i className="dot" data-live />
-          testnet {height ? `#${height.toLocaleString("en-US")}` : "…"}
-        </span>
+        <div className="top-end">
+          <a className="top-link" href={`${EXPLORER}/address/${LEAGUE}`} target="_blank" rel="noreferrer" title="The league contract in the explorer">
+            <span className="top-k">contract</span>
+            {LEAGUE}
+          </a>
+          <span className="top-net" title="Latest optimistic block on NEAR testnet">
+            <i className="dot" data-live />
+            <span className="top-k">testnet</span>
+            <span className="top-height">{height ? `#${height.toLocaleString("en-US")}` : "…"}</span>
+          </span>
+          {route.view !== "leaderboard" && (
+            <button className="top-board" aria-pressed={panel} onClick={() => (panel ? (setPanel(false), setPicked(null)) : setPanel(true))} aria-label="Toggle the standings panel">
+              <span aria-hidden="true">{panel ? "[×]" : "[≡]"}</span>
+              <span className="top-board-label">Standings</span>
+            </button>
+          )}
+        </div>
       </header>
+      {route.view !== "round" && route.view !== "verify" && <Ticker rounds={rounds} n={n} onOpen={(id) => go("round", id)} />}
 
       <div className="body">
         <main className="main" data-view={route.view}>
@@ -244,14 +255,9 @@ export function App() {
         </main>
       </div>
 
-      {route.view !== "leaderboard" && !panel && (
-        <button className="side-handle" onClick={() => setPanel(true)} aria-label="Open the leaderboard">
-          Leaderboard
-        </button>
-      )}
       {panel && <div className="side-scrim" onClick={() => (setPanel(false), setPicked(null))} />}
-        <Side
-          open={panel}
+      <Side
+        open={panel}
           ratings={ratings}
           bettors={bettors}
           n={n}

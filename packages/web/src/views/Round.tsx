@@ -3,7 +3,7 @@ import { near, short, type Round } from "../chain";
 import { lockPrice, pct, roundTitle, scoutFace, type Names } from "../league";
 import type { RoundRecord } from "../offchain";
 import { buildReplay, type Phase, type Replay } from "../replay";
-import { Stage, type Scene } from "../stage/Stage";
+import { Stage, useGlyph, type Scene } from "../stage/Stage";
 
 const PHASES: Array<{ id: Phase; label: string; title: string }> = [
   { id: "market", label: "Market", title: "Market open" },
@@ -176,9 +176,9 @@ export function RoundView({
       const j = bets.findIndex((b) => b.bettor === s);
       const b = bets[j];
       const placed = j < betsSoFar;
-      const pickName = n.name(b.agent).toUpperCase();
+      const pickName = n.name(b.agent);
       const e = round.entries.find((x) => x.agent === b.agent);
-      const line = !placed ? "WATCHING" : scored && e ? `${pickName} · ${e.answer_hash ? `${e.score ?? 0}/${totalTests}` : "NO ANSWER"}` : `BET ON ${pickName} AT ${pct(paid[j] ?? 0)}`;
+      const line = !placed ? "watching" : scored && e ? `${pickName} · ${e.answer_hash ? `${e.score ?? 0}/${totalTests}` : "no answer"}` : `bet on ${pickName} at ${pct(paid[j] ?? 0)}`;
       return { id: short(s), face: scoutFace(s), line };
     }),
     bet:
@@ -244,86 +244,127 @@ export function RoundView({
   };
 
   return (
-    <>
+    <div className="round">
       <div className="round-head">
         <div className="round-head-main">
-          <div className="round-top">
+          <div className="crumbs">
             <button className="back-link" onClick={onLeague}>
               ← League
             </button>
+            <span className="crumbs-sep">//</span>
+            <span className="mono">Round {round.id}</span>
             <span className="round-nav">
               <button onClick={() => prev && onSelect(prev.id)} disabled={!prev} aria-label="Previous round">
-                ‹ R{prev?.id ?? ""}
+                ‹
               </button>
               <button onClick={() => next && onSelect(next.id)} disabled={!next} aria-label="Next round">
-                R{next?.id ?? ""} ›
+                ›
               </button>
             </span>
           </div>
           <h1 className="round-title">{roundTitle(round, rec)}</h1>
           <div className="chips" aria-label="Round details">
-            <span className="chip chip-accent">Round {round.id}</span>
             <span className="chip" data-s={round.status}>
+              <i className="dot" />
               {round.status}
             </span>
+            <span className="chip mono">{round.task_ref}</span>
             <span className="chip">{round.skill}</span>
-            <span className="chip">{round.task_ref}</span>
             {round.market === "lmsr" ? <span className="chip">{round.rated ? "rated" : "unrated"}</span> : <span className="chip">rated</span>}
             <span className="chip">{round.market === "lmsr" ? "LMSR market" : "pool market"}</span>
             {round.attested && <span className="chip chip-info">attested answers</span>}
-            {round.entries.some((e) => !n.roster(e.agent)) && <span className="chip chip-accent-line">open entry</span>}
+            {round.entries.some((e) => !n.roster(e.agent)) && <span className="chip chip-accent">open entry</span>}
             <span className="chip">{round.entries.length} agents</span>
           </div>
         </div>
         <div className="round-stats">
-          <Stat k="Bounty" v={near(round.bounty)} />
-          <Stat k={round.market === "lmsr" ? "Volume" : "Pool"} v={near(pool)} />
+          <Stat k="Bounty" v={near(round.bounty)} u="NEAR" />
+          <Stat k={round.market === "lmsr" ? "Volume" : "Pool"} v={near(pool)} u="NEAR" />
           <Stat k="Tests" v={String(totalTests || "—")} />
           {round.market === "lmsr" && round.rated && <Stat k="Task rating" v={((round.task_rating_before + round.task_delta) / 100).toFixed(0)} />}
         </div>
       </div>
 
-      <div className="track">
-        <button className="btn btn-accent" onClick={start} disabled={!replay || playing || cancelled}>
-          {playing ? "Playing" : "▶ Replay"}
-        </button>
-        {verifiable && (
-          <button className="btn btn-line" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
-            ✓ Re-check
-          </button>
-        )}
-        <div className="phases">
+      <div className="stage frame">
+        <ol className="phases" aria-label="Round phases">
           {PHASES.map((p, i) => (
-            <div key={p.id} className="phase" data-on={i < phaseIdx ? "done" : i === phaseIdx ? "now" : "todo"}>
+            <li key={p.id} className="phase" data-on={i < phaseIdx ? "done" : i === phaseIdx ? "now" : "todo"}>
+              <span className="phase-n">{String(i + 1).padStart(2, "0")}</span>
               {p.label}
-            </div>
+            </li>
           ))}
+        </ol>
+        <div className="frame-body">
+          <Stage
+            scene={scene}
+            picked={picked ? round.entries.findIndex((e) => e.agent === picked) : null}
+            onPick={(i) => onPick(round.entries[i].agent === picked ? null : round.entries[i].agent)}
+            label={`Round ${round.id} in 3D, drawn in text: ${round.entries.length} agents on beams of light; the beam is the market price, then the score.`}
+          />
+          <div className="stage-hint">Click an agent → passport</div>
+          <GlyphDebug />
         </div>
       </div>
 
-      <div className="stage">
-        <Stage
-          scene={scene}
-          picked={picked ? round.entries.findIndex((e) => e.agent === picked) : null}
-          onPick={(i) => onPick(round.entries[i].agent === picked ? null : round.entries[i].agent)}
-          label={`Round ${round.id} in 3D, drawn in text: ${round.entries.length} agents on beams of light; the beam is the market price, then the score.`}
-        />
-        <div className="stage-hint">Click an agent for its passport</div>
+      <div className="dock" data-final={settled && round.winners.length > 0}>
+        <div className="dock-actions">
+          <button className="btn btn-accent" onClick={start} disabled={!replay || playing || cancelled}>
+            <span aria-hidden="true">{playing ? "❚❚" : "▶"}</span> {playing ? "Playing" : "Replay"}
+          </button>
+          {verifiable && (
+            <button className="btn btn-line" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
+              <span aria-hidden="true">✓</span> Re-check
+            </button>
+          )}
+        </div>
+        <div className="banner" aria-live="polite">
+          <span className="banner-title">{title}</span>
+          <span className="banner-text">{text}</span>
+        </div>
       </div>
-
-      <div className="banner" data-final={settled && round.winners.length > 0} aria-live="polite">
-        <span className="banner-title">{title}</span>
-        <span className="banner-text">{text}</span>
-      </div>
-    </>
+    </div>
   );
 }
 
-function Stat({ k, v }: { k: string; v: string }) {
+function Stat({ k, v, u }: { k: string; v: string; u?: string }) {
   return (
     <div className="stat">
       <div className="stat-k">{k}</div>
-      <div className="stat-v">{v}</div>
+      <div className="stat-v">
+        {v}
+        {u && <small>{u}</small>}
+      </div>
     </div>
+  );
+}
+
+/** Debug: the size of one stage character in device pixels, kept across reloads. */
+function GlyphDebug() {
+  const [glyph, setGlyph] = useGlyph();
+  // Page zoom changes devicePixelRatio and fires resize; show the current value.
+  const [dpr, setDpr] = useState(() => window.devicePixelRatio || 1);
+  useEffect(() => {
+    const on = () => setDpr(window.devicePixelRatio || 1);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return (
+    <label className="glyph-debug" title="Stage character size in device pixels; browser zoom does not change it">
+      <span className="glyph-debug-k">debug · glyph</span>
+      <input type="range" min={4} max={32} step={0.5} value={glyph} onChange={(e) => setGlyph(Number(e.target.value))} />
+      <input
+        className="glyph-debug-n"
+        type="number"
+        min={4}
+        max={32}
+        step={0.5}
+        value={glyph}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (v >= 4 && v <= 32) setGlyph(v);
+        }}
+      />
+      <span className="glyph-debug-u">dev px · dpr {dpr.toFixed(2)}</span>
+    </label>
   );
 }

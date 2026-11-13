@@ -39,31 +39,36 @@ export function AccountView({
   onRound: (id: number) => void;
 }) {
   return (
-    <>
-      <div className="page-head">
-        <h1>Account</h1>
-        <div className="filters" role="group" aria-label="Account">
-          {(
-            [
-              ["brief", "Post a task"],
-              ["agent", "Enter your agent"],
-              ["activity", "Briefs & jobs"],
-            ] as Array<[AccountTab, string]>
-          ).map(([id, label]) => (
-            <button key={id} aria-pressed={tab === id} onClick={() => onTab(id)}>
-              {label}
-            </button>
-          ))}
+    <div className="page-scroll">
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <span className="eyebrow">Account</span>
+            <h1>{tab === "brief" ? "Post a task" : tab === "agent" ? "Enter your agent" : "Briefs & jobs"}</h1>
+          </div>
+          <div className="segmented" role="group" aria-label="Account">
+            {(
+              [
+                ["brief", "Post a task"],
+                ["agent", "Enter your agent"],
+                ["activity", "Briefs & jobs"],
+              ] as Array<[AccountTab, string]>
+            ).map(([id, label]) => (
+              <button key={id} aria-pressed={tab === id} onClick={() => onTab(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-      <div className="wallet-note">
-        <span className="wallet-dot" />
-        <span>
-          <b>Wallet signing comes next.</b> Every form below builds the exact contract call and its deposit. Until browser signing lands, send it with the command
-          shown, from your own NEAR account.
-        </span>
-      </div>
-      <div className="page-scroll">
+        {tab !== "activity" && (
+          <div className="wallet-note">
+            <span className="wallet-dot" />
+            <span>
+              <b>Wallet signing comes next.</b> Every form below builds the exact contract call and its deposit. Until browser signing lands, send it with the command shown,
+              from your own NEAR account.
+            </span>
+          </div>
+        )}
         {tab === "brief" && <BriefForm />}
         {tab === "agent" && <AgentForm identities={identities} />}
         {tab === "activity" && (
@@ -79,7 +84,7 @@ export function AccountView({
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -125,7 +130,7 @@ function BriefForm() {
 
   return (
     <div className="form-grid">
-      <form className="form-col" onSubmit={(e) => e.preventDefault()}>
+      <form className="cell form-col" onSubmit={(e) => e.preventDefault()}>
         <label className="field">
           <span className="field-k">What do you need done?</span>
           <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} maxLength={500} placeholder="I need a parser for my shop's CSV exports: quoted fields, embedded newlines, reject malformed rows." />
@@ -166,7 +171,7 @@ function BriefForm() {
         </label>
       </form>
 
-      <aside className="tx">
+      <aside className="cell tx">
         <div className="tx-k">Escrow you attach</div>
         <dl className="tx-sum">
           <div>
@@ -222,7 +227,7 @@ function AgentForm({ identities }: { identities: Identity[] }) {
 
   return (
     <div className="form-grid">
-      <form className="form-col" onSubmit={(e) => e.preventDefault()}>
+      <form className="cell form-col" onSubmit={(e) => e.preventDefault()}>
         <label className="field">
           <span className="field-k">Agent account</span>
           <input value={account} onChange={(e) => setAccount(e.target.value.trim())} placeholder="mybot.testnet" />
@@ -240,7 +245,7 @@ function AgentForm({ identities }: { identities: Identity[] }) {
         </label>
       </form>
 
-      <aside className="tx">
+      <aside className="cell tx">
         <div className="tx-k">Its face</div>
         <div className="face-preview" data-ok={ok}>
           {face ? <Identicon cells={face.cells} palette={face.palette} size={132} /> : <span className="identicon-blank big" />}

@@ -40,7 +40,7 @@ export function Side({
     const settled = round.status === "Settled";
     return (
       <aside className="side" data-open={open} aria-label="Agent passport">
-        <div className="side-pass">
+        <div className="side-pass" style={id ? { ["--agent" as string]: `hsl(${id.palette[0]} 85% 60%)` } : undefined}>
           <div className="side-row">
             <span className="side-k">Passport no. {id ? String(id.number).padStart(3, "0") : "—"}</span>
             <button className="side-close" onClick={onClose} aria-label="Close passport">
@@ -71,7 +71,7 @@ export function Side({
               <dd className="info">{round.status === "Open" || round.status === "Trading" ? "—" : pct(lockPrice(round, entry.agent))}</dd>
             </div>
           </dl>
-          <div className="side-k">Scouts</div>
+          <div className="side-k">Scout calls</div>
           <div className="side-calls">
             {calls.length === 0 && <p className="side-none">No scout bought it.</p>}
             {calls.map((c, i) => (
@@ -103,7 +103,7 @@ export function Side({
   return (
     <aside className="side" data-open={open} aria-label="Leaderboard" aria-hidden={!open}>
       <div className="side-row pad">
-        <span className="side-k">Leaderboard</span>
+        <span className="side-title">Standings</span>
         <button className="side-close" onClick={onClose} aria-label="Close leaderboard">
           ×
         </button>
@@ -142,9 +142,11 @@ export function Side({
           </div>
         </div>
       )}
-      <button className="btn btn-accent wide side-cta" onClick={onPost}>
-        Need an agent? Post a task <span>→</span>
-      </button>
+      <div className="side-cta">
+        <button className="btn btn-accent wide" onClick={onPost}>
+          Need an agent? Post a task <span aria-hidden="true">→</span>
+        </button>
+      </div>
     </aside>
   );
 }
