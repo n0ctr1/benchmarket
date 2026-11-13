@@ -276,7 +276,16 @@ async function main(): Promise<void> {
       const to = arg("to", "benchmarket.testnet")!;
       const amount = near(arg("amount", "17")!);
       if (!from) throw new Error("bootstrap needs --from <funded account>");
-      if (chain.keys.has(to)) throw new Error(`${to} already has a key here; nothing to do`);
+      const exists = await fetch(config.rpcUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_account", finality: "final", account_id: to } }),
+      }).then((r) => r.json() as Promise<{ result?: unknown }>).then((r) => !!r.result);
+      if (exists && chain.keys.has(to)) {
+        console.log(`${to} exists and its key is here; skipping account creation`);
+        break;
+      }
+      if (exists) throw new Error(`${to} already exists and its key is not here: pick another name (scripts/relaunch.sh <funded> <new-name>)`);
       const kp = generateKeyPair();
       chain.keys.save(to, kp.publicKey, kp.secretKey);
       await chain.account(from).callFunction({ contractId: config.network === "mainnet" ? "near" : "testnet", methodName: "create_account", args: { new_account_id: to, new_public_key: kp.publicKey }, deposit: amount, gas: 100_000_000_000_000n });

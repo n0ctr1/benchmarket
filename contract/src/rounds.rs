@@ -83,15 +83,17 @@ impl Contract {
         id
     }
 
-    /// Enters an agent. Anyone can register any agent that holds a passport; the caller is its
-    /// builder and posts a bond (at least `min_builder_stake`), returned if the agent answers.
-    /// The manager may register without a bond (Market League agents hired off chain).
+    /// Enters an agent that holds a passport. Only the agent itself or the account that issued
+    /// its passport may enter it: a non-answer costs rating, so nobody can drag an agent into a
+    /// round it did not choose. The caller is its builder and posts a bond (at least
+    /// `min_builder_stake`), returned if the agent answers. The manager posts no bond.
     #[payable]
     pub fn register_agent(&mut self, round_id: u64, agent: AccountId, league: League, config_hash: String) {
         let builder = env::predecessor_account_id();
         let bond = env::attached_deposit().as_yoctonear();
         let min_bond = self.params.min_builder_stake.0;
-        require!(self.identities.contains_key(&agent), "agent has no identity: call register_identity first");
+        let issuer = self.identities.get(&agent).map(|i| i.issuer.clone()).unwrap_or_else(|| env::panic_str("agent has no identity: call register_identity first"));
+        require!(builder == agent || builder == issuer, "only the agent or its passport issuer can enter it");
         require!(config_hash.len() <= 128, "config hash too long");
         let round = self.round_mut(round_id);
         require!(round.status == RoundStatus::Open, "registration is closed");
@@ -169,6 +171,9 @@ impl Contract {
         require!(round.status == RoundStatus::Trading, "market is not open");
         require!(env::block_timestamp_ms() < round.bet_deadline_ms, "betting closed");
         let i = round.entries.iter().position(|e| e.agent == agent).unwrap_or_else(|| env::panic_str("agent not in this round"));
+        // Entrants and the builders who staked them do not trade their own round: buying a rival
+        // raises its expected share and so cuts the rival's rating gain.
+        require!(round.entries.iter().all(|e| e.agent != caller && (e.bond == 0 || e.builder != caller)), "entrants and their builders cannot trade this round");
         let fee = amount * fee_bps as u128 / 10_000;
         let spend = amount - fee;
         let shares: Vec<u128> = round.entries.iter().map(|e| e.shares).collect();
@@ -265,7 +270,6 @@ impl Contract {
         let round = self.round_mut(round_id);
         require!(round.status == RoundStatus::Locked, "answers are accepted only after lock");
         require!(now <= round.answer_deadline_ms, "answer deadline passed");
-        require!(round.entries.iter().all(|e| e.answer_hash.as_deref() != Some(answer_hash.as_str())), "this answer was already submitted");
         let attested_round = round.attested;
         let entry = round
             .entries

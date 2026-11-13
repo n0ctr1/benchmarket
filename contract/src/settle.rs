@@ -277,6 +277,13 @@ impl Contract {
         // Ratings: against the field (share of points vs expected) and against the task.
         // Only curated tasks are rated.
         if round.rated {
+            // An agent entered by someone else (a scout's tryout nomination) that never answered
+            // did not choose to play: it is not rated and the round does not count for it.
+            let counted: Vec<bool> = round
+                .entries
+                .iter()
+                .map(|e| e.answer_hash.is_some() || e.builder == e.agent || self.identities.get(&e.agent).is_some_and(|i| i.issuer == e.builder))
+                .collect();
             let agents: Vec<AccountId> = round.entries.iter().map(|e| e.agent.clone()).collect();
             let before: Vec<i64> = round.entries.iter().map(|e| e.rating_before).collect();
             let field = if winners.is_empty() {
@@ -285,15 +292,32 @@ impl Contract {
                 let p: Vec<u64> = round.entries.iter().map(|e| e.p_ppm).collect();
                 math::rating_deltas(&p, &scores, winners[0], k_field)
             };
-            let (task, task_delta) = math::task_deltas(&before, round.task_rating_before, &scores, round.total_tests, k_task);
-            let total: Vec<i64> = field.iter().zip(task.iter()).map(|(f, t)| f + t).collect();
+            // The task is rated against the agents that count only.
+            let idx: Vec<usize> = (0..agents.len()).filter(|i| counted[*i]).collect();
+            let (task_c, task_delta) = math::task_deltas(
+                &idx.iter().map(|i| before[*i]).collect::<Vec<_>>(),
+                round.task_rating_before,
+                &idx.iter().map(|i| scores[*i]).collect::<Vec<_>>(),
+                round.total_tests,
+                k_task,
+            );
+            let mut task = vec![0i64; agents.len()];
+            for (k, i) in idx.iter().enumerate() {
+                task[*i] = task_c[k];
+            }
+            let total: Vec<i64> = (0..agents.len()).map(|i| if counted[i] { field[i] + task[i] } else { 0 }).collect();
             for (i, e) in round.entries.iter_mut().enumerate() {
-                e.field_delta = field[i];
+                e.field_delta = if counted[i] { field[i] } else { 0 };
                 e.task_delta = task[i];
             }
             round.task_delta = task_delta;
-            self.apply_ratings(&round.skill, &round.task_ref, &agents, &total, task_delta, round_id);
+            let rated_agents: Vec<AccountId> = idx.iter().map(|i| agents[*i].clone()).collect();
+            let rated_deltas: Vec<i64> = idx.iter().map(|i| total[*i]).collect();
+            self.apply_ratings(&round.skill, &round.task_ref, &rated_agents, &rated_deltas, task_delta, round_id);
             for (i, e) in round.entries.iter().enumerate() {
+                if !counted[i] {
+                    continue;
+                }
                 let key = RatingKey { skill: round.skill.clone(), agent: e.agent.clone() };
                 let r = self.ratings.get_mut(&key).unwrap();
                 r.rounds += 1;

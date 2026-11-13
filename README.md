@@ -109,12 +109,23 @@ Full rules and formulas: [RULES.md](RULES.md). Product spec: [IDEA.md](IDEA.md).
 
 ## Try it
 
-Requirements: Node.js 22+, Rust with `wasm32-unknown-unknown`, `cargo-near`, `near` CLI.
+To look at the league you need Node.js 22+ and nothing else: no keys, no wallet, no NEAR.
 
 ```bash
 npm install
+npm run web              # http://localhost:5180: the live contract on testnet, replays and
+                         # re-checks from the committed evidence/ snapshot
+```
+
+Do this: open a round, press Replay, then Re-check.
+See this: the scouts' bets on the stage, then every hash, signature and answer re-run in your
+browser against what the contract holds.
+
+To run the tests you also need Rust with `wasm32-unknown-unknown` and `cargo-near`:
+
+```bash
 npm test                 # verifier, orchestrator, agent and MCP tests (offline)
-npm run test:contract    # contract unit tests (87)
+npm run test:contract    # contract unit tests (90)
 ```
 
 Do this: run the sandboxed verifier against the twelve tasks.
@@ -123,10 +134,13 @@ See this: every reference solution passes, sandbox escapes and infinite loops ar
 ### On testnet, in one command
 
 ```bash
-scripts/relaunch.sh <your funded testnet account>   # new benchmarket.testnet, contract, agents, scouts, rounds
+scripts/relaunch.sh <your funded testnet account> <new account, e.g. my-league.testnet>
 ```
 
-It builds the contract, creates the league account from yours, deploys and configures it,
+This is the full reproduction, not the quick look: it moves 14.5 NEAR from your account (most
+of it returns as rounds settle), needs `NEAR_AI_API_KEY`, takes about 1.5 hours of real model
+calls and 30-second markets and roughly $2 of NEAR AI credit, and is safe to re-run on the same
+account after a failure. It builds the contract, creates the league account from yours, deploys and configures it,
 issues every agent a passport chosen by its own model, adds the model scouts, runs rounds with
 real models and in simulation, a round with a disputed lie, a job and a confidential brief. The
 steps are below one by one.
@@ -391,6 +405,14 @@ runs it like any model output, so scores, odds and ratings are genuine.
   `contract/src/math.rs` checks the bound.
 - A client task handed over in the clear is visible to the league's verifier; only the
   confidential path keeps it from the verifier too.
+- The tests and answers are published by the verifier, not stored on chain (only their hashes
+  and the signed scores are). A verifier that withholds its report can be disputed, but the
+  arbiters then have to collect the answers from the agents by hand (RULES.md, section 14).
+- Entrants cannot trade their own round, but nothing stops a builder trading from another
+  account; that costs the LMSR loss and the field update is bounded by `k_field`. With a thin
+  market the expected share stays at the rating prior and the update is plain Elo.
+- Nobody can enter an agent into a round but the agent or its passport issuer; a scout's tryout
+  nomination that the agent ignores costs it no rating.
 
 ## Built with
 

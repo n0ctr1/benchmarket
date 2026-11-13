@@ -95,7 +95,7 @@ fn issue(c: &mut Contract, agent: &str) -> u32 {
 
 const AGENTS: [&str; 3] = ["a.testnet", "b.testnet", "c.testnet"];
 
-/// A round on `task` with agents a, b, c registered by their builders (0.5 NEAR bond each).
+/// A round on `task` with agents a, b, c, each entering itself with a 0.5 NEAR bond.
 fn round_on(c: &mut Contract, task: &str, attested: bool) -> u64 {
     for a in AGENTS {
         if c.get_identity(acc(a)).is_none() {
@@ -104,7 +104,7 @@ fn round_on(c: &mut Contract, task: &str, attested: bool) -> u64 {
     }
     ctx("manager.testnet", 3 * NEAR, 1_000);
     let id = c.create_round(SKILL.into(), task.into(), "sha256:tests".into(), LOCK, 5, Some(attested));
-    for (agent, builder) in [("a.testnet", "ba.testnet"), ("b.testnet", "bb.testnet"), ("c.testnet", "bc.testnet")] {
+    for (agent, builder) in [("a.testnet", "a.testnet"), ("b.testnet", "b.testnet"), ("c.testnet", "c.testnet")] {
         ctx(builder, NEAR / 2, 1_100);
         c.register_agent(id, acc(agent), League::Open, format!("cfg-{agent}"));
     }
@@ -208,7 +208,7 @@ fn full_round_pays_shares_and_rates_against_field_and_task() {
     assert_eq!(claim(&mut c, "fan.testnet", id), got_a);
     assert_eq!(claim(&mut c, "scout.testnet", id), 0);
     // Builders get their bonds back: every agent answered.
-    assert_eq!(claim(&mut c, "bc.testnet", id), NEAR / 2);
+    assert_eq!(claim(&mut c, "c.testnet", id), NEAR / 2);
     // Scout skill: the fan gained, the scout lost, in units of liquidity.
     assert!(c.get_scout(acc("fan.testnet")).skill_ppm > 0);
     assert!(c.get_scout(acc("scout.testnet")).skill_ppm < 0);
@@ -341,8 +341,8 @@ fn bond_is_forfeited_without_an_answer() {
     let sig = sign(&keys[0], id, 10, &s);
     ctx("verifier.testnet", 0, LOCK + 15 * 60_000 + 1);
     c.settle(id, 10, s, vec![sig]);
-    assert_eq!(claim(&mut c, "ba.testnet", id), NEAR / 2);
-    assert_eq!(claim(&mut c, "bc.testnet", id), 0);
+    assert_eq!(claim(&mut c, "a.testnet", id), NEAR / 2);
+    assert_eq!(claim(&mut c, "c.testnet", id), 0);
 }
 
 #[test]
@@ -357,8 +357,9 @@ fn settle_waits_for_answers() {
 }
 
 #[test]
-#[should_panic(expected = "this answer was already submitted")]
-fn copied_answer_is_rejected() {
+fn identical_answers_are_both_accepted() {
+    // Two agents can write the same correct code; the hash alone is useless to a copier, who
+    // would still have to hand the verifier code that matches it.
     let (mut c, _) = setup(1);
     let id = round_with_agents(&mut c);
     lock(&mut c, id);
@@ -366,6 +367,56 @@ fn copied_answer_is_rejected() {
     c.submit_answer(id, "sha256:same".into(), None);
     ctx("b.testnet", 0, ANSWER);
     c.submit_answer(id, "sha256:same".into(), None);
+    assert!(c.get_round(id).unwrap().entries.iter().take(2).all(|e| e.answer_hash.as_deref() == Some("sha256:same")));
+}
+
+#[test]
+#[should_panic(expected = "only the agent or its passport issuer can enter it")]
+fn stranger_cannot_enter_an_agent() {
+    // A missed answer costs rating, so a round's manager cannot drag an agent in.
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet");
+    ctx("griefer.testnet", NEAR, 1_000);
+    let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None);
+    ctx("griefer.testnet", 0, 1_100);
+    c.register_agent(id, acc("a.testnet"), League::Open, "cfg".into());
+}
+
+#[test]
+#[should_panic(expected = "entrants and their builders cannot trade this round")]
+fn entrant_cannot_trade_its_round() {
+    let (mut c, _) = setup(1);
+    let id = round_with_agents(&mut c);
+    open(&mut c, id, NEAR);
+    ctx("a.testnet", NEAR / 10, 1_300);
+    c.buy(id, acc("b.testnet"), None);
+}
+
+#[test]
+fn nominee_that_skips_a_tryout_is_not_rated() {
+    // Scouts nominate agents without asking them; one that does not show up loses nothing.
+    let (mut c, keys) = setup(1);
+    let id = scouted(&mut c);
+    ctx("anyone.testnet", 0, 3_000_000 + 600_000);
+    c.start_tryout(id, None);
+    let round = c.get_brief(id).unwrap().tryout_round.unwrap();
+    let start = 3_600_000 + 600_000;
+    ctx("anyone.testnet", 0, start);
+    c.lock_round(round);
+    let entrants: Vec<AccountId> = c.get_round(round).unwrap().entries.iter().map(|e| e.agent.clone()).collect();
+    assert!(entrants.contains(&acc("c.testnet")));
+    for (i, a) in entrants.iter().enumerate().filter(|(_, a)| a.as_str() != "c.testnet") {
+        ctx(a.as_str(), 0, start + 10 + i as u64);
+        c.submit_answer(round, format!("tryout-{a}"), None);
+    }
+    let before = c.get_rating(acc("c.testnet"), SKILL.into());
+    let s: Vec<(AccountId, u32)> = entrants.iter().map(|a| (a.clone(), if a.as_str() == "c.testnet" { 0 } else { 8 })).collect();
+    let deadline = c.get_round(round).unwrap().answer_deadline_ms;
+    ctx("verifier.testnet", 0, deadline + 1);
+    c.settle(round, 10, s.clone(), vec![sign(&keys[0], round, 10, &s)]);
+    let after = c.get_rating(acc("c.testnet"), SKILL.into());
+    assert_eq!((after.rating, after.rounds), (before.rating, before.rounds));
+    assert!(rating(&c, "a.testnet") != 150_000);
 }
 
 #[test]
@@ -383,7 +434,7 @@ fn anyone_cancels_a_round_the_verifier_abandoned() {
     assert_eq!(c.get_round(id).unwrap().status, RoundStatus::Cancelled);
     // The full purchase comes back, fee included, and the bond too.
     assert_eq!(claim(&mut c, "s.testnet", id), NEAR);
-    assert_eq!(claim(&mut c, "ba.testnet", id), NEAR / 2);
+    assert_eq!(claim(&mut c, "a.testnet", id), NEAR / 2);
 }
 
 #[test]
@@ -402,7 +453,7 @@ fn builder_must_post_a_bond() {
     issue(&mut c, "a.testnet");
     ctx("manager.testnet", 0, 1_000);
     let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None);
-    ctx("builder.testnet", NEAR / 10, 1_100);
+    ctx("a.testnet", NEAR / 10, 1_100);
     c.register_agent(id, acc("a.testnet"), League::Open, "cfg".into());
 }
 
@@ -621,7 +672,7 @@ fn unresolved_dispute_expires_into_a_refund() {
     ctx("anyone.testnet", 0, 60_000 + 3 * 24 * 3_600_000);
     c.expire_dispute(id);
     assert_eq!(c.get_round(id).unwrap().status, RoundStatus::Cancelled);
-    assert_eq!(claim(&mut c, "ba.testnet", id), NEAR / 2);
+    assert_eq!(claim(&mut c, "a.testnet", id), NEAR / 2);
 }
 
 #[test]

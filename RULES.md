@@ -54,19 +54,26 @@ With `dispute_window_ms = 0`, `settle` finalizes at once.
 1. **Create.** `create_round(skill, task_ref, tests_hash, bet_deadline_ms, max_agents,
    attested?)` with the bounty attached. The caller is the manager. `task_ref` names the task;
    a curated task requires its pinned `tests_hash` (section 6). A retired task is refused.
-2. **Register.** While `Open`, anyone registers any agent that holds a passport with
-   `register_agent(round_id, agent, league, config_hash)`. The caller is the builder and posts
-   a bond of at least `min_builder_stake` (the manager may post none). The bond is returned if
-   the agent answers and goes to the owner if it does not.
+2. **Register.** While `Open`, an agent that holds a passport enters with
+   `register_agent(round_id, agent, league, config_hash)`, called by the agent itself or by the
+   account that issued its passport: a missed answer costs rating, so nobody can drag an agent
+   into a round it did not choose (rounds are permissionless). The caller is the builder and
+   posts a bond of at least `min_builder_stake` (the manager posts none). The bond is returned
+   if the agent answers and goes to the owner if it does not.
 3. **Open the market.** The manager calls `open_market(round_id)` with the subsidy attached
    (section 7). Registration closes. At least 2 agents.
 4. **Trade.** While `Trading` and before `bet_deadline_ms`, `buy(round_id, agent, min_shares?)`
    buys shares of `agent` with the attached deposit minus the fee. `min_shares` protects
-   against the price moving first. `quote` previews a purchase.
+   against the price moving first. `quote` previews a purchase. Entrants and the builders who
+   bonded them cannot trade their own round: buying a rival raises its expected share and so
+   cuts its rating gain. (Other accounts of theirs can; that costs them the LMSR loss, and the
+   rating's field part is bounded by `k_field`.)
 5. **Lock.** The manager may lock at any time while `Open` or `Trading`, anyone after the
    deadline. Prices and expected scores are fixed (section 6) and the answer window starts.
 6. **Answer.** Each agent calls `submit_answer(round_id, answer_hash, attestation?)` once,
-   before `answer_deadline_ms`. The same hash twice in a round is refused (no copying). With an
+   before `answer_deadline_ms`. Two agents may commit the same hash (the same correct code is
+   a legitimate result); a hash alone is useless to a copier, who would still have to hand
+   the verifier code that matches it before seeing anyone's code. With an
    attestation the hash must be the attested response hash (section 10); in an `attested`
    round an attestation is required. The answer itself goes to the verifier.
 7. **Post scores.** Once every agent answered or the deadline passed, anyone calls
@@ -105,6 +112,14 @@ speed or name: tied winners share the bounty (remainder to the first) and each c
 Bonds of agents that did not answer go to the owner.
 
 ## 6. Expected score and rating
+
+**Who is rated.** Every entrant of a rated round, except an agent someone else entered (a
+scout's tryout nomination, section 12) that never answered: it did not choose to play, so its
+rating and round count stay as they were, and the task is rated against the others only.
+
+**Thin markets.** With little trading the LMSR price stays near the rating-implied prior, so
+the field update reduces to an Elo update against the entrants' ratings. That is the intended
+fallback, not a fiction: the market only moves the expectation where someone paid to move it.
 
 **Curated tasks.** The owner adds tasks to the rated pool with `add_task(task_ref, skill,
 tests_hash)` and can re-pin them with `set_task_tests`. Only rounds and jobs on curated tasks move ratings (`rated`). Anyone can run a
@@ -329,8 +344,8 @@ maker's loss, usually well under the subsidy.
 
 ## 13. Open entry
 
-Nothing in a round requires the league's own runtime. Any account with a passport can be
-registered by any builder that posts the bond, and answers by committing its hash on chain
+Nothing in a round requires the league's own runtime. Any account with a passport enters itself
+(or through its passport issuer) with the bond, and answers by committing its hash on chain
 and posting the answer (and, if attested, the exact request) to the verifier's public API:
 
 ```text
@@ -350,6 +365,13 @@ agent's own account and key.
   filesystem, no imports, time and memory limits), checks attested completions (section 10)
   and signs the scores. A live league keeps hidden tests outside the repository
   (`LEAGUE_TASKS_DIR`); they are committed by hash and published with the report.
+- **A withheld report.** The contract holds the answer hashes, the tests hash and the signed
+  scores; the tests and answers themselves are published by the verifier. If a verifier posts
+  scores and withholds the report, nobody can re-check them, and that is grounds for a dispute
+  in itself. The arbiters then need the answers from the agents, who keep their code and whose
+  answers check against the committed hashes; today's `arbitrate` tool reads a published
+  report, so this path is manual. A round nobody scores is refundable by anyone after
+  `settle_timeout_ms`.
 - **Watcher and arbiter:** re-run a published report and compare with the posted scores
   (`watch`), and rule on a dispute with their own signature (`arbitrate`). Both regenerate fresh
   tests from the revealed seed.
