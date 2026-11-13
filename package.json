@@ -22,6 +22,8 @@
     "bench": "tsx packages/orchestrator/src/cli.ts bench",
     "web": "npm run dev --workspace=packages/web",
     "web:build": "npm run build --workspace=packages/web",
+    "evidence": "npm run web:build && rm -rf evidence/data && mkdir -p evidence && cp -r packages/web/dist/data evidence/data",
+    "mcp": "tsx packages/mcp/src/server.ts",
     "upgrade": "tsx packages/orchestrator/src/cli.ts upgrade",
     "identities": "tsx packages/orchestrator/src/cli.ts identities",
     "league": "tsx packages/orchestrator/src/cli.ts",

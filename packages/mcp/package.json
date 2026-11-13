@@ -1,0 +1,15 @@
+{
+  "name": "@benchmarket/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only MCP server: any AI agent can look up Benchmarket ratings, rounds, tasks and scouts",
+  "bin": { "benchmarket-mcp": "src/server.ts" },
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@benchmarket/shared": "0.1.0"
+  }
+}

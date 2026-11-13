@@ -7,12 +7,29 @@ import { createHash } from "node:crypto";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const DATA = path.join(ROOT, ".data");
+const EVIDENCE = path.join(ROOT, "evidence", "data");
+
+/** Every JSON file under evidence/data, keyed by its path below it (rounds/12.json, ...). */
+function fromEvidence(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const walk = (dir: string, rel = "") => {
+    for (const f of fs.readdirSync(dir)) {
+      const p = path.join(dir, f);
+      if (fs.statSync(p).isDirectory()) walk(p, `${rel}${f}/`);
+      else if (f.endsWith(".json")) out[`${rel}${f}`] = JSON.parse(fs.readFileSync(p, "utf8"));
+    }
+  };
+  walk(EVIDENCE);
+  return out;
+}
 
 /**
  * Off-chain round data the contract does not store: scout reasoning, answer code, per-test
  * results and completion signatures. Served at /data/* in dev and written into the build.
  */
 function offChain(): Record<string, unknown> {
+  // A fresh clone has no .data: fall back to the published evidence snapshot in the repository.
+  if (!fs.existsSync(path.join(DATA, "rounds")) && fs.existsSync(EVIDENCE)) return fromEvidence();
   const out: Record<string, unknown> = {};
   const roster = loadRoster();
   out["roster.json"] = roster;
@@ -147,4 +164,7 @@ export default defineConfig({
   // Wallet modules import Node's `buffer`; resolve it to the npm polyfill.
   resolve: { alias: { buffer: "buffer/" } },
   server: { port: 5180 },
+  // The wallet modules are imported dynamically (src/wallet.tsx), so they land in chunks of
+  // their own that load after the page.
+  build: { chunkSizeWarningLimit: 1200 },
 });

@@ -1,10 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { setupWalletSelector, type WalletSelector } from "@near-wallet-selector/core";
-import { setupModal, type WalletSelectorModal } from "@near-wallet-selector/modal-ui";
-import { setupMyNearWallet } from "@near-wallet-selector/my-near-wallet";
-import { setupHereWallet } from "@near-wallet-selector/here-wallet";
-import { setupIntearWallet } from "@near-wallet-selector/intear-wallet";
-import { actionCreators } from "@near-js/transactions";
+import type { WalletSelector } from "@near-wallet-selector/core";
+import type { WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 import "@near-wallet-selector/modal-ui/styles.css";
 import { LEAGUE } from "./chain";
 
@@ -46,6 +42,14 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     let sub: { unsubscribe: () => void } | null = null;
     (async () => {
       const network = (typeof __NETWORK__ === "string" ? __NETWORK__ : "testnet") as "testnet" | "mainnet";
+      // The wallet code is large; it loads after the page, in its own chunk.
+      const [{ setupWalletSelector }, { setupModal }, { setupMyNearWallet }, { setupHereWallet }, { setupIntearWallet }] = await Promise.all([
+        import("@near-wallet-selector/core"),
+        import("@near-wallet-selector/modal-ui"),
+        import("@near-wallet-selector/my-near-wallet"),
+        import("@near-wallet-selector/here-wallet"),
+        import("@near-wallet-selector/intear-wallet"),
+      ]);
       const s = await setupWalletSelector({
         network,
         modules: [setupMyNearWallet(), setupHereWallet(), setupIntearWallet()],
@@ -68,6 +72,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     async (method: string, args: Record<string, unknown>, deposit = 0n, gasTera = 100) => {
       if (!selector || !account) throw new Error("connect a wallet first");
       const wallet = await selector.wallet();
+      const { actionCreators } = await import("@near-js/transactions");
       return wallet.signAndSendTransaction({
         signerId: account,
         receiverId: LEAGUE,

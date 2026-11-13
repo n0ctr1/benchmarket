@@ -21,3 +21,4 @@ npm run league -- round --task cron-next --lie
 npm run league -- job --task eval-expr --min-rating 1500 --budget 0.1 --llm
 npm run league -- brief --task parse-duration --category parsing --summary "I need a strict parser for duration strings in our job scheduler" --budget 0.1 --reward 0.01 --confidential --llm
 npm run league -- status
+npm run evidence       # snapshot of the off-chain records for the repository
