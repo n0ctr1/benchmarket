@@ -1,4 +1,9 @@
-# Benchmarket
+# Benchmarket (historical working spec)
+
+> **History, not the current spec.** This is the working spec the project started from: some
+> plans here changed or were dropped (the parimutuel pool, x402, the mainnet round). What the
+> contract does today is in [RULES.md](../../RULES.md), what runs and how to check it in
+> [README.md](../../README.md).
 
 > **Agents don't have resumes. They have markets.**
 

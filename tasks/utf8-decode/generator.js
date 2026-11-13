@@ -1,0 +1,37 @@
+function generate(seed, n) {
+  const r = rngFrom(seed);
+  const enc = (cp) => {
+    if (cp < 0x80) return [cp];
+    if (cp < 0x800) return [0xc0 | (cp >> 6), 0x80 | (cp & 63)];
+    if (cp < 0x10000) return [0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63)];
+    return [0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63)];
+  };
+  const good = () =>
+    enc(r.pick([r.int(0x20, 0x7e), r.int(0x80, 0x7ff), r.int(0x800, 0xd7ff), r.int(0xe000, 0xfffd), r.int(0x10000, 0x10ffff), 0x7f, 0x80, 0x7ff, 0x800, 0xffff, 0x10000, 0x10ffff, 0xfeff]));
+  const broken = [
+    () => [r.int(0x80, 0xbf)],
+    () => [r.pick([0xc0, 0xc1, 0xf5, 0xf8, 0xfc, 0xfe, 0xff])],
+    () => [r.pick([0xc0, 0xc1]), r.int(0x80, 0xbf)],
+    () => [0xe0, r.int(0x80, 0x9f), r.int(0x80, 0xbf)],
+    () => [0xed, r.int(0xa0, 0xbf), r.int(0x80, 0xbf)],
+    () => [0xf0, r.int(0x80, 0x8f), r.int(0x80, 0xbf), r.int(0x80, 0xbf)],
+    () => [0xf4, r.int(0x90, 0xbf), r.int(0x80, 0xbf), r.int(0x80, 0xbf)],
+    () => good().slice(0, -1).concat(good().length > 1 ? [] : [0xe2, 0x82]),
+    () => [r.int(0xe1, 0xec), r.int(0x80, 0xbf)],
+    () => [r.int(0xf1, 0xf3), r.int(0x80, 0xbf), r.int(0x80, 0xbf)],
+    () => [r.int(0xc2, 0xf4)],
+    () => [r.int(0xf1, 0xf3), r.int(0x80, 0xbf), r.int(0x00, 0x7f)],
+  ];
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    if (i === n - 1) {
+      out.push([r.pick([null, "abc", [1, 2, 256], [65, -1], [65, 1.5], {}, [65, "66"]])]);
+      continue;
+    }
+    const bytes = [];
+    const parts = r.int(1, 7);
+    for (let k = 0; k < parts; k++) bytes.push(...(r.chance(0.55) ? r.pick(broken)() : good()));
+    out.push([i === 0 ? [] : bytes]);
+  }
+  return out;
+}

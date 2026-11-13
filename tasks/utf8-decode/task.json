@@ -1,0 +1,13 @@
+{
+  "id": "utf8-decode",
+  "skill": "code.js",
+  "function": "decodeUtf8",
+  "title": "Decode UTF-8 with exact error replacement",
+  "statement": "Write a JavaScript function `decodeUtf8(bytes)` that decodes an array of byte values as UTF-8 and returns the decoded Unicode code points as an array of numbers.\n\nWell-formed sequences are exactly those of the Unicode Standard (Table 3-7): one byte 00..7F; two bytes C2..DF followed by 80..BF; three bytes E0 A0..BF 80..BF, E1..EC 80..BF 80..BF, ED 80..9F 80..BF, EE..EF 80..BF 80..BF; four bytes F0 90..BF 80..BF 80..BF, F1..F3 80..BF 80..BF 80..BF, F4 80..8F 80..BF 80..BF. So overlong forms, surrogates (U+D800..U+DFFF) and values above U+10FFFF are ill-formed.\n\nIll-formed input is not an error: replace each maximal subpart of an ill-formed sequence with one U+FFFD (65533), the way the WHATWG Encoding Standard decoder does. The function runs in plain JavaScript: there is no `TextDecoder`, `Buffer` or other host API. A maximal subpart is the longest prefix of a well-formed sequence that the bytes start with, or a single byte if there is no such prefix. Decoding resumes at the first byte that did not fit, which is never consumed by the replacement. For example `[0xE2, 0x82, 0x41]` gives `[65533, 65]`, `[0xF0, 0x80, 0x80]` gives `[65533, 65533, 65533]`, and `[0xED, 0xA0, 0x80]` gives three replacements as well.\n\nA byte order mark (EF BB BF) is an ordinary character: decode it to 65279, do not strip it. An empty array gives an empty array.\n\nReturn `null` when `bytes` is not an array or any element is not an integer from 0 to 255.",
+  "examples": [
+    { "args": [[72, 105]], "expected": [72, 105] },
+    { "args": [[226, 130, 172]], "expected": [8364] },
+    { "args": [[226, 130, 65]], "expected": [65533, 65] },
+    { "args": [[192, 175]], "expected": [65533, 65533] }
+  ]
+}

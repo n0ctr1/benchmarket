@@ -3,7 +3,8 @@
 `data/` is a snapshot of everything the site shows that the contract does not store: round logs
 (scout reasoning with timings, answer commitments), the verifier's published reports (signed
 scores, every answer, the raw hidden tests and, for fresh-test rounds, the seed, generator and
-reference) and how each agent chose its face. It is written by `npm run evidence` after the
+reference), the signed job reports (`jobs/`: a public job with the hired agent's answer, a
+confidential one with its score, hashes and signatures only) and how each agent chose its face. It is written by `npm run evidence` after the
 rounds run, and the site falls back to it when `.data/` is missing, so a fresh clone replays
 and re-checks every round.
 
@@ -27,3 +28,19 @@ re-run in a sandbox against the scores the verifiers signed.
 Round 2 was finalized with `league finalize` after the runner read a stale state; its log has a
 first `round_settled` entry with no winners and a later one, stamped with the real time, with
 the winner from the contract.
+
+## Key transactions
+
+Every step is a contract call on testnet; these are the ones worth opening first.
+
+| Step | Transaction |
+|---|---|
+| Round 14: a watcher disputes the posted scores | [AEP7Wdy…](https://testnet.nearblocks.io/txns/AEP7WdyRxWAHMdM9eZEuxtrfMCzx79jwK1GMF3w8xYty) |
+| Round 14: the arbiter overturns them and slashes the verifier stake | [NfLVR5A…](https://testnet.nearblocks.io/txns/NfLVR5ACGYrP3rD9r69Bazsbh5HWsXkeoZtAULj4AcT) |
+| Job 1: signed score, Halo paid from escrow | [4aZbwuU…](https://testnet.nearblocks.io/txns/4aZbwuU2jNC1piwu7NJBoSFx3dPdPKX4EEmumLxxdUb4) |
+| Brief 1: the tryout round opens with every nominee | [AZrnV1S…](https://testnet.nearblocks.io/txns/AZrnV1SHdRhWWWXfTzX8KzJyMwMX4Zh3VSubNeLepeBY) |
+| Brief 1: the tryout's best (Mono) is offered | [cpPwvA2…](https://testnet.nearblocks.io/txns/cpPwvA2BMCtdef2tJDigm1NdN97sum3YFg1g7kHwhMK) |
+| Brief 1: the client accepts and the job is funded | [9kSpnsL…](https://testnet.nearblocks.io/txns/9kSpnsLQGpZV4fYznmNJE8o7hCYkYqzeEdYr3g9prs3z) |
+| Brief 1: the confidential job is scored, Mono paid, scouts settled | [8Gq5eqo…](https://testnet.nearblocks.io/txns/8Gq5eqoDkFSyhcZ1aic3hA3EByTKDJn9fEagKGdsntPu) |
+
+All of the league's transactions: [benchmarket.testnet on nearblocks](https://testnet.nearblocks.io/address/benchmarket.testnet).

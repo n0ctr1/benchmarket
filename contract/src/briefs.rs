@@ -378,6 +378,7 @@ impl Contract {
         b.status = BriefStatus::Tryout;
         b.tryout_task = Some(task_ref.clone());
         b.tryout_round = Some(round_id);
+        env::storage_write(&tryout_key(round_id), &brief_id.to_le_bytes());
         emit("tryout_started", json!({ "brief_id": brief_id, "round_id": round_id, "task_ref": task_ref, "agents": agents }));
     }
 

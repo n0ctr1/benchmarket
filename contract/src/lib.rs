@@ -495,12 +495,6 @@ pub struct ConfigView {
     pub first_lmsr_round: u64,
     pub next_job_id: u64,
     pub next_brief_id: u64,
-    /// Kept for clients of the V5 view.
-    pub fee_bps: u16,
-    pub min_pool: U128,
-    pub min_builder_stake: U128,
-    pub min_bet: U128,
-    pub k_factor: u32,
 }
 
 #[near(serializers = [json])]
@@ -568,6 +562,12 @@ pub struct Contract {
     scout_records: LookupMap<AccountId, ScoutRecord>,
     categories: IterableMap<String, Category>,
     task_category: LookupMap<String, String>,
+}
+
+/// Raw storage key marking a round as a brief's tryout (kept outside the contract struct, so the
+/// marker needs no state migration).
+pub(crate) fn tryout_key(round_id: u64) -> Vec<u8> {
+    [b"tryout:".as_slice(), &round_id.to_le_bytes()].concat()
 }
 
 pub(crate) fn emit(event: &str, data: near_sdk::serde_json::Value) {
@@ -806,11 +806,6 @@ impl Contract {
             first_lmsr_round: self.first_lmsr_round,
             next_job_id: self.next_job_id,
             next_brief_id: self.next_brief_id,
-            fee_bps: self.params.fee_bps,
-            min_pool: self.params.min_pool,
-            min_builder_stake: self.params.min_builder_stake,
-            min_bet: self.params.min_bet,
-            k_factor: self.params.k_field + self.params.k_task,
         }
     }
 

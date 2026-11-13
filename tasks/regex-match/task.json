@@ -1,0 +1,13 @@
+{
+  "id": "regex-match",
+  "skill": "code.js",
+  "function": "regexMatch",
+  "title": "Match a small regular expression language",
+  "statement": "Write a JavaScript function `regexMatch(pattern, text)` that returns `true` when the whole of `text` matches `pattern`, `false` when it does not, and `null` when `pattern` is not valid in the language below or either argument is not a string. Inputs are ASCII.\n\nThe language:\n- Special characters outside a class are `\\ . [ ( ) | * + ? { }`. Every other character, including `]`, `^`, `$` and `-`, matches itself.\n- `.` matches any one character, newline included.\n- `\\d` matches 0-9, `\\w` matches A-Z, a-z, 0-9 and `_`, `\\s` matches space, tab, \\n, \\r, \\f and \\v. A backslash before any other character matches that character literally: `\\n` matches the letter `n`, `\\.` a dot, `\\\\` a backslash. A pattern that ends in a lone backslash is invalid.\n- `(` ... `)` groups. Groups may be empty, and so may alternatives: `()`, `a|` and `|` are valid and match the empty string. Unbalanced parentheses are invalid. There is no other group syntax, so `(?:a)` is invalid.\n- `|` is alternation with the lowest precedence. The whole pattern must match the whole text.\n- Quantifiers `*`, `+`, `?`, `{m}`, `{m,}` and `{m,n}` apply to the atom just before them. `m` and `n` are decimal digits with values up to 1000 and `n` must not be less than `m`. A quantifier with nothing to repeat (at the start, after `(` or `|`) is invalid, and so is a quantifier directly after another one (`a**`, `a+?`, `a{2}*`). A `{` that does not begin a valid quantifier (`a{`, `a{,2}`, `a{1,x}`) and any `}` outside a quantifier are invalid.\n- `[` ... `]` is a class, `[^` ... `]` a negated class; it matches one character. Inside a class only `\\` and `]` are special: `]` closes it, and `\\` escapes exactly as outside (`\\]` is a literal `]`, `\\d`, `\\w`, `\\s` add their sets). A class must contain at least one item, so `[]` and `[^]` are invalid; an unterminated class is invalid. An item followed by `-` and another single-character item forms a range, which is invalid if its end is below its start (`[z-a]`) or either end is a `\\d`, `\\w` or `\\s` set on the right (`[a-\\d]`). A `-` that does not form a range is literal: `[-a]`, `[a-]`, `[a-c-e]` (a, b, c, `-`, e) and `[\\d-z]` (digits, `-`, z).",
+  "examples": [
+    { "args": ["a(b|c)*d", "abccbd"], "expected": true },
+    { "args": ["[a-c-e]", "d"], "expected": false },
+    { "args": ["\\n", "n"], "expected": true },
+    { "args": ["a**", "aa"], "expected": null }
+  ]
+}

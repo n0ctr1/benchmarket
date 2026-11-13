@@ -13,7 +13,8 @@ impl Contract {
 
     /// Opens a round on `task_ref` (its difficulty record is created on first use). The
     /// attached deposit is the bounty. `attested` rounds accept only answers that carry an
-    /// inference attestation.
+    /// inference attestation. A round on a curated task moves ratings unless `rated` is false
+    /// (the league plays its simulated rounds unrated).
     #[payable]
     pub fn create_round(
         &mut self,
@@ -23,12 +24,14 @@ impl Contract {
         bet_deadline_ms: u64,
         max_agents: u8,
         attested: Option<bool>,
+        rated: Option<bool>,
     ) -> u64 {
         require!(!skill.is_empty() && skill.len() <= 64, "bad skill");
         require!(!tests_hash.is_empty() && tests_hash.len() <= 128, "bad tests hash");
         require!(max_agents >= 2 && max_agents <= MAX_AGENTS, "max_agents must be 2..=16");
         require!(bet_deadline_ms > env::block_timestamp_ms(), "deadline in the past");
-        let (task_rating, rated) = self.use_task(&task_ref, &skill, &tests_hash);
+        let (task_rating, curated) = self.use_task(&task_ref, &skill, &tests_hash);
+        let rated = curated && rated.unwrap_or(true);
         let id = self.next_round_id;
         self.next_round_id += 1;
         let bounty = env::attached_deposit().as_yoctonear();
@@ -303,10 +306,13 @@ impl Contract {
         let now = env::block_timestamp_ms();
         let timeout = self.params.settle_timeout_ms;
         let round = self.round_ref(round_id);
+        // A brief's tryout cannot be called off by its client, who would see it play out and then
+        // walk away refunded: only the settle timeout cancels it.
         let by_manager = caller == round.manager
+            && !env::storage_has_key(&tryout_key(round_id))
             && matches!(round.status, RoundStatus::Open | RoundStatus::Trading | RoundStatus::Locked);
         let stale = round.status == RoundStatus::Locked && now > round.answer_deadline_ms + timeout;
-        require!(by_manager || stale, "only the manager can cancel, or anyone after the settle timeout");
+        require!(by_manager || stale, "only the manager can cancel (never a brief's tryout), or anyone after the settle timeout");
         self.cancel(round_id, "cancelled");
     }
 

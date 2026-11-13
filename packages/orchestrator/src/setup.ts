@@ -131,7 +131,8 @@ export async function configure(chain = new LeagueChain()): Promise<void> {
   const window = config.disputeWindowSeconds * 1000;
   const want = {
     ...cfg.params,
-    min_pool: near("1.5").toString(),
+    // Testnet pools are small: the market reaches full weight at 0.3 NEAR of trading.
+    min_pool: near("0.3").toString(),
     min_builder_stake: config.builderStake.toString(),
     min_bet: near("0.01").toString(),
     answer_window_ms: 15 * 60_000,

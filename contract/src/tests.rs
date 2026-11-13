@@ -97,13 +97,17 @@ const AGENTS: [&str; 3] = ["a.testnet", "b.testnet", "c.testnet"];
 
 /// A round on `task` with agents a, b, c, each entering itself with a 0.5 NEAR bond.
 fn round_on(c: &mut Contract, task: &str, attested: bool) -> u64 {
+    round_rated(c, task, attested, None)
+}
+
+fn round_rated(c: &mut Contract, task: &str, attested: bool, rated: Option<bool>) -> u64 {
     for a in AGENTS {
         if c.get_identity(acc(a)).is_none() {
             issue(c, a);
         }
     }
     ctx("manager.testnet", 3 * NEAR, 1_000);
-    let id = c.create_round(SKILL.into(), task.into(), "sha256:tests".into(), LOCK, 5, Some(attested));
+    let id = c.create_round(SKILL.into(), task.into(), "sha256:tests".into(), LOCK, 5, Some(attested), rated);
     for (agent, builder) in [("a.testnet", "a.testnet"), ("b.testnet", "b.testnet"), ("c.testnet", "c.testnet")] {
         ctx(builder, NEAR / 2, 1_100);
         c.register_agent(id, acc(agent), League::Open, format!("cfg-{agent}"));
@@ -377,7 +381,7 @@ fn stranger_cannot_enter_an_agent() {
     let (mut c, _) = setup(1);
     issue(&mut c, "a.testnet");
     ctx("griefer.testnet", NEAR, 1_000);
-    let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None);
+    let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None, None);
     ctx("griefer.testnet", 0, 1_100);
     c.register_agent(id, acc("a.testnet"), League::Open, "cfg".into());
 }
@@ -452,7 +456,7 @@ fn builder_must_post_a_bond() {
     let (mut c, _) = setup(1);
     issue(&mut c, "a.testnet");
     ctx("manager.testnet", 0, 1_000);
-    let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None);
+    let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None, None);
     ctx("a.testnet", NEAR / 10, 1_100);
     c.register_agent(id, acc("a.testnet"), League::Open, "cfg".into());
 }
@@ -516,7 +520,7 @@ fn uncurated_round_does_not_score_scouts() {
 fn curated_task_pins_its_tests() {
     let (mut c, _) = setup(1);
     ctx("manager.testnet", 0, 1_000);
-    c.create_round(SKILL.into(), TASK.into(), "sha256:other".into(), LOCK, 5, None);
+    c.create_round(SKILL.into(), TASK.into(), "sha256:other".into(), LOCK, 5, None, None);
 }
 
 // ----- verifiers, disputes, stakes -----
@@ -1180,8 +1184,8 @@ fn family_task_runs_on_fresh_tests_each_round() {
     c.add_task("fam".into(), SKILL.into(), "family:sha256:generator".into());
     issue(&mut c, "a.testnet");
     ctx("manager.testnet", 0, 1_000);
-    let r1 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-1".into(), LOCK, 5, None);
-    let r2 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-2".into(), LOCK, 5, None);
+    let r1 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-1".into(), LOCK, 5, None, None);
+    let r2 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-2".into(), LOCK, 5, None, None);
     assert!(c.get_round(r1).unwrap().rated && c.get_round(r2).unwrap().rated);
     assert_ne!(c.get_round(r1).unwrap().tests_hash, c.get_round(r2).unwrap().tests_hash);
 }
@@ -1415,7 +1419,7 @@ fn others_cannot_issue_an_identity() {
 fn registration_needs_an_identity() {
     let (mut c, _) = setup(1);
     ctx("manager.testnet", 0, 1_000);
-    let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5, None);
+    let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5, None, None);
     ctx("builder.testnet", NEAR, 1_100);
     c.register_agent(id, acc("nobody.testnet"), League::Open, "cfg".into());
 }
@@ -1481,4 +1485,50 @@ fn measure(n: u32) {
     let call = env::used_gas().as_gas() - before;
     std::mem::forget(fresh);
     println!("faces {n:>6}: check_face {:.2} Tgas, register_identity {:.2} Tgas (host side)", view as f64 / 1e12, call as f64 / 1e12);
+}
+
+#[test]
+fn unrated_round_on_a_curated_task_moves_no_rating() {
+    let (mut c, keys) = setup(1);
+    let id = round_rated(&mut c, TASK, false, Some(false));
+    assert!(!c.get_round(id).unwrap().rated);
+    lock(&mut c, id);
+    answer_all(&mut c, id);
+    let task_before = c.get_tasks(None, None).into_iter().find(|t| t.task_ref == TASK).unwrap().record.rating;
+    settle_now(&mut c, &keys, id, 10, [10, 3, 0]);
+    for a in AGENTS {
+        assert_eq!(rating(&c, a), 150_000);
+        assert_eq!(c.get_rating(acc(a), SKILL.into()).rounds, 0);
+    }
+    let task_after = c.get_tasks(None, None).into_iter().find(|t| t.task_ref == TASK).unwrap().record.rating;
+    assert_eq!(task_before, task_after);
+}
+
+#[test]
+#[should_panic(expected = "never a brief's tryout")]
+fn client_cannot_cancel_its_tryout() {
+    let (mut c, _) = setup(1);
+    let id = scouted(&mut c);
+    ctx("anyone.testnet", 0, 3_000_000 + 600_000);
+    c.start_tryout(id, None);
+    let round = c.get_brief(id).unwrap().tryout_round.unwrap();
+    ctx(CLIENT, 0, 3_000_000 + 700_000);
+    c.cancel_round(round);
+}
+
+#[test]
+fn stale_tryout_can_still_be_cancelled_and_refunds_the_client() {
+    let (mut c, _) = setup(1);
+    let id = scouted(&mut c);
+    ctx("anyone.testnet", 0, 3_000_000 + 600_000);
+    c.start_tryout(id, None);
+    let round = c.get_brief(id).unwrap().tryout_round.unwrap();
+    let start = 3_600_000 + 600_000;
+    ctx("anyone.testnet", 0, start);
+    c.lock_round(round);
+    let deadline = c.get_round(round).unwrap().answer_deadline_ms;
+    ctx("anyone.testnet", 0, deadline + c.get_config().params.settle_timeout_ms + 1);
+    c.cancel_round(round);
+    c.offer(id);
+    assert_eq!(c.get_brief(id).unwrap().status, BriefStatus::Cancelled);
 }

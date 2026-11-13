@@ -308,7 +308,7 @@ export class LeagueChain {
 
   // ----- calls -----
 
-  createRound(manager: string, p: { skill: string; taskRef: string; testsHash: string; betDeadlineMs: number; maxAgents: number; bounty: bigint; attested?: boolean }) {
+  createRound(manager: string, p: { skill: string; taskRef: string; testsHash: string; betDeadlineMs: number; maxAgents: number; bounty: bigint; attested?: boolean; rated?: boolean }) {
     return this.call<number>(manager, "create_round", {
       skill: p.skill,
       task_ref: p.taskRef,
@@ -316,6 +316,7 @@ export class LeagueChain {
       bet_deadline_ms: p.betDeadlineMs,
       max_agents: p.maxAgents,
       attested: p.attested ?? false,
+      rated: p.rated ?? true,
     }, p.bounty);
   }
 

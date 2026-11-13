@@ -126,6 +126,8 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
       maxAgents: Math.min(16, agents.length + (opts.openSeconds ? 4 : 0)),
       bounty: config.bounty,
       attested,
+      // Only rounds on real, attested answers move ratings; simulated ones are played unrated.
+      rated: attested,
     }),
   );
   if (fresh) verifier.bindTests("round", roundId, fresh);

@@ -109,6 +109,21 @@ function offChain(): Record<string, unknown> {
         }),
       )
     : {};
+  // Job reports: the signed score of each job. A public job also carries the hired agent's answer,
+  // so it can be re-checked like a round; a confidential one only its hashes and signatures (its
+  // answer and keys open the client's task and never leave the verifier).
+  for (const [k, report] of state.reports as Array<[string | number, Record<string, any>]>) {
+    if (typeof k !== "string" || !k.startsWith("job:")) continue;
+    const jobAnswers = (state.answers as Array<[string | number, Array<Record<string, any>>]>).find(([a]) => a === k)?.[1] ?? [];
+    const confidential = jobAnswers.some((a) => a.sealed || a.meta?.confidential);
+    const signed = { kind: report.kind, jobId: Number(k.slice(4)), testsHash: report.testsHash, totalTests: report.totalTests, scores: report.scores, message: report.message, signatures: report.signatures, publicKeys: report.publicKeys };
+    out[`jobs/${k.slice(4)}.json`] = confidential
+      ? { report: signed, confidential: true }
+      : {
+          report: { ...signed, taskId: report.taskId, details: report.details },
+          answers: jobAnswers.map((a) => ({ agent: a.agent, taskId: a.taskId, answer: a.answer, answerHash: a.answerHash, request: a.request, meta: a.meta, receivedAt: a.receivedAt })),
+        };
+  }
   return out;
 }
 

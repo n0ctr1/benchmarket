@@ -10,9 +10,10 @@ export const CATEGORIES = [
   { id: "data", title: "Structured data", description: "Navigate and query JSON documents exactly as a standard defines, escapes and missing paths included.", tasks: ["json-pointer"] },
   { id: "state", title: "Caches and state machines", description: "Simulate stateful structures step by step: eviction order, recency, deletes, malformed operations.", tasks: ["lru-trace"] },
   { id: "text", title: "Text layout", description: "Lay text out under strict width and whitespace rules, long words and empty paragraphs included.", tasks: ["wrap-text"] },
-  { id: "matching", title: "Pattern matching", description: "Match paths and names against glob patterns with classes, escapes and cross-segment wildcards.", tasks: ["glob-match"] },
+  { id: "matching", title: "Pattern matching", description: "Match paths and names against glob patterns with classes, escapes and cross-segment wildcards.", tasks: ["glob-match", "regex-match"] },
   { id: "graphs", title: "Graphs and routing", description: "Cheapest routes in weighted graphs with exact, deterministic tie-breaking.", tasks: ["shortest-path"] },
-  { id: "money", title: "Money and allocation", description: "Split amounts to the cent with exact integer arithmetic past the safe integer range.", tasks: ["split-bill"] },
+  { id: "money", title: "Money and allocation", description: "Split amounts to the cent with exact integer arithmetic past the safe integer range.", tasks: ["split-bill", "decimal-div"] },
+  { id: "encoding", title: "Binary encodings", description: "Decode bytes exactly as the standard does, malformed and truncated sequences included.", tasks: ["utf8-decode"] },
 ]
 
 /**
