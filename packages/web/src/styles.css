@@ -177,64 +177,6 @@ button:disabled {
   color: var(--text);
 }
 
-.sound {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sound-btn {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-}
-
-.sound-btn[aria-pressed="true"] {
-  color: var(--text);
-}
-
-.sound-btn:hover {
-  color: var(--accent);
-}
-
-.sound-range {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 84px;
-  height: 18px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.sound-range::-webkit-slider-runnable-track {
-  height: 3px;
-  background: linear-gradient(to right, var(--accent) var(--fill), var(--line-4) var(--fill));
-}
-
-.sound-range::-moz-range-track {
-  height: 3px;
-  background: linear-gradient(to right, var(--accent) var(--fill), var(--line-4) var(--fill));
-}
-
-.sound-range::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  margin-top: -4.5px;
-  background: var(--text);
-  border: 0;
-}
-
-.sound-range::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: var(--text);
-  border: 0;
-  border-radius: 0;
-}
-
 .dot {
   width: 8px;
   height: 8px;

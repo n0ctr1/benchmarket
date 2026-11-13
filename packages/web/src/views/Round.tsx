@@ -3,7 +3,6 @@ import { near, short, type Round } from "../chain";
 import { lockPrice, pct, roundTitle, scoutFace, type Names } from "../league";
 import type { RoundRecord } from "../offchain";
 import { buildReplay, type Phase, type Replay } from "../replay";
-import { sfx } from "../sound";
 import { Stage, type Scene } from "../stage/Stage";
 
 const PHASES: Array<{ id: Phase; label: string; title: string }> = [
@@ -153,21 +152,6 @@ export function RoundView({
 
   const prevFrame = frames[idx - 1];
   const justAnswered = playing && phase === "solving" && frame && prevFrame ? [...frame.answered].find((a) => !prevFrame.answered.has(a)) : undefined;
-
-  // Sound follows the frames while a replay plays; nothing plays for a static view.
-  useEffect(() => {
-    if (!playing || !frame) return;
-    const before = prevFrame?.phase;
-    if (frame.bet !== undefined) {
-      sfx.launch();
-      sfx.land(700);
-    } else if (frame.phase === "locked" && before !== "locked") sfx.lock();
-    else if (justAnswered) sfx.blip();
-    else if (frame.phase === "scored" && before !== "scored") sfx.tests(totalTests, STEP_MS.scored - 400);
-    else if (frame.phase === "window" && before !== "window") sfx.sweep(1700);
-    else if (frame.phase === "settled" && before !== "settled") sfx.fanfare();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, playing]);
   const scene: Scene = {
     agents: round.entries.map((e, i) => {
       const id = n.identity(e.agent);
@@ -250,7 +234,6 @@ export function RoundView({
 
   const start = () => {
     if (!replay) return;
-    sfx.unlock();
     onPick(null);
     setIdx(0);
     setReveal(0);
