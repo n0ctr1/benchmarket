@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { setupWalletSelector, type WalletSelector } from "@near-wallet-selector/core";
 import { setupModal, type WalletSelectorModal } from "@near-wallet-selector/modal-ui";
 import { setupMyNearWallet } from "@near-wallet-selector/my-near-wallet";
-import { setupMeteorWallet } from "@near-wallet-selector/meteor-wallet";
 import { setupHereWallet } from "@near-wallet-selector/here-wallet";
 import { setupIntearWallet } from "@near-wallet-selector/intear-wallet";
 import { actionCreators } from "@near-js/transactions";
@@ -49,7 +48,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const network = (typeof __NETWORK__ === "string" ? __NETWORK__ : "testnet") as "testnet" | "mainnet";
       const s = await setupWalletSelector({
         network,
-        modules: [setupMyNearWallet(), setupMeteorWallet(), setupHereWallet(), setupIntearWallet()],
+        modules: [setupMyNearWallet(), setupHereWallet(), setupIntearWallet()],
       });
       if (!live) return;
       const m = setupModal(s, { contractId: LEAGUE });

@@ -144,5 +144,7 @@ export default defineConfig({
     __NETWORK__: JSON.stringify(ENV.NEAR_NETWORK ?? "testnet"),
     __VERIFIER__: JSON.stringify(ENV.PUBLIC_VERIFIER_URL ?? "http://localhost:8787"),
   },
+  // Wallet modules import Node's `buffer`; resolve it to the npm polyfill.
+  resolve: { alias: { buffer: "buffer/" } },
   server: { port: 5180 },
 });

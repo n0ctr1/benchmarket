@@ -3739,3 +3739,54 @@ button.banner:hover .banner-more {
   word-break: break-all;
   overflow-wrap: anywhere;
 }
+
+/* ---------- narrow screens: no horizontal scroll anywhere ---------- */
+
+.page-scroll {
+  overflow-x: hidden;
+}
+
+.lb-tools .lb-search {
+  width: auto;
+}
+
+.lb-tools .lb-select {
+  width: auto;
+  flex: none;
+}
+
+@media (max-width: 700px) {
+  .segmented {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .segmented button {
+    flex: 1 1 auto;
+  }
+  .dock-actions {
+    flex-wrap: wrap;
+  }
+  .player {
+    flex-wrap: wrap;
+    height: auto;
+  }
+  .player button {
+    height: 34px;
+  }
+  .lb-tools .lb-select {
+    width: 100%;
+  }
+  .act-row {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-name {
+    display: none;
+  }
+  .wallet-btn {
+    padding: 0 8px;
+    font-size: 10.5px;
+  }
+}
