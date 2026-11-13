@@ -29,6 +29,15 @@
   box-sizing: border-box;
 }
 
+/* Lists, tables and the drawer still scroll by wheel, touch and keys; the native bars are hidden. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 html,
 body,
 #root {
