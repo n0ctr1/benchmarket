@@ -5,7 +5,7 @@ import { recheck, signScores, type Verifier } from "@benchmarket/verifier";
 import { DOMAINS } from "@benchmarket/shared";
 import type { LeagueChain, RoundView } from "./chain.js";
 import { config, DATA_DIR, formatNear } from "./config.js";
-import { attestationArg, type CompletionSignature } from "./nearai.js";
+import { attestationArg, chat, type CompletionSignature } from "./nearai.js";
 import { agentAccount, configHash, publicConfig, ROSTER, type AgentConfig } from "./roster.js";
 import { SCRIPTED_SCOUTS, type Scout } from "./scouts.js";
 import { simAnswer } from "./sim.js";
@@ -95,6 +95,21 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   const task = loadTask(taskId);
   const marketSeconds = opts.marketSeconds ?? 120;
   const attested = !!solver.attests;
+
+  // A cloud outage must not pass for agents failing the task: before a real-model round opens,
+  // every model in the field answers a ping, or the round is not created at all.
+  if (attested && !existing) {
+    const models = [...new Set(agents.map((a) => a.model))];
+    const down: string[] = [];
+    await Promise.all(
+      models.map((m) =>
+        chat(m, [{ role: "user", content: "Reply with OK." }], { maxTokens: 400, timeoutMs: 90_000 }).catch((e) => {
+          if (!(e instanceof Error && /empty completion/.test(e.message))) down.push(`${m}: ${e instanceof Error ? e.message.slice(0, 80) : e}`);
+        }),
+      ),
+    );
+    if (down.length) throw new Error(`NEAR AI models unavailable, no round opened:\n  ${down.join("\n  ")}`);
+  }
 
   // Every agent needs a passport before it can enter (npm run identities).
   for (const a of agents) {

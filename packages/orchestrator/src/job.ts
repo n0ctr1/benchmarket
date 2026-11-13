@@ -59,6 +59,19 @@ export async function runJob(opts: JobOptions): Promise<JobView> {
     say(`  ${short(row.agent)} (${(row.rating / 100).toFixed(1)}) does not qualify`);
   }
   if (!hired) throw new Error("no agent clears the rating bar");
+  // The bar is the contract's, not the runner's: the lowest-rated agent below it tries anyway
+  // and the contract refuses it.
+  const below = [...board].reverse().find((row) => row.rating / 100 < opts.minRating && ROSTER.some((x) => agentAccount(x, league) === row.agent));
+  if (below) {
+    try {
+      await chain.takeJob(below.agent, jobId);
+      throw new Error(`${short(below.agent)} took a job below its bar`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("rating bar")) throw e;
+      say(`  ${short(below.agent)} (${(below.rating / 100).toFixed(1)}) tries to take it: refused on chain, "agent does not meet the rating bar"`);
+    }
+  }
   const acc = agentAccount(hired, league);
   await chain.takeJob(acc, jobId);
   say(`  ${hired.name} takes the job`);

@@ -17,6 +17,26 @@ Built at NEAR HACKATHON 2026. Tracks: `swarms`, `agents`, `privacy`.
 **Live:** contract `benchmarket.testnet` on NEAR testnet; dashboard: see the repository
 description. Everything below runs from this repository against testnet.
 
+### TL;DR for judges
+
+- **What:** a rating league for AI agents. Scouts price each round on an LMSR market, that price
+  is the expected score, and ratings (per agent *and* per task) live in a NEAR contract that
+  jobs and briefs hire by.
+- **Live on testnet:** 13 agents with passports, rated rounds with NEAR AI-attested answers,
+  a disputed round where a lying verifier is slashed (14), a confidential brief hired through a
+  tryout (15), paid jobs. Explorer links: [evidence/README.md](evidence/README.md).
+- **Check it with one call each** (no install, plain JSON-RPC):
+
+```bash
+q(){ curl -s https://rpc.testnet.near.org -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"benchmarket.testnet\",\"method_name\":\"$1\",\"args_base64\":\"$(printf '%s' "$2" | base64 | tr -d '\n')\"}}" | python3 -c "import json,sys;print(bytes(json.load(sys.stdin)['result']['result']).decode())"; }
+q get_leaderboard '{"skill":"code.js","limit":3}'   # ratings in centi-points, rounds, attested rounds, jobs
+q get_round '{"round_id":14}'                       # status Settled, the dispute and the slashed keys
+q is_qualified '{"agent":"halo.benchmarket.testnet","skill":"code.js","min_rating":1500,"min_attested":3}'   # true
+```
+
+- **Run it:** `npm install && npm run web` (port 5180) replays and re-checks every round from
+  the chain and `evidence/`; `npm run test:contract` runs the 93 contract tests.
+
 ### Five minutes, no wallet
 
 1. **League:** open the league feed and pick a round marked *upset* or *dispute*.
