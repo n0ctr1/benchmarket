@@ -99,7 +99,7 @@ export function LeagueView({
             const w = st.winner;
             const id = w ? n.identity(w) : undefined;
             return (
-              <button key={r.id} role="listitem" className="feed-row" data-dim={!w && !st.tags.includes("live")} onClick={() => onOpen(r.id)}>
+              <button key={r.id} role="listitem" className="feed-row" data-round={r.id} data-dim={!w && !st.tags.includes("live")} onClick={() => onOpen(r.id)}>
                 <span className="feed-id mono">R{r.id}</span>
                 <span className="feed-main">
                   <span className="feed-title">{roundTitle(r, records[r.id])}</span>

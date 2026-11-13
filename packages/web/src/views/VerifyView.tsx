@@ -65,7 +65,7 @@ export function VerifyView({ round, recheck, verifiable, onBack }: { round: Roun
               Run in this browser from the contract and the verifier's published report. Answers re-run in a worker with no network. Nothing here asks to be trusted.
             </p>
           </div>
-          <span className="verify-count" data-state={recheck.state} data-failed={failed > 0}>
+          <span className="verify-count" data-tour="verify-count" data-state={recheck.state} data-failed={failed > 0}>
             {recheck.state === "done" ? `${total - failed} / ${total} passed` : recheck.state === "running" || recheck.state === "loading" ? `${total} checked…` : ""}
           </span>
         </div>

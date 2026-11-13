@@ -293,7 +293,7 @@ export function RoundView({
 
   return (
     <div className="round">
-      <div className="round-head">
+      <div className="round-head" data-tour="round-head">
         <div className="round-head-main">
           <div className="crumbs">
             <button className="back-link" onClick={onLeague}>
@@ -333,7 +333,7 @@ export function RoundView({
         </div>
       </div>
 
-      <div className="stage frame">
+      <div className="stage frame" data-tour="stage">
         <ol className="phases" aria-label="Round phases">
           {PHASES.map((p, i) => (
             <li key={p.id} className="phase" data-on={i < phaseIdx ? "done" : i === phaseIdx ? "now" : "todo"}>
@@ -356,11 +356,11 @@ export function RoundView({
       <div className="dock" data-final={settled && round.winners.length > 0}>
         <div className="dock-actions">
           {playing ? (
-            <button className="btn btn-accent" onClick={() => clock.setPaused(!paused)} aria-label={paused ? "Resume" : "Pause"}>
+            <button className="btn btn-accent" data-tour="replay" onClick={() => clock.setPaused(!paused)} aria-label={paused ? "Resume" : "Pause"}>
               <span aria-hidden="true">{paused ? "▶" : "❚❚"}</span> {paused ? "Resume" : "Pause"}
             </button>
           ) : (
-            <button className="btn btn-accent" onClick={start} disabled={!replay || cancelled}>
+            <button className="btn btn-accent" data-tour="replay" onClick={start} disabled={!replay || cancelled}>
               <span aria-hidden="true">▶</span> Replay
             </button>
           )}
@@ -381,12 +381,12 @@ export function RoundView({
             </span>
           </span>
           {verifiable && (
-            <button className="btn btn-line" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
+            <button className="btn btn-line" data-tour="recheck" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
               <span aria-hidden="true">✓</span> Re-check
             </button>
           )}
         </div>
-        <button className="banner" aria-live="polite" onClick={() => setShowLog(true)} title="Open the full timeline of this round">
+        <button className="banner" data-tour="banner" aria-live="polite" onClick={() => setShowLog(true)} title="Open the full timeline of this round">
           <span className="banner-title">{title}</span>
           <span className="banner-text">{text}</span>
           <span className="banner-more">Timeline →</span>

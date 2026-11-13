@@ -239,7 +239,7 @@ export function LeaderboardView({
                 ["tasks", "Tasks"],
               ] as Array<[Board, string]>
             ).map(([id, label]) => (
-              <button key={id} aria-pressed={board === id} onClick={() => switchBoard(id)}>
+              <button key={id} data-tour={`board-${id}`} aria-pressed={board === id} onClick={() => switchBoard(id)}>
                 {label}
               </button>
             ))}

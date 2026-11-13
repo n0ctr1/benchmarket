@@ -3,6 +3,7 @@ import { blockHeight, EXPLORER, getBettors, getBriefs, getIdentities, getJobs, g
 import { Drawer } from "./Drawer";
 import { LogoMark } from "./Logo";
 import { Ticker } from "./Ticker";
+import { ModePicker, saveMode, savedMode, saveStep, savedStep, STEPS, Tour, type Mode, type TourStep } from "./Tour";
 import { names } from "./league";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Side } from "./Side";
@@ -76,6 +77,16 @@ export function App() {
   const [details, setDetails] = useState(false);
   const [autoplay, setAutoplay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Visitor or judge: asked on the first visit, switchable from the header.
+  const [mode, setMode] = useState<Mode | null>(savedMode);
+  const [picker, setPicker] = useState(() => savedMode() === null);
+  const [step, setStep] = useState(savedStep);
+  const [touring, setTouring] = useState(() => savedMode() === "judge");
+  const toStep = (k: number) => {
+    const n = Math.max(0, Math.min(STEPS.length - 1, k));
+    setStep(n);
+    saveStep(n);
+  };
 
   useEffect(() => {
     loadRoster().then((r) => setRoster(r ?? []));
@@ -157,6 +168,16 @@ export function App() {
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [details]);
+  const tourGo = (st: TourStep) => go(st.view, st.round ?? current?.id ?? null, st.account ?? route.account);
+  const pickMode = (m: Mode, from?: number) => {
+    setMode(m);
+    saveMode(m);
+    setPicker(false);
+    if (m === "judge") {
+      toStep(from ?? 0);
+      setTouring(true);
+    } else setTouring(false);
+  };
   const rec = current ? records[current.id] ?? null : null;
   const entry = current && picked ? current.entries.find((e) => e.agent === picked) : undefined;
 
@@ -185,6 +206,15 @@ export function App() {
             <span className="top-k">testnet</span>
             <span className="top-height">{height ? `#${height.toLocaleString("en-US")}` : "…"}</span>
           </span>
+          <button className="top-mode" onClick={() => setPicker(true)} title="Switch between exploring and the judges' guided demo">
+            <span className="top-k">as</span>
+            {mode === "judge" ? "Judge" : "Visitor"}
+          </button>
+          {mode === "judge" && !touring && (
+            <button className="top-mode top-resume" onClick={() => setTouring(true)} title="Resume the guided demo">
+              ▶ Tour {step + 1}/{STEPS.length}
+            </button>
+          )}
           <WalletButton />
           {route.view !== "leaderboard" && (
             <button className="top-board" aria-pressed={panel} onClick={() => (panel ? (setPanel(false), setPicked(null)) : setPanel(true))} aria-label="Toggle the standings panel">
@@ -287,6 +317,9 @@ export function App() {
           onRound={(id) => go("round", id)}
           onProfile={(p) => (p ? openProfile(p) : (setProfile(null), setPanel(false)))}
         />
+
+      {touring && mode === "judge" && !picker && <Tour step={step} onStep={toStep} onGo={tourGo} onExit={() => setTouring(false)} />}
+      {picker && <ModePicker mode={mode} step={step} onPick={pickMode} onClose={mode ? () => setPicker(false) : undefined} />}
 
       {details && current && entry && (
         <Drawer

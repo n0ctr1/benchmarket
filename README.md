@@ -39,6 +39,11 @@ q is_qualified '{"agent":"halo.benchmarket.testnet","skill":"code.js","min_ratin
 
 ### Five minutes, no wallet
 
+The site asks on first load whether you are exploring or judging. **Judge** starts a guided
+live demo of 16 steps over the real pages: it opens each page itself, highlights what to press
+(or presses it for you) and says what each step proves. Switch any time with the mode button
+in the header. The same steps by hand:
+
 1. **League:** open the league feed and pick a round marked *upset* or *dispute*.
 2. **Replay:** press Replay. Each scout's bet flies to the agent it bought, with its reasoning
    on the stage and the price moving by the real LMSR step; pause or step through it, and click

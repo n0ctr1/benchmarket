@@ -251,6 +251,7 @@ mark {
 .top-link {
   color: var(--ink-2);
   min-width: 0;
+  flex-shrink: 0.5;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -3899,3 +3900,266 @@ button.banner:hover .banner-more {
 .llms .tools dt { font-family: var(--mono); color: var(--acid); font-size: 13px; }
 .llms .tools dd { margin: 0; color: var(--mute); font-size: 14px; }
 @media (max-width: 640px) { .llms .tools > div { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ----- mode choice and the judges' tour ----- */
+
+.top-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  flex: none;
+  border-left: 1px solid var(--line-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.top-mode:hover {
+  background: var(--bg-2);
+  color: var(--acid);
+}
+
+.top-resume {
+  color: var(--on-acid);
+  background: var(--acid);
+}
+
+.top-resume:hover {
+  background: var(--acid);
+  color: var(--on-acid);
+  filter: brightness(1.08);
+}
+
+.mode-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(5, 5, 5, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.mode-card {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 28px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-top: 3px solid var(--acid);
+}
+
+.mode-card h2 {
+  margin: 10px 0 20px;
+  font-family: var(--display);
+  font-size: clamp(24px, 4vw, 34px);
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+
+.mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.mode-option:hover,
+.mode-option:focus-visible {
+  border-color: var(--acid);
+}
+
+.mode-option[data-on="true"] {
+  border-color: var(--ink-2);
+}
+
+.mode-option:last-child {
+  border-color: var(--acid);
+}
+
+.mode-option-title {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.mode-option:last-child .mode-option-title {
+  color: var(--acid);
+}
+
+.mode-option-text {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.mode-resume {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.mode-note {
+  margin: 16px 0 0;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.tour-spot {
+  position: fixed;
+  z-index: 150;
+  pointer-events: none;
+  border: 2px solid var(--acid);
+  box-shadow: 0 0 0 9999px rgba(5, 5, 5, 0.62), 0 0 24px rgba(212, 255, 0, 0.35);
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease;
+  animation: tour-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes tour-pulse {
+  50% {
+    box-shadow: 0 0 0 9999px rgba(5, 5, 5, 0.62), 0 0 40px rgba(212, 255, 0, 0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot {
+    animation: none;
+    transition: none;
+  }
+}
+
+.tour-card {
+  position: fixed;
+  z-index: 160;
+  padding: 16px 18px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  border-left: 3px solid var(--acid);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  transition: top 0.25s ease, left 0.25s ease;
+}
+
+.tour-card[data-narrow="true"] {
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.tour-card[data-up="true"] {
+  bottom: auto;
+  top: calc(var(--top-h) + 12px);
+}
+
+.tour-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tour-n {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--acid);
+}
+
+.tour-x {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--mute);
+  padding: 2px 6px;
+}
+
+.tour-x:hover {
+  color: var(--ink);
+}
+
+.tour-bar {
+  height: 2px;
+  margin: 10px 0 12px;
+  background: var(--line);
+}
+
+.tour-bar i {
+  display: block;
+  height: 100%;
+  background: var(--acid);
+  transition: width 0.25s ease;
+}
+
+.tour-title {
+  margin: 0 0 8px;
+  font-family: var(--display);
+  font-size: 19px;
+  line-height: 1.15;
+}
+
+.tour-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.tour-code {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.tour-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .mode-options {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-card {
+    padding: 20px;
+  }
+
+  .tour-body {
+    max-height: 32vh;
+    overflow: auto;
+  }
+}
+
+@media (max-width: 1560px) {
+  .top-link .top-k,
+  .top-net .top-k,
+  .top-mode .top-k {
+    display: none;
+  }
+
+  .top-link,
+  .top-net,
+  .top-board,
+  .top-mode {
+    padding: 0 10px;
+  }
+
+  .top-board-label {
+    display: none;
+  }
+}
