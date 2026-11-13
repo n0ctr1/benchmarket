@@ -4,31 +4,46 @@ import { Drawer } from "./Drawer";
 import { names } from "./league";
 import { loadIdentityNotes, loadRecord, loadRoster, type IdentityNotes, type RosterAgent, type RoundRecord } from "./offchain";
 import { Side } from "./Side";
+import { AccountView, type AccountTab } from "./views/Account";
+import { HomeView } from "./views/Home";
 import { LeagueView } from "./views/League";
-import { BriefsView, StandingsView } from "./views/Pages";
+import { LeaderboardView } from "./views/Pages";
 import { RoundView } from "./views/Round";
-import { recheckSummary, useRecheck, VerifyView } from "./views/VerifyView";
+import { useRecheck, VerifyView } from "./views/VerifyView";
 
 // Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
 const POLL_MS = 15000;
 
-type View = "league" | "round" | "standings" | "briefs" | "verify";
+type View = "home" | "league" | "round" | "verify" | "leaderboard" | "account";
+// A round, and its re-check, open from the League feed; they have no tab of their own.
 const TABS: Array<[View, string]> = [
+  ["home", "Home"],
   ["league", "League"],
-  ["round", "Round"],
-  ["standings", "Standings"],
-  ["briefs", "Briefs"],
-  ["verify", "Verify"],
+  ["leaderboard", "Leaderboard"],
+  ["account", "Account"],
 ];
+const ACCOUNT_TABS: AccountTab[] = ["brief", "agent", "activity"];
 
-/** #/round/12, #/verify/12, #/standings ... and the old #round=12. */
-function parseHash(): { view: View; round: number | null } {
+interface Route {
+  view: View;
+  round: number | null;
+  account: AccountTab;
+}
+
+/** #/round/12, #/verify/12, #/account/agent ... and the old #round=12. */
+function parseHash(): Route {
   const h = location.hash;
   const old = /round=(\d+)/.exec(h);
-  if (old) return { view: "round", round: Number(old[1]) };
-  const m = /^#\/(league|round|standings|briefs|verify)(?:\/(\d+))?/.exec(h);
-  if (!m) return { view: "league", round: null };
-  return { view: m[1] as View, round: m[2] ? Number(m[2]) : null };
+  if (old) return { view: "round", round: Number(old[1]), account: "brief" };
+  const m = /^#\/(home|league|round|verify|leaderboard|account)(?:\/(\w+))?/.exec(h);
+  if (!m) return { view: "home", round: null, account: "brief" };
+  const view = m[1] as View;
+  const tail = m[2] ?? "";
+  return {
+    view,
+    round: /^\d+$/.test(tail) ? Number(tail) : null,
+    account: ACCOUNT_TABS.includes(tail as AccountTab) ? (tail as AccountTab) : "brief",
+  };
 }
 
 export function App() {
@@ -46,13 +61,18 @@ export function App() {
   const [notes, setNotes] = useState<Record<string, IdentityNotes>>({});
   const [route, setRoute] = useState(parseHash);
   const [picked, setPicked] = useState<string | null>(null);
+  const [panel, setPanel] = useState(false);
   const [details, setDetails] = useState(false);
   const [autoplay, setAutoplay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadRoster().then((r) => setRoster(r ?? []));
-    const onHash = () => setRoute(parseHash());
+    const onHash = () => {
+      setRoute(parseHash());
+      setPanel(false);
+      setPicked(null);
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -106,16 +126,24 @@ export function App() {
   const current = rounds.find((r) => r.id === route.round) ?? showable.find((r) => r.status !== "Settled") ?? showable[0] ?? rounds[0] ?? null;
   const verifiable = !!current && (current.status === "Settled" || current.status === "Proposed" || current.status === "Disputed");
   const recheck = useRecheck(current, route.view === "verify" && verifiable);
-  const sum = recheckSummary(recheck);
-  const recheckLabel = recheck.state === "done" ? `${sum.passed}/${sum.total}` : "→";
 
-  const go = (view: View, round: number | null = current?.id ?? null) => {
+  const go = (view: View, round: number | null = current?.id ?? null, account: AccountTab = route.account) => {
     setPicked(null);
     setDetails(false);
-    const hash = view === "round" || view === "verify" ? `#/${view}/${round}` : `#/${view}`;
+    setPanel(false);
+    const hash = view === "round" || view === "verify" ? `#/${view}/${round}` : view === "account" ? `#/account/${account}` : `#/${view}`;
     if (location.hash !== hash) history.pushState(null, "", hash);
-    setRoute({ view, round: view === "round" || view === "verify" ? round : route.round });
+    setRoute({ view, round: view === "round" || view === "verify" ? round : route.round, account });
   };
+  const pick = (agent: string | null) => {
+    setPicked(agent);
+    if (agent) setPanel(true);
+  };
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && !details && (setPanel(false), setPicked(null));
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [details]);
   const rec = current ? records[current.id] ?? null : null;
   const entry = current && picked ? current.entries.find((e) => e.agent === picked) : undefined;
 
@@ -130,7 +158,7 @@ export function App() {
         </button>
         <nav className="tabs" aria-label="Views">
           {TABS.map(([id, label]) => (
-            <button key={id} aria-pressed={route.view === id} onClick={() => go(id)}>
+            <button key={id} aria-pressed={route.view === id || (id === "league" && (route.view === "round" || route.view === "verify"))} onClick={() => go(id)}>
               {label}
             </button>
           ))}
@@ -152,6 +180,19 @@ export function App() {
               Could not reach the NEAR RPC: {error}
             </p>
           )}
+          {route.view === "home" && (
+            <HomeView
+              rounds={rounds}
+              n={n}
+              onReplay={(id) => {
+                go("round", id);
+                setAutoplay(id);
+              }}
+              onLeague={() => go("league")}
+              onPost={() => go("account", null, "brief")}
+              onEnter={() => go("account", null, "agent")}
+            />
+          )}
           {route.view === "league" && (
             <LeagueView
               rounds={rounds}
@@ -162,7 +203,7 @@ export function App() {
                 go("round", id);
                 setAutoplay(id);
               }}
-              onBriefs={() => go("briefs")}
+              onBriefs={() => go("account", null, "agent")}
             />
           )}
           {route.view === "round" &&
@@ -174,17 +215,18 @@ export function App() {
                 rec={rec}
                 n={n}
                 picked={picked}
-                onPick={setPicked}
+                onPick={pick}
                 onSelect={(id) => go("round", id)}
                 onLeague={() => go("league")}
+                onVerify={() => go("verify", current.id)}
                 autoplay={autoplay === current.id}
                 onStarted={() => setAutoplay(null)}
               />
             ) : (
               <div className="empty">Loading rounds from the contract…</div>
             ))}
-          {route.view === "standings" && (
-            <StandingsView
+          {route.view === "leaderboard" && (
+            <LeaderboardView
               ratings={ratings}
               rounds={rounds}
               roster={roster}
@@ -195,12 +237,21 @@ export function App() {
               tasks={tasks}
             />
           )}
-          {route.view === "briefs" && <BriefsView briefs={briefs} jobs={jobs} identities={identities} onRound={(id) => go("round", id)} />}
-          {route.view === "verify" && <VerifyView round={current} recheck={recheck} verifiable={verifiable} />}
+          {route.view === "account" && (
+            <AccountView tab={route.account} onTab={(t) => go("account", null, t)} briefs={briefs} jobs={jobs} identities={identities} onRound={(id) => go("round", id)} />
+          )}
+          {route.view === "verify" && <VerifyView round={current} recheck={recheck} verifiable={verifiable} onBack={() => go("round", current?.id ?? null)} />}
         </main>
+      </div>
 
+      {route.view !== "leaderboard" && !panel && (
+        <button className="side-handle" onClick={() => setPanel(true)} aria-label="Open the leaderboard">
+          Leaderboard
+        </button>
+      )}
+      {panel && <div className="side-scrim" onClick={() => (setPanel(false), setPicked(null))} />}
         <Side
-          view={route.view}
+          open={panel}
           ratings={ratings}
           bettors={bettors}
           n={n}
@@ -208,13 +259,10 @@ export function App() {
           rec={rec}
           picked={route.view === "round" ? picked : null}
           notes={notes}
-          recheckLabel={recheckLabel}
-          onClose={() => setPicked(null)}
+          onClose={() => (picked ? setPicked(null) : setPanel(false))}
           onDetails={() => setDetails(true)}
-          onBriefs={() => go("briefs")}
-          onVerify={() => go("verify")}
+          onPost={() => go("account", null, "brief")}
         />
-      </div>
 
       {details && current && entry && (
         <Drawer

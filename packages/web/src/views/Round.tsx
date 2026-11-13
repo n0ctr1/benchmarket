@@ -28,6 +28,7 @@ export function RoundView({
   onPick,
   onSelect,
   onLeague,
+  onVerify,
   autoplay,
   onStarted,
 }: {
@@ -39,6 +40,7 @@ export function RoundView({
   onPick: (agent: string | null) => void;
   onSelect: (id: number) => void;
   onLeague: () => void;
+  onVerify: () => void;
   autoplay: boolean;
   onStarted: () => void;
 }) {
@@ -122,6 +124,7 @@ export function RoundView({
   const settled = phase === "settled";
   const scored = phase === "scored" || phase === "window" || settled;
   const cancelled = round.status === "Cancelled";
+  const verifiable = round.status === "Settled" || round.status === "Proposed" || round.status === "Disputed";
 
   // Odds just before each bet, so a scout's line can say what it paid.
   const paid = useMemo(() => {
@@ -244,26 +247,33 @@ export function RoundView({
     <>
       <div className="round-head">
         <div className="round-head-main">
-          <div className="kicker">
-            <button className="kicker-link" onClick={onLeague}>
+          <div className="round-top">
+            <button className="back-link" onClick={onLeague}>
               ← League
             </button>
-            <span>·</span>
-            <span className="accent">Round {round.id}</span>
-            <span>·</span>
-            <span>{round.skill}</span>
-            {round.market === "lmsr" && <span>· {round.rated ? "rated" : "unrated"}</span>}
-            {round.attested && <span>· attested</span>}
             <span className="round-nav">
               <button onClick={() => prev && onSelect(prev.id)} disabled={!prev} aria-label="Previous round">
-                ‹
+                ‹ R{prev?.id ?? ""}
               </button>
               <button onClick={() => next && onSelect(next.id)} disabled={!next} aria-label="Next round">
-                ›
+                R{next?.id ?? ""} ›
               </button>
             </span>
           </div>
           <h1 className="round-title">{roundTitle(round, rec)}</h1>
+          <div className="chips" aria-label="Round details">
+            <span className="chip chip-accent">Round {round.id}</span>
+            <span className="chip" data-s={round.status}>
+              {round.status}
+            </span>
+            <span className="chip">{round.skill}</span>
+            <span className="chip">{round.task_ref}</span>
+            {round.market === "lmsr" ? <span className="chip">{round.rated ? "rated" : "unrated"}</span> : <span className="chip">rated</span>}
+            <span className="chip">{round.market === "lmsr" ? "LMSR market" : "pool market"}</span>
+            {round.attested && <span className="chip chip-info">attested answers</span>}
+            {round.entries.some((e) => !n.roster(e.agent)) && <span className="chip chip-accent-line">open entry</span>}
+            <span className="chip">{round.entries.length} agents</span>
+          </div>
         </div>
         <div className="round-stats">
           <Stat k="Bounty" v={near(round.bounty)} />
@@ -277,6 +287,11 @@ export function RoundView({
         <button className="btn btn-accent" onClick={start} disabled={!replay || playing || cancelled}>
           {playing ? "Playing" : "▶ Replay"}
         </button>
+        {verifiable && (
+          <button className="btn btn-line" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
+            ✓ Re-check
+          </button>
+        )}
         <div className="phases">
           {PHASES.map((p, i) => (
             <div key={p.id} className="phase" data-on={i < phaseIdx ? "done" : i === phaseIdx ? "now" : "todo"}>

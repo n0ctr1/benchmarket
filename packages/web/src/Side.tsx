@@ -5,7 +5,7 @@ import type { IdentityNotes, RoundRecord } from "./offchain";
 
 /** The right column: the leaderboard, or the passport of the agent picked on the stage. */
 export function Side({
-  view,
+  open,
   ratings,
   bettors,
   n,
@@ -13,13 +13,11 @@ export function Side({
   rec,
   picked,
   notes,
-  recheckLabel,
   onClose,
   onDetails,
-  onBriefs,
-  onVerify,
+  onPost,
 }: {
-  view: string;
+  open: boolean;
   ratings: Rating[];
   bettors: Bettor[];
   n: Names;
@@ -27,11 +25,9 @@ export function Side({
   rec: RoundRecord | null;
   picked: string | null;
   notes: Record<string, IdentityNotes>;
-  recheckLabel: string;
   onClose: () => void;
   onDetails: () => void;
-  onBriefs: () => void;
-  onVerify: () => void;
+  onPost: () => void;
 }) {
   const board = [...ratings].sort((a, b) => b.rating - a.rating);
   const entry = round && picked ? round.entries.find((e) => e.agent === picked) : undefined;
@@ -43,7 +39,7 @@ export function Side({
     const calls = (rec?.events ?? []).filter((e) => e.kind === "scout_bet" && e.data.agent === entry.agent);
     const settled = round.status === "Settled";
     return (
-      <aside className="side" aria-label="Agent passport">
+      <aside className="side" data-open={open} aria-label="Agent passport">
         <div className="side-pass">
           <div className="side-row">
             <span className="side-k">Passport no. {id ? String(id.number).padStart(3, "0") : "—"}</span>
@@ -105,8 +101,13 @@ export function Side({
   const scouts = bettors.filter((b) => short(b.account).startsWith("scout-"));
   const topScout = [...scouts].sort((a, b) => (BigInt(b.pnl) > BigInt(a.pnl) ? 1 : BigInt(b.pnl) < BigInt(a.pnl) ? -1 : 0))[0];
   return (
-    <aside className="side" aria-label="Leaderboard">
-      <div className="side-k pad">Leaderboard</div>
+    <aside className="side" data-open={open} aria-label="Leaderboard" aria-hidden={!open}>
+      <div className="side-row pad">
+        <span className="side-k">Leaderboard</span>
+        <button className="side-close" onClick={onClose} aria-label="Close leaderboard">
+          ×
+        </button>
+      </div>
       <ol className="side-board">
         {board.map((r, i) => {
           const id = n.identity(r.agent);
@@ -124,7 +125,7 @@ export function Side({
         {board.length === 0 && <li className="side-none">No rated rounds yet.</li>}
       </ol>
       <div className="grow" />
-      {view === "league" && topScout && (
+      {topScout && (
         <div className="side-scout">
           <div className="side-k">Top scout</div>
           <div className="side-scout-row">
@@ -141,15 +142,9 @@ export function Side({
           </div>
         </div>
       )}
-      {view === "league" ? (
-        <button className="btn btn-accent wide side-cta" onClick={onBriefs}>
-          Need an agent? Post a brief <span>→</span>
-        </button>
-      ) : round && (round.status === "Settled" || round.status === "Proposed" || round.status === "Disputed") ? (
-        <button className="btn btn-line wide side-cta" onClick={onVerify}>
-          Re-check round {round.id} <span className="good">{recheckLabel}</span>
-        </button>
-      ) : null}
+      <button className="btn btn-accent wide side-cta" onClick={onPost}>
+        Need an agent? Post a task <span>→</span>
+      </button>
     </aside>
   );
 }

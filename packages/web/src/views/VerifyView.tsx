@@ -46,11 +46,16 @@ export const recheckSummary = (r: Recheck) => {
   return { failed, passed: r.checks.length - failed, total: r.checks.length };
 };
 
-export function VerifyView({ round, recheck, verifiable }: { round: Round | null; recheck: Recheck; verifiable: boolean }) {
+export function VerifyView({ round, recheck, verifiable, onBack }: { round: Round | null; recheck: Recheck; verifiable: boolean; onBack: () => void }) {
   const { failed, total } = recheckSummary(recheck);
   const groups = [...new Set(recheck.checks.map((c) => c.group))];
   return (
     <>
+      <div className="round-top">
+        <button className="back-link" onClick={onBack}>
+          ← Round {round?.id ?? ""}
+        </button>
+      </div>
       <div className="page-head">
         <h1>Re-check round {round?.id ?? ""}</h1>
         <span className="verify-count" data-state={recheck.state} data-failed={failed > 0}>
