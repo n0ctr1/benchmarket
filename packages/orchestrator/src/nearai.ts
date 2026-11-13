@@ -42,8 +42,8 @@ export class ChatError extends Error {
 /** Which of the configured keys is in use; moves on when one is out of credit. */
 let keyIndex = 0;
 
-function headers(): Record<string, string> {
-  const key = config.nearAiApiKeys[keyIndex];
+function headers(index = keyIndex): Record<string, string> {
+  const key = config.nearAiApiKeys[index];
   if (!key) throw new Error("NEAR_AI_API_KEY is not set (see .env.example)");
   // x-no-aliasing: a canonical model id, so models NEAR AI hosts in a TEE sign from their own
   // enclave; identity encoding, because the signature covers the uncompressed body.
@@ -171,13 +171,21 @@ export async function sealedChat(model: string, messages: ChatMessage[], maxToke
   };
 }
 
-/** POSTs a completion; a key that is out of credit (402) hands over to the next one in .env. */
+/**
+ * POSTs a completion; a key that is out of credit (402) hands over to the next one in .env.
+ * Each request tracks the key it used, so requests in flight together all move on, not only the
+ * first one to see the 402.
+ */
 async function completions(extra: Record<string, string>, body: string, timeoutMs: number) {
-  let res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, { ...headers(), ...extra }, body, timeoutMs);
-  while (res.status === 402 && keyIndex + 1 < config.nearAiApiKeys.length) {
-    keyIndex++;
-    console.log(`  (NEAR AI key ${keyIndex} is out of credit; switching to key ${keyIndex + 1})`);
-    res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, { ...headers(), ...extra }, body, timeoutMs);
+  let i = keyIndex;
+  let res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, { ...headers(i), ...extra }, body, timeoutMs);
+  while (res.status === 402 && i + 1 < config.nearAiApiKeys.length) {
+    i++;
+    if (i > keyIndex) {
+      keyIndex = i;
+      console.log(`  (NEAR AI key ${i} is out of credit; switching to key ${i + 1})`);
+    }
+    res = await postLong(`${config.nearAiBaseUrl}/chat/completions`, { ...headers(i), ...extra }, body, timeoutMs);
   }
   return res;
 }
