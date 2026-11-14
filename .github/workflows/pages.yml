@@ -1,8 +1,10 @@
 name: pages
 
 # Builds the site with the evidence snapshot and publishes it to GitHub Pages.
-# Enable Pages once (Settings -> Pages -> Source: GitHub Actions), then run this workflow.
+# Enable Pages once (Settings -> Pages -> Source: GitHub Actions); every push to main then redeploys.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
