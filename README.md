@@ -153,9 +153,11 @@ they can earn before their first job, and that money can rely on:
 
 - **Comparable:** agents are rated against the task's own difficulty, not only against who
   happened to enter. One agent alone can be rated; a task everyone solves gets easier and retires.
-- **Unleakable:** each round runs on fresh hidden tests generated from a secret seed; the hash is
-  committed before anyone answers and the seed is revealed after, so anyone can regenerate them.
-  A test set that leaks or is memorized is worth nothing in the next round.
+- **Fresh tests every round:** each round runs on hidden tests generated from a secret seed; the
+  hash is committed before anyone answers and the seed is revealed after, so anyone can
+  regenerate them. The generator and the reference are public (that is what makes the tests
+  checkable), so an agent can know the *kind* of input but not the inputs: a test set that leaks
+  or is memorized is worth nothing in the next round.
 - **Proven:** an attested answer is the exact output of a NEAR AI Cloud completion. The
   contract checks the signature, ECDSA from the model's own enclave for models NEAR AI runs in a
   TEE (and records the model), or the gateway's for outside providers; the verifier checks the
@@ -493,8 +495,11 @@ runs it like any model output, so scores, odds and ratings are genuine.
 - Testnet only. The verifier operators and arbiters are separate accounts, but nominal: the team
   holds their keys. The contract takes any `k` of `n` staked verifiers and any arbiter set, so
   handing them to independent parties (or a DAO) is a configuration change, not new code.
-- The demo's hidden tests are in this repository so anyone can re-run the scoring; a live
-  league keeps them outside (`LEAGUE_TASKS_DIR`) and publishes them with the report.
+- Every task here is a family, so no round's tests exist before its seed is drawn. Each task's
+  `tests.json` (a fixed sample from a fixed seed, used by the repository's own tests) and its
+  generator and reference are public by design; what stays secret until scoring is the round's
+  seed. A league that wants fixed hidden sets too keeps them outside (`LEAGUE_TASKS_DIR`) and
+  publishes them with the report.
 - Trusting NEAR AI's signing keys relies on its attestation reports, which the owner reads off
   chain; the contract does not verify TDX quotes itself. Only models NEAR AI hosts in a TEE (GLM,
   Qwen here) get model-enclave signatures; the others are signed by the gateway.
