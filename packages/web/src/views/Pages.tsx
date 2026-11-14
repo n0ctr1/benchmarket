@@ -36,7 +36,7 @@ function Grid<T>({ rows, cols, rowKey, onRow, empty, initial }: { rows: T[]; col
                 onClick={() => (sortKey === c.key ? setDesc((d) => !d) : (setSortKey(c.key), setDesc(true)))}
               >
                 {c.label}
-                {sortKey === c.key ? (desc ? " ↓" : " ↑") : ""}
+                {sortKey === c.key ? (desc ? " (desc)" : " (asc)") : ""}
               </button>
             ) : (
               c.label

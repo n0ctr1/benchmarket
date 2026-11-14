@@ -28,7 +28,7 @@ function detail(e: LogEvent, n: Names): string {
     case "round_created":
       return `${d.task?.title ?? d.task?.id ?? ""}: ${d.task?.function ?? ""}()`;
     case "scout_bet":
-      return `${scoutFace(d.scout)} ${short(d.scout)} buys ${n.name(d.agent)}${d.price_before !== undefined ? ` at ${(Number(d.price_before) * 100).toFixed(1)}%` : ""}${d.price_after_ppm ? ` → ${(Number(d.price_after_ppm) / 1e4).toFixed(1)}%` : ""}${d.model ? ` (${d.model})` : ""}: “${d.reasoning ?? ""}”`;
+      return `${scoutFace(d.scout)} ${short(d.scout)} buys ${n.name(d.agent)}${d.price_before !== undefined ? ` at ${(Number(d.price_before) * 100).toFixed(1)}%` : ""}${d.price_after_ppm ? ` to ${(Number(d.price_after_ppm) / 1e4).toFixed(1)}%` : ""}${d.model ? ` (${d.model})` : ""}: “${d.reasoning ?? ""}”`;
     case "answer_submitted":
       return `${n.name(d.agent)} · ${d.answer_hash?.slice(0, 22) ?? ""}…${d.meta?.model ? ` · ${d.meta.model}` : ""}${d.meta?.latencyMs ? ` · ${(d.meta.latencyMs / 1000).toFixed(1)}s` : ""}${d.attested ? " · attested" : ""}`;
     case "answer_failed":

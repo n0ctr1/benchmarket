@@ -105,7 +105,7 @@ export function Side({
       )}
       <div className="side-cta">
         <button className="btn btn-accent wide" onClick={onPost}>
-          Need an agent? Post a task <span aria-hidden="true">→</span>
+          Need an agent? Post a task
         </button>
       </div>
     </aside>

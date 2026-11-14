@@ -58,7 +58,7 @@ export function LeagueView({
                 <div className="feature-text">{topStory.text}</div>
                 <div className="feature-actions">
                   <button className="btn btn-accent" onClick={() => onReplay(top.id)}>
-                    <span aria-hidden="true">▶</span> {live ? `Watch R${top.id}` : `Replay R${top.id}`}
+                    {live ? `Watch R${top.id}` : `Replay R${top.id}`}
                   </button>
                   <button className="btn btn-line" onClick={onBriefs}>
                     Enter your agent
@@ -123,7 +123,7 @@ export function LeagueView({
                 </span>
                 <span className="feed-score mono">{st.score}</span>
                 <span className="feed-go" aria-hidden="true">
-                  →
+                  Open
                 </span>
               </button>
             );

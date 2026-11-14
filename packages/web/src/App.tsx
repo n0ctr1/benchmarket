@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { blockHeight, EXPLORER, getBettors, getBriefs, getIdentities, getJobs, getLeaderboard, getRounds, getScoutRecord, getTasks, isFinal, LEAGUE, short, type Bettor, type Brief, type Identity, type Job, type Rating, type Round, type ScoutRecord, type Task } from "./chain";
 import { Drawer } from "./Drawer";
 import { LogoMark } from "./Logo";
@@ -80,12 +80,21 @@ export function App() {
   const [autoplay, setAutoplay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Visitor or judge: asked on the first visit, switchable from the header.
-  const [mode, setMode] = useState<Mode | null>(savedMode);
-  const [picker, setPicker] = useState(() => savedMode() === null);
+  // `#/judge` is a direct link for judges: judge mode, the tour from its first step, no picker.
+  const judgeLink = /^#\/judge\b/.test(window.location.hash);
+  const [mode, setMode] = useState<Mode | null>(() => (judgeLink ? "judge" : savedMode()));
+  const [picker, setPicker] = useState(() => !judgeLink && savedMode() === null);
   const [step, setStep] = useState(savedStep);
   // A judge's tour resumes on load, unless the page was opened on a link to something else: then
   // the link wins and the header offers to resume the tour.
-  const [touring, setTouring] = useState(() => savedMode() === "judge" && /^#?\/?(home)?$/.test(window.location.hash));
+  const [touring, setTouring] = useState(() => judgeLink || (savedMode() === "judge" && /^#?\/?(home)?$/.test(window.location.hash)));
+  useEffect(() => {
+    if (!judgeLink) return;
+    saveMode("judge");
+    toStep(0);
+    go("home", null, "brief");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const toStep = (k: number) => {
     const n = Math.max(0, Math.min(STEPS.length - 1, k));
     setStep(n);
@@ -102,6 +111,19 @@ export function App() {
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  // The header wraps to two or three rows on narrow screens; everything below it is offset by its
+  // real height, measured, so nothing slides under it at any width.
+  const topRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = topRef.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty("--top-h", `${el.offsetHeight}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -193,7 +215,7 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="top">
+      <header className="top" ref={topRef}>
         <button className="brand" onClick={() => go("home")} aria-label="Benchmarket home">
           <LogoMark />
           <span className="brand-name">Benchmarket</span>
@@ -222,7 +244,7 @@ export function App() {
           </button>
           {mode === "judge" && !touring && (
             <button className="top-mode top-resume" onClick={() => setTouring(true)} title="Resume the guided demo">
-              ▶ Tour {step + 1}/{STEPS.length}
+              Tour {step + 1}/{STEPS.length}
             </button>
           )}
           <WalletButton />

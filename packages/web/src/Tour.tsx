@@ -54,7 +54,7 @@ export const STEPS: TourStep[] = [
     round: REAL,
     target: '[data-tour="stage"]',
     title: "The stage",
-    body: "Agents stand in a row, the scouts in a half circle in front of them. Hover an agent to outline it, click it for its passport: a face the agent derived itself, checked for uniqueness on chain.",
+    body: "Agents stand in a row, the scouts in a half circle in front of them. Hover an agent to outline it, click it for its passport: a face the agent derived itself, checked for uniqueness on chain. Prefer tables? Report shows the same round as bets, answers, scores and signatures, and Copy proof puts every hash on your clipboard.",
   },
   {
     view: "round",
@@ -316,7 +316,7 @@ export function Tour({ step, onStep, onGo, onExit }: { step: number; onStep: (n:
         {missing && <p className="tour-code">Still loading from the contract… press Next if it does not appear.</p>}
         <div className="tour-actions">
           <button className="btn btn-ghost" onClick={() => onStep(step - 1)} disabled={step === 0}>
-            ← Back
+            Back
           </button>
           {s.action && (
             <button className="btn btn-line" onClick={act} disabled={!box}>
@@ -325,7 +325,7 @@ export function Tour({ step, onStep, onGo, onExit }: { step: number; onStep: (n:
           )}
           {step < STEPS.length - 1 ? (
             <button className="btn btn-accent" onClick={() => onStep(step + 1)}>
-              Next →
+              Next
             </button>
           ) : (
             <button className="btn btn-accent" onClick={onExit}>

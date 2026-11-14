@@ -410,8 +410,11 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         if (S.sweepAt !== null && checked) label += " ✓";
         const flash = bet && bet.agent === hd.i && betAge >= BEAM_MS && betAge < BEAM_MS + 1100;
         const picked = pickedRef.current === hd.i;
-        text(pt.x, pt.y - 7, label, `600 12px 'IBM Plex Mono', monospace`, ag.win || flash ? "#D4FF00" : S.settled ? "#5A5A55" : "#ECEBE4");
-        text(pb.x, pb.y - 9, ag.name.toUpperCase(), `700 13px 'IBM Plex Mono', monospace`, ag.win ? "#D4FF00" : picked ? "#ECEBE4" : "#8B8B85");
+        // Labels shrink with the room each agent gets, so neighbours never run into each other.
+        const room = W / Math.max(1, n);
+        const fs = room < 48 ? 9.5 : room < 64 ? 11 : 13;
+        text(pt.x, pt.y - 7, label, `600 ${fs - 1}px 'IBM Plex Mono', monospace`, ag.win || flash ? "#D4FF00" : S.settled ? "#5A5A55" : "#ECEBE4");
+        text(pb.x, pb.y - 9, ag.name.toUpperCase(), `700 ${fs}px 'IBM Plex Mono', monospace`, ag.win ? "#D4FF00" : picked ? "#ECEBE4" : "#8B8B85");
         if (picked) {
           ctx.fillStyle = "#ECEBE4";
           ctx.fillRect(pb.x - 14, pb.y + 14, 28, 2);
@@ -479,7 +482,7 @@ export function Stage({ scene, picked, onPick, label }: { scene: Scene; picked: 
         const betting = !!bet && bet.scout === j && betAge >= 0 && betAge < BEAM_MS + 900;
         // On a narrow stage there is room for faces only; the betting scout keeps its line.
         const narrow = W < 640;
-        text(p.x, p.y - 12, sc.face, `600 ${narrow ? 13 : 18}px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#ECEBE4");
+        text(p.x, p.y - 12, sc.face, `600 ${narrow ? (m > 6 ? 10 : 12) : 18}px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#ECEBE4");
         if (!narrow) text(p.x, p.y + 10, sc.id, `500 11px 'IBM Plex Mono', monospace`, "#5A5A55");
         if (!narrow || betting) text(p.x, p.y + (narrow ? 6 : 26), sc.line, `600 11px 'IBM Plex Mono', monospace`, betting ? "#D4FF00" : "#8B8B85");
         if (sc.says) {

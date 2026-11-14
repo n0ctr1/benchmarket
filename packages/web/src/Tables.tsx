@@ -365,7 +365,7 @@ export function Briefs({ briefs, identities, jobs, onRound }: { briefs: Brief[];
                     const result = !closed ? "" : payout === 0n ? "lost stake" : payout > BigInt(n.stake) ? `+${near(payout - BigInt(n.stake))}` : "stake back";
                     return (
                       <li key={i} style={{ ["--agent" as string]: hueColor(ident) }} data-hire={isHire}>
-                        <span className="who">{short(n.scout)}</span> → {ident && <Identicon cells={ident.cells} palette={ident.palette} size={16} />} <span className="pick">{short(n.agent)}</span>{" "}
+                        <span className="who">{short(n.scout)}</span> backs {ident && <Identicon cells={ident.cells} palette={ident.palette} size={16} />} <span className="pick">{short(n.agent)}</span>{" "}
                         <span className="mono muted">on {n.task_ref}</span> <span className="amt">{near(n.stake)}</span>
                         {result && <span className={`delta ${payout > BigInt(n.stake) ? "up" : payout === 0n ? "down" : ""}`}> {result}</span>}
                       </li>

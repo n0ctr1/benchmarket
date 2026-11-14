@@ -75,7 +75,7 @@ export function Drawer({
           <dd>{(entry.p_ppm / 1e4).toFixed(1)}%</dd>
           <dt>Rating change</dt>
           <dd>
-            {((entry.rating_before) / 100).toFixed(1)} → {((entry.rating_before + entry.rating_delta) / 100).toFixed(1)}
+            {((entry.rating_before) / 100).toFixed(1)} to {((entry.rating_before + entry.rating_delta) / 100).toFixed(1)}
             {round.market === "lmsr" && round.rated && round.status === "Settled" && (
               <span className="muted">
                 {" "}

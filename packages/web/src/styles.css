@@ -144,7 +144,8 @@ mark {
 }
 
 .top {
-  height: var(--top-h);
+  /* Its own content sets the height; App measures it into --top-h for everything below. */
+  min-height: 52px;
   flex: none;
   display: flex;
   align-items: stretch;
@@ -1357,7 +1358,8 @@ mark {
 }
 
 .round-nav button {
-  width: 26px;
+  min-width: 26px;
+  padding: 0 8px;
   height: 22px;
   display: grid;
   place-items: center;
@@ -1579,7 +1581,10 @@ mark {
 }
 
 .phase[data-on="now"]::after {
-  content: "◀";
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: currentColor;
   margin-left: auto;
   animation: blink 1s steps(2, jump-none) infinite;
 }
@@ -2891,62 +2896,6 @@ input[type="range"] {
 }
 
 @media (max-width: 720px) {
-  :root {
-    --top-h: 92px;
-  }
-
-  .top {
-    flex-wrap: wrap;
-  }
-
-  .brand {
-    height: 46px;
-    border-bottom: 2px solid var(--ink);
-    flex: 1 1 0;
-    min-width: 0;
-    gap: 10px;
-    padding: 0 12px;
-    border-right: 0;
-  }
-
-  .brand-name {
-    font-size: 14px;
-  }
-
-  .top-end {
-    height: 46px;
-    flex: none;
-    border-bottom: 2px solid var(--ink);
-  }
-
-  .top-net {
-    font-size: 11px;
-  }
-
-  .tabs {
-    order: 3;
-    width: 100%;
-    height: 44px;
-    overflow-x: auto;
-  }
-
-  .tabs button {
-    flex: 1;
-    justify-content: center;
-    padding: 0 8px;
-    font-size: 11px;
-  }
-
-  .tab-n,
-  .top-net .top-k,
-  .top-board-label {
-    display: none;
-  }
-
-  .top-net,
-  .top-board {
-    padding: 0 12px;
-  }
 
   .page {
     padding: 22px 16px 48px;
@@ -3006,6 +2955,12 @@ input[type="range"] {
   .round {
     padding: 12px 12px 14px;
     gap: 10px;
+    /* On a phone the round is taller than the screen: it scrolls instead of being cut off. */
+    overflow-y: auto;
+  }
+
+  .round > * {
+    flex-shrink: 0;
   }
 
   .round-title {
@@ -4167,4 +4122,260 @@ button.banner:hover .banner-more {
   .top-board-label {
     display: none;
   }
+}
+
+/* Phones: one header row (the block height and brand name give way), round stats in a 2x2 grid. */
+@media (max-width: 480px) {
+  .top .top-net {
+    display: none;
+  }
+
+  .top .brand {
+    flex: 0 0 auto;
+    padding: 0 10px;
+  }
+
+  .top .brand-name {
+    display: none;
+  }
+
+  .top .top-end {
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .round-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .round-stats .stat {
+    min-width: 0;
+    padding: 8px 12px;
+  }
+
+  .round-stats .stat + .stat {
+    border-left: 0;
+  }
+
+  .round-stats .stat:nth-child(even) {
+    border-left: 1px solid var(--line-2);
+  }
+
+  .round-stats .stat:nth-child(n + 3) {
+    border-top: 1px solid var(--line-2);
+  }
+}
+
+/* Up to small laptops the full header does not fit one row: brand and controls on top, tabs
+   below (App measures the real height into --top-h). */
+@media (max-width: 1380px) {
+  .top {
+    flex-wrap: wrap;
+  }
+
+  .brand {
+    height: 46px;
+    border-bottom: 2px solid var(--ink);
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 10px;
+    padding: 0 12px;
+    border-right: 0;
+  }
+
+  .brand-name {
+    font-size: 14px;
+  }
+
+  .top-end {
+    height: 46px;
+    flex: none;
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .top-net {
+    font-size: 11px;
+  }
+
+  .tabs {
+    order: 3;
+    width: 100%;
+    height: 44px;
+    overflow-x: auto;
+  }
+
+  .tabs button {
+    flex: 1;
+    justify-content: center;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .tab-n,
+  .top-net .top-k,
+  .top-board-label {
+    display: none;
+  }
+
+  .top-net,
+  .top-board {
+    padding: 0 12px;
+  }
+}
+
+/* The banner's "Timeline" tag sits in its top-right corner: keep the title clear of it. */
+.banner:has(.banner-more) > :first-child {
+  padding-right: 84px;
+}
+
+/* ----- round report: the round as plain tables, over the stage ----- */
+.frame-body[data-report="true"] > :not(.report) {
+  visibility: hidden;
+}
+
+.report {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: auto;
+  background: var(--bg);
+  padding: 14px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.report-k,
+.report-h {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.report-h {
+  margin-top: 8px;
+  color: var(--ink);
+}
+
+.report-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.report-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line-2);
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.report-table th,
+.report-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.report-table th {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  font-weight: 600;
+}
+
+.report-table tr[data-win="true"] td:first-child {
+  color: var(--acid);
+  font-weight: 700;
+}
+
+.report-why {
+  white-space: normal !important;
+  min-width: 220px;
+  color: var(--mute);
+}
+
+.report-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.report-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 12px;
+}
+
+.report-dl dt {
+  color: var(--mute);
+}
+
+.report-dl dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+@media (max-width: 480px) {
+  .report-dl {
+    grid-template-columns: 1fr;
+  }
+
+  .report-dl dd {
+    margin-bottom: 6px;
+  }
+}
+
+.report > * {
+  flex-shrink: 0;
+}
+
+.frame-body[data-report="true"] {
+  min-height: 460px;
+}
+
+/* Laptops: the block height gives way so the mode and tour buttons always fit in one row. */
+@media (min-width: 1381px) and (max-width: 1560px) {
+  .top .top-net {
+    display: none;
+  }
+}
+
+/* Disclosures: a plus and minus instead of the browser's triangle. */
+details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+details > summary::before {
+  content: "+ ";
+  color: var(--acid);
+}
+
+details[open] > summary::before {
+  content: "\2212  ";
 }

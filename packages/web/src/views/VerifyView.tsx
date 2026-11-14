@@ -55,7 +55,7 @@ export function VerifyView({ round, recheck, verifiable, onBack }: { round: Roun
       <div className="page">
         <div className="crumbs">
           <button className="back-link" onClick={onBack}>
-            ← Round {round?.id ?? ""}
+            Back to round {round?.id ?? ""}
           </button>
         </div>
         <div className="page-head">

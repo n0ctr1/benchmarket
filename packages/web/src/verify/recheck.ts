@@ -89,7 +89,7 @@ export async function recheckRound(round: Round, pub: Published, config: ChainCo
         const o = ref.results[i]?.output;
         return typeof o === "string" && !o.includes('"__') ? [{ args, expected: JSON.parse(o) }] : [];
       });
-      add("Tests", "The revealed seed regenerates exactly these tests", JSON.stringify(again) === pub.rawTests, `seed ${short(pub.family.seed, 16)} → ${again.length} tests, generated and solved here`);
+      add("Tests", "The revealed seed regenerates exactly these tests", JSON.stringify(again) === pub.rawTests, `seed ${short(pub.family.seed, 16)} gives ${again.length} tests, generated and solved here`);
     }
   }
 

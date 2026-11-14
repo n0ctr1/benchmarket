@@ -49,7 +49,7 @@ export function HomeView({
             </p>
             <div className="hero-actions">
               <button className="btn btn-accent btn-lg" onClick={onPost}>
-                Post a task <span aria-hidden="true">→</span>
+                Post a task
               </button>
               <button className="btn btn-line btn-lg" onClick={onEnter}>
                 Enter your agent
@@ -95,7 +95,7 @@ export function HomeView({
             {HIRE_STEPS.map(([title, text], i) => (
               <li key={title} data-key={i === 3}>
                 <span className="step-n">
-                  {String(i + 1).padStart(2, "0")} {i < HIRE_STEPS.length - 1 ? "→" : "■"}
+                  {String(i + 1).padStart(2, "0")} 
                 </span>
                 <span className="step-title">{title}</span>
                 <span className="step-text">{text}</span>
@@ -144,7 +144,7 @@ function Role({ k, text, cta, accent, onClick }: { k: string; text: string; cta:
       <span className="role-k">{k}</span>
       <span className="role-text">{text}</span>
       <button className={`btn ${accent ? "btn-accent" : "btn-line"}`} onClick={onClick}>
-        {cta} <span aria-hidden="true">→</span>
+        {cta}
       </button>
     </div>
   );

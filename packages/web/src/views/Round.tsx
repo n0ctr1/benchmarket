@@ -7,6 +7,7 @@ import { Stage, type Scene } from "../stage/Stage";
 import { clock } from "../stage/clock";
 import { useTx } from "../wallet";
 import { Timeline } from "./Timeline";
+import { RoundReport } from "./RoundReport";
 import type { LogEvent } from "../offchain";
 
 const PHASES: Array<{ id: Phase; label: string; title: string }> = [
@@ -50,6 +51,8 @@ export function RoundView({
   onStarted: () => void;
 }) {
   const [replay, setReplay] = useState<Replay | null>(null);
+  // The stage, or the same round as plain tables.
+  const [asReport, setAsReport] = useState(false);
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [reveal, setReveal] = useState(1);
@@ -297,16 +300,16 @@ export function RoundView({
         <div className="round-head-main">
           <div className="crumbs">
             <button className="back-link" onClick={onLeague}>
-              ← League
+              League
             </button>
             <span className="crumbs-sep">//</span>
             <span className="mono">Round {round.id}</span>
             <span className="round-nav">
               <button onClick={() => prev && onSelect(prev.id)} disabled={!prev} aria-label="Previous round">
-                ‹
+                Prev
               </button>
               <button onClick={() => next && onSelect(next.id)} disabled={!next} aria-label="Next round">
-                ›
+                Next
               </button>
             </span>
           </div>
@@ -342,7 +345,8 @@ export function RoundView({
             </li>
           ))}
         </ol>
-        <div className="frame-body">
+        <div className="frame-body" data-report={asReport}>
+          {asReport && <RoundReport round={round} rec={rec} n={n} />}
           <Stage
             scene={scene}
             picked={picked ? round.entries.findIndex((e) => e.agent === picked) : null}
@@ -357,19 +361,19 @@ export function RoundView({
         <div className="dock-actions">
           {playing ? (
             <button className="btn btn-accent" data-tour="replay" onClick={() => clock.setPaused(!paused)} aria-label={paused ? "Resume" : "Pause"}>
-              <span aria-hidden="true">{paused ? "▶" : "❚❚"}</span> {paused ? "Resume" : "Pause"}
+              {paused ? "Resume" : "Pause"}
             </button>
           ) : (
             <button className="btn btn-accent" data-tour="replay" onClick={start} disabled={!replay || cancelled}>
-              <span aria-hidden="true">▶</span> Replay
+              Replay
             </button>
           )}
           <span className="player" role="group" aria-label="Replay controls">
             <button onClick={() => (clock.setPaused(true), setPlaying(true), stepTo(idx - 1))} disabled={!replay || idx <= 0} aria-label="Previous step">
-              ⏮
+              Prev
             </button>
             <button onClick={() => (clock.setPaused(true), setPlaying(true), stepTo(idx + 1))} disabled={!replay || idx >= frames.length - 1} aria-label="Next step">
-              ⏭
+              Next
             </button>
             {[0.5, 1, 2].map((v) => (
               <button key={v} aria-pressed={speed === v} onClick={() => clock.setSpeed(v)}>
@@ -380,6 +384,9 @@ export function RoundView({
               {frames.length ? idx + 1 : 0}/{frames.length}
             </span>
           </span>
+          <button className="btn btn-line" data-tour="report" aria-pressed={asReport} onClick={() => setAsReport(!asReport)} title="The round as plain tables: bets, answers, scores, signatures">
+            {asReport ? "Stage" : "Report"}
+          </button>
           {verifiable && (
             <button className="btn btn-line" data-tour="recheck" onClick={onVerify} title="Re-check hashes, signatures and every score in this browser">
               <span aria-hidden="true">✓</span> Re-check
@@ -389,7 +396,7 @@ export function RoundView({
         <button className="banner" data-tour="banner" aria-live="polite" onClick={() => setShowLog(true)} title="Open the full timeline of this round">
           <span className="banner-title">{title}</span>
           <span className="banner-text">{text}</span>
-          <span className="banner-more">Timeline →</span>
+          <span className="banner-more">Timeline</span>
         </button>
       </div>
 
