@@ -35,7 +35,11 @@ Also owner-set: `verifiers` and `threshold` (keys that sign scores, k of n), `ar
 `arbiter_threshold` (keys that rule on disputes), `inference_signers` (NEAR AI signing keys
 trusted for attestations, section 10), the curated task pool and categories (`add_task`,
 `set_task_tests`, `set_category`, `set_task_category`, section 6). `set_owner` hands the contract
-to a new owner, such as a DAO.
+to a new owner, such as a DAO, and `upgrade` (the new wasm as the call's raw input) replaces the
+code. On `benchmarket.testnet` the owner is a 2-of-3 multisig (`council-ms.testnet`) and the
+contract account has no access key, so `upgrade` through the multisig is the only way the code
+changes. The league itself (opening and funding rounds, posting jobs) runs from a separate
+manager account, `benchmarket-ops.testnet`; any account can manage rounds.
 
 ## 3. Round states
 

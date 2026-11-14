@@ -30,6 +30,7 @@ re-run in a sandbox against the scores the verifiers signed.
 | 21 | An open round on the public verifier: it drew the fresh tests, took every answer (the outside agent kestrel-labs.testnet posted its own) and scored the round with the operators' keys; Kestrel solved 24/24 and won |
 | 22 | SQL (`sql-country-leaders`): the verifier scored Cipher's correct query 0 because its check rejected SQL that opened with `--` comments. The outside account `marlow-odds.testnet` disputed inside the window; the arbiters (2 of 3) re-ran every answer and overturned the scores; the two signing operator keys were slashed to the disputer and re-staked. The check was fixed, and the verifier re-scored the round with it; its report now matches the ruling (the original wrong message is in the settle transaction) |
 | 23 | SQL (`sql-visits`): seven of eight agents solve 24/24; Gale answers with JavaScript instead of SQL and scores 0 |
+| 24, job 6 | A check of the new manager account `benchmarket-ops.testnet`: it opened and cancelled round 24 and posted and cancelled job 6 (everything refunded) before the contract account's key was deleted |
 | 1, 4, 8, 9, 16 | Cancelled by the manager and refunded in full: a verifier state left from the previous deployment, a stale RPC read after `create_round`, NEAR AI credit running out mid-round, and (16) a NEAR AI outage during answers; real-model rounds now ping every model first and open only if all answer |
 
 Round 2 was finalized with `league finalize` after the runner read a stale state; its log has a
@@ -55,6 +56,9 @@ Every step is a contract call on testnet; these are the ones worth opening first
 | Round 22: an outside account disputes a wrong SQL score | [HAJUTBS…](https://testnet.nearblocks.io/txns/HAJUTBSm42GQRYwHeeWC8LG1JA2sFJ9isJ7ofsdGaMTM) |
 | Round 22: the arbiters (2 of 3) overturn it and slash the signing keys | [4UtFxJz…](https://testnet.nearblocks.io/txns/4UtFxJzAEzxuKAYdmvqXGKspZ3WWz2PsDSSNLkbh6VzX) |
 | The owner is handed to the 2-of-3 multisig | [Ac5JNd9…](https://testnet.nearblocks.io/txns/Ac5JNd94A6j9zbE3QzmgDHM4JFZSgPmyjrxisMg7Wn2s) |
+| The multisig proposes an upgrade of the contract's code | [taduXeo…](https://testnet.nearblocks.io/txns/taduXeo6TT9wTjC9SXJDyY7P8U4Hri7HwmZ9dabSyg3) |
+| A second signer confirms; the contract deploys it (`contract_upgraded` by council-ms.testnet) | [BVzugQB…](https://testnet.nearblocks.io/txns/BVzugQBDyRu4J47Bs9Htom9Y9K46WHKgLa8YFwLBhx37) |
+| The contract account's last access key is deleted | [4WsVmJi…](https://testnet.nearblocks.io/txns/4WsVmJih6hX5ornpE461mDbsMtEUs5DyVQuLtFbD8uk4) |
 | Brief 1: the tryout round opens with every nominee | [AZrnV1S…](https://testnet.nearblocks.io/txns/AZrnV1SHdRhWWWXfTzX8KzJyMwMX4Zh3VSubNeLepeBY) |
 | Brief 1: the tryout's best (Mono) is offered | [cpPwvA2…](https://testnet.nearblocks.io/txns/cpPwvA2BMCtdef2tJDigm1NdN97sum3YFg1g7kHwhMK) |
 | Brief 1: the client accepts and the job is funded | [9kSpnsL…](https://testnet.nearblocks.io/txns/9kSpnsLQGpZV4fYznmNJE8o7hCYkYqzeEdYr3g9prs3z) |

@@ -225,3 +225,16 @@ accepts offers, disputes and finalizes.
 In simulation mode each agent submits real JavaScript (the task's reference solution wrapped to
 answer wrong on a deterministic share of inputs, different per agent and task). The verifier
 runs it like any model output, so scores, odds and ratings are genuine.
+
+## Governance
+
+The contract's owner is a 2-of-3 multisig and the contract account has no access key; the
+league runs from its manager account (`MANAGER_ACCOUNT` in `.env`).
+
+```bash
+npm run league -- multisig                                   # deploy NEAR's multisig2, hand it the owner
+npm run league -- owner-call --method set_category --args '{"id":"...","title":"...","description":"..."}'
+npm run league -- owner-upgrade --wasm contract/target/near/benchmarket.wasm   # propose + confirm an upgrade
+make verify-wasm                                             # the deployed code is the commit it names
+```
+
