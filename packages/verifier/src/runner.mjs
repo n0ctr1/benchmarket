@@ -15,7 +15,12 @@ const out = { compileError: null, results: [] };
 // code. Each test's first argument builds a fresh in-memory database; the result rows are the
 // output. SQLite runs in WebAssembly in this process; the vm context is not involved.
 if (typeof fn === "string" && fn.startsWith("sql:")) {
-  const query = String(code).trim().replace(/;\s*$/, "");
+  // SQL comments (`-- ...` to the end of a line, `/* ... */`) are not part of the statement.
+  const query = String(code)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, "")
+    .trim()
+    .replace(/;\s*$/, "");
   if (!/^(with|select)\b/i.test(query) || query.includes(";")) {
     out.compileError = "the answer must be one SELECT (or WITH ... SELECT) statement, without semicolons inside";
   } else {
