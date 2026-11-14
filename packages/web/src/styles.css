@@ -2817,6 +2817,11 @@ input[type="range"] {
   background: var(--red);
 }
 
+.check[data-deferred="true"] .check-mark {
+  background: var(--cyan);
+  color: var(--on-acid);
+}
+
 .check-label {
   font-size: 12.5px;
   font-weight: 700;

@@ -42,12 +42,13 @@ export function useRecheck(round: Round | null, run: boolean): Recheck {
 }
 
 export const recheckSummary = (r: Recheck) => {
-  const failed = r.checks.filter((c) => !c.ok).length;
-  return { failed, passed: r.checks.length - failed, total: r.checks.length };
+  const deferred = r.checks.filter((c) => c.deferred).length;
+  const failed = r.checks.filter((c) => !c.ok && !c.deferred).length;
+  return { failed, deferred, passed: r.checks.length - failed - deferred, total: r.checks.length };
 };
 
 export function VerifyView({ round, recheck, verifiable, onBack }: { round: Round | null; recheck: Recheck; verifiable: boolean; onBack: () => void }) {
-  const { failed, total } = recheckSummary(recheck);
+  const { failed, deferred, passed, total } = recheckSummary(recheck);
   const groups = [...new Set(recheck.checks.map((c) => c.group))];
   return (
     <div className="page-scroll">
@@ -66,7 +67,7 @@ export function VerifyView({ round, recheck, verifiable, onBack }: { round: Roun
             </p>
           </div>
           <span className="verify-count" data-tour="verify-count" data-state={recheck.state} data-failed={failed > 0}>
-            {recheck.state === "done" ? `${total - failed} / ${total} passed` : recheck.state === "running" || recheck.state === "loading" ? `${total} checked…` : ""}
+            {recheck.state === "done" ? `${passed} / ${total} passed${deferred ? `, ${deferred} to the Node watcher` : ""}` : recheck.state === "running" || recheck.state === "loading" ? `${total} checked…` : ""}
           </span>
         </div>
         {!verifiable && <div className="empty">Pick a round that has been scored: its report is what gets re-checked.</div>}
@@ -79,8 +80,8 @@ export function VerifyView({ round, recheck, verifiable, onBack }: { round: Roun
                 {recheck.checks
                   .filter((c) => c.group === g)
                   .map((c, i) => (
-                    <div key={i} className="check" data-ok={c.ok}>
-                      <span className="check-mark">{c.ok ? "✓" : "✕"}</span>
+                    <div key={i} className="check" data-ok={c.ok} data-deferred={!!c.deferred}>
+                      <span className="check-mark">{c.ok ? "✓" : c.deferred ? "?" : "✕"}</span>
                       <span>
                         <span className="check-label">{c.label}</span>
                         <span className="check-detail">{c.detail}</span>

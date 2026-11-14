@@ -1,5 +1,6 @@
 declare const __LEAGUE__: string;
 declare const __RPC__: string;
+declare const __NETWORK__: string;
 
 export const LEAGUE = __LEAGUE__;
 export const RPC = __RPC__;
@@ -145,15 +146,32 @@ export interface ScoutRecord {
 
 let rpcId = 0;
 
+// Public RPCs are rate-limited per visitor; when the configured one refuses (network error, 429,
+// 5xx) the page moves to the next and stays there.
+const RPCS = [...new Set([RPC, ...(__NETWORK__ === "testnet" ? ["https://rpc.testnet.near.org", "https://rpc.testnet.fastnear.com"] : ["https://rpc.mainnet.near.org", "https://free.rpc.fastnear.com"])])];
+let rpcAt = 0;
+
 async function rpc<T>(method: string, params: unknown): Promise<T> {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
-  });
-  const j = await res.json();
-  if (j.error) throw new Error(j.error?.data ?? j.error?.message ?? "rpc error");
-  return j.result as T;
+  let lastError: unknown;
+  for (let tries = 0; tries < RPCS.length; tries++) {
+    const url = RPCS[rpcAt];
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+      });
+      if (res.status === 429 || res.status >= 500) throw new Error(`rpc ${res.status}`);
+      const j = await res.json();
+      if (j.error) throw Object.assign(new Error(j.error?.data ?? j.error?.message ?? "rpc error"), { fromRpc: true });
+      return j.result as T;
+    } catch (e) {
+      if ((e as { fromRpc?: boolean }).fromRpc) throw e;
+      lastError = e;
+      if (RPCS[rpcAt] === url) rpcAt = (rpcAt + 1) % RPCS.length;
+    }
+  }
+  throw lastError;
 }
 
 /** View call with optimistic finality, so a fresh transaction shows up at once. */

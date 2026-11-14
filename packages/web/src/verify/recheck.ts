@@ -14,10 +14,12 @@ export interface Check {
   label: string;
   ok: boolean;
   detail: string;
+  /** Not decidable in a browser (a heap limit a worker cannot enforce); the Node watcher decides it. */
+  deferred?: boolean;
 }
 
 export interface Published {
-  report: { roundId: number; totalTests: number; scores: Array<[string, number]>; message: string; signatures: string[]; publicKeys: string[]; taskId: string };
+  report: { roundId: number; totalTests: number; scores: Array<[string, number]>; message: string; signatures: string[]; publicKeys: string[]; taskId: string; details?: Array<{ agent: string; run?: { compileError?: string | null } }> };
   answers: Array<{ agent: string; answer: string; answerHash: string; request?: string; config?: PublicConfig; meta?: { signature?: { text: string; signature: string; signing_address: string; signature_kind?: string } | null } }>;
   function: string;
   rawTests: string;
@@ -136,6 +138,17 @@ export async function recheckRound(round: Round, pub: Published, config: ChainCo
       return p.ok && sameValue(p.value, t.expected);
     }).length;
     const posted = round.proposal?.scores.find((s) => s[0] === e.agent)?.[1] ?? e.score ?? 0;
+    // The verifier's sandbox caps the heap at 128 MB and scores a run it had to kill 0. A browser
+    // worker has no heap cap, so it cannot decide that case: it is shown as deferred (never as a
+    // pass) and the Node watcher, which runs the verifier's own sandbox, settles it.
+    const killed = pub.report.details?.find((d) => d.agent === e.agent)?.run?.compileError?.startsWith("killed:");
+    if (passed !== posted && posted === 0 && killed) {
+      const c = { group: who, label: "Re-run gives the posted score: decided by the Node watcher", ok: false, deferred: true, detail: `the verifier's sandbox stopped it at its 128 MB heap limit and scored 0; a browser cannot cap the heap (${passed}/${tests.length} here without one). Run: npm run league -- watch --round ${round.id}` };
+      all.push(c);
+      onCheck(c);
+      scores.push([e.agent, posted]);
+      continue;
+    }
     add(who, "Re-run in this browser gives the posted score", passed === posted, `${passed}/${tests.length} here, ${posted} posted${run.compileError ? ` (${run.compileError})` : ""}`);
     scores.push([e.agent, passed]);
   }
