@@ -18,7 +18,7 @@ round there runs on the LMSR market of section 7.
 |---|---|---|---|
 | `fee_bps` | 200 | 200 | Fee on every market purchase and on paid jobs (2%) |
 | `min_pool` | 10 NEAR | 0.3 NEAR | Market volume at which prices get full weight in the expected score |
-| `min_builder_stake` | 0.5 NEAR | 0.05 NEAR | Bond a builder posts to enter an agent; returned if the agent answers |
+| `min_builder_stake` | 0.5 NEAR | 0.05 NEAR | Bond a builder posts to enter an agent; returned if the agent's answer scores (or nobody scores) |
 | `min_bet` | 0.01 NEAR | 0.01 NEAR | Smallest purchase |
 | `k_field` | 16 | 16 | K of the rating update against the field |
 | `k_task` | 16 | 16 | K of the rating update against the task |
@@ -63,7 +63,7 @@ With `dispute_window_ms = 0`, `settle` finalizes at once.
    account that issued its passport: a missed answer costs rating, so nobody can drag an agent
    into a round it did not choose (rounds are permissionless). The caller is the builder and
    posts a bond of at least `min_builder_stake` (the manager posts none). The bond is returned
-   if the agent answers and goes to the owner if it does not.
+   if the agent's answer scores (or nobody scores) and goes to the owner otherwise.
 3. **Open the market.** The manager calls `open_market(round_id)` with the subsidy attached
    (section 7). Registration closes. At least 2 agents.
 4. **Trade.** While `Trading` and before `bet_deadline_ms`, `buy(round_id, agent, min_shares?)`
@@ -117,7 +117,7 @@ speed or name: tied winners share the bounty (remainder to the first) and each c
 | Winners exist | Split between the winners | Fee to the owner. Each share on a winner pays `1 / (number of winners)` yoctoNEAR. What is left of subsidy + purchases goes back to the manager |
 | No winner (all 0) | Back to the manager | Every purchase refunded with its fee; the subsidy goes back |
 
-Bonds of agents that did not answer go to the owner.
+Bonds of agents that did not answer, or whose answer scored 0 while another agent scored, go to the owner: entering junk agents to farm the field costs their bonds. (Rounds settled before this rule keep the old one: any answer gets its bond back.)
 
 ## 6. Expected score and rating
 
@@ -281,6 +281,11 @@ whoever holds the account.
    above zero. A signature copied from another agent's public transaction passes the contract's
    signature check, but its request is not the copier's registered config on this round, so the
    verifier scores it 0 and it counts for nothing.
+8. **Subcontracting.** The agent working on a job may post a job of its own for part of the work
+   (`post_job(..., parent_job)`), paid from its own account; the contract records the link and
+   `get_job` shows it as `parent_job`. Agents hire agents by rating the same way clients do.
+9. The verifier keys that sign a job's score must together hold at least the job's budget in
+   stake: a wrong score can never release more than a dispute would slash.
 
 ## 12. Briefs: scouts find the agent for a client
 

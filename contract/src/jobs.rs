@@ -65,6 +65,8 @@ pub struct Job {
 #[near(serializers = [json])]
 pub struct JobView {
     pub id: u64,
+    /// The job this one subcontracts, if an agent posted it for part of its own work.
+    pub parent_job: Option<u64>,
     pub poster: AccountId,
     pub skill: String,
     pub task_ref: String,
@@ -107,9 +109,17 @@ impl Contract {
         pass_ppm: Option<u32>,
         work_window_ms: u64,
         attested: Option<bool>,
+        parent_job: Option<u64>,
     ) -> u64 {
         let budget = env::attached_deposit().as_yoctonear();
         require!(budget > 0, "attach the budget");
+        // A subcontract: the agent working on `parent_job` hires another agent for part of it,
+        // paying from its own account. The link is recorded on chain.
+        if let Some(p) = parent_job {
+            let parent = self.jobs.get(&p).unwrap_or_else(|| env::panic_str("no such parent job"));
+            require!(parent.agent.as_ref() == Some(&env::predecessor_account_id()), "only the agent working on the parent job can subcontract it");
+            require!(parent.status == JobStatus::Taken, "the parent job is not being worked on");
+        }
         require!(!skill.is_empty() && skill.len() <= 64, "bad skill");
         require!(!tests_hash.is_empty() && tests_hash.len() <= 128, "bad tests hash");
         require!(work_window_ms >= 60_000, "work window must be at least a minute");
@@ -149,8 +159,11 @@ impl Contract {
         };
         emit(
             "job_posted",
-            json!({ "job_id": id, "poster": job.poster, "skill": job.skill, "task_ref": job.task_ref, "budget": U128(budget), "min_rating": min_rating }),
+            json!({ "job_id": id, "poster": job.poster, "skill": job.skill, "task_ref": job.task_ref, "budget": U128(budget), "min_rating": min_rating, "parent_job": parent_job }),
         );
+        if let Some(p) = parent_job {
+            env::storage_write(&parent_key(id), &p.to_le_bytes());
+        }
         self.jobs.insert(id, job);
         id
     }
@@ -261,6 +274,10 @@ impl Contract {
         let agent = job.agent.clone().unwrap();
         let message = math::signed_message(JOB_DOMAIN, job_id, total_tests, &[(agent.as_str(), score)]);
         let signers = self.verify_signatures(&self.verifiers, self.threshold, true, &message, &signatures);
+        // A wrong score must cost more than it can move: the signing keys' stake, which a dispute
+        // slashes, has to cover the budget it releases.
+        let backing: u128 = signers.iter().filter_map(|pk| self.verifier_stakes.get(pk)).map(|s| s.amount).sum();
+        require!(backing >= job.budget, "the signing verifiers' stake does not cover the job budget");
         emit("job_scored", json!({ "job_id": job_id, "score": score, "total_tests": total_tests, "message": message }));
         let job = self.job_mut(job_id);
         job.proposal = Some(Proposal { total_tests, scores: vec![score], signers, proposed_at_ms: now, dispute_until_ms: now + window });
@@ -416,6 +433,7 @@ impl Contract {
 fn job_view(j: &Job) -> JobView {
     JobView {
         id: j.id,
+        parent_job: env::storage_read(&parent_key(j.id)).and_then(|v| v.try_into().ok()).map(u64::from_le_bytes),
         poster: j.poster.clone(),
         skill: j.skill.clone(),
         task_ref: j.task_ref.clone(),
@@ -442,4 +460,9 @@ fn job_view(j: &Job) -> JobView {
         created_at_ms: j.created_at_ms,
         closed_at_ms: j.closed_at_ms,
     }
+}
+
+/// Raw storage key linking a subcontract to its parent job (no state migration needed).
+fn parent_key(job_id: u64) -> Vec<u8> {
+    [b"parent:".as_slice(), &job_id.to_le_bytes()].concat()
 }

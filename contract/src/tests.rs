@@ -60,7 +60,7 @@ fn setup(threshold: u8) -> (Contract, Vec<SigningKey>) {
     p.unstake_delay_ms = p.resolve_timeout_ms;
     c.set_params(p);
     for k in &keys {
-        ctx("staker.testnet", NEAR, 1_000);
+        ctx("staker.testnet", 10 * NEAR, 1_000);
         c.stake_verifier(near_pk(k), stake_proof(k, "staker.testnet"));
     }
     curate(&mut c);
@@ -661,7 +661,7 @@ fn upheld_dispute_keeps_the_scores() {
     let r = c.get_round(id).unwrap();
     assert_eq!(r.winners, vec![acc("b.testnet")]);
     assert_eq!(r.dispute.unwrap().overturned, Some(false));
-    assert_eq!(c.get_verifier_stakes()[0].amount.0, NEAR);
+    assert_eq!(c.get_verifier_stakes()[0].amount.0, 10 * NEAR);
 }
 
 #[test]
@@ -697,7 +697,7 @@ fn stake_withdraws_only_after_the_delay() {
     c.request_unstake(pk.clone());
     let delay = c.get_config().params.unstake_delay_ms;
     ctx("staker.testnet", 0, 1_000 + delay);
-    assert_eq!(c.withdraw_stake(pk).0, NEAR);
+    assert_eq!(c.withdraw_stake(pk).0, 10 * NEAR);
 }
 
 // ----- inference attestation -----
@@ -839,7 +839,7 @@ fn veteran(c: &mut Contract, keys: &[SigningKey]) {
 
 fn post(c: &mut Contract, min_rating: u32) -> u64 {
     ctx("client.testnet", 5 * NEAR, 2_000_000);
-    c.post_job(SKILL.into(), "job-task".into(), "sha256:jobtests".into(), min_rating, Some(3), Some(900_000), 3_600_000, None)
+    c.post_job(SKILL.into(), "job-task".into(), "sha256:jobtests".into(), min_rating, Some(3), Some(900_000), 3_600_000, None, None)
 }
 
 fn job_sig(k: &SigningKey, id: u64, total: u32, agent: &str, score: u32) -> Base64VecU8 {
@@ -896,6 +896,92 @@ fn an_expired_job_dispute_pays_the_passing_agent() {
 }
 
 #[test]
+fn a_zero_score_forfeits_the_bond_once_someone_scored() {
+    // Audit P1: entering junk agents used to cost nothing; now an answer worth 0 loses its bond.
+    let (mut c, keys) = setup(1);
+    let id = round_on(&mut c, TASK, false);
+    lock(&mut c, id);
+    answer_all(&mut c, id);
+    let s = scores([4, 0, 2]);
+    let sig = sign(&keys[0], id, 10, &s);
+    ctx("verifier.testnet", 0, settle::JUNK_BOND_FROM_MS + 1);
+    c.settle(id, 10, s, vec![sig]);
+    assert_eq!(claim(&mut c, "a.testnet", id), NEAR / 2);
+    assert_eq!(claim(&mut c, "c.testnet", id), NEAR / 2);
+    ctx("b.testnet", 0, settle::JUNK_BOND_FROM_MS + 2);
+    assert_eq!(c.get_position(id, acc("b.testnet")).iter().map(|p| p.bond.0).sum::<u128>(), NEAR / 2);
+    assert_eq!(claim(&mut c, "b.testnet", id), 0);
+}
+
+#[test]
+fn nobody_scoring_keeps_every_answered_bond() {
+    let (mut c, keys) = setup(1);
+    let id = round_on(&mut c, TASK, false);
+    lock(&mut c, id);
+    answer_all(&mut c, id);
+    let s = scores([0, 0, 0]);
+    let sig = sign(&keys[0], id, 10, &s);
+    ctx("verifier.testnet", 0, settle::JUNK_BOND_FROM_MS + 1);
+    c.settle(id, 10, s, vec![sig]);
+    assert_eq!(claim(&mut c, "b.testnet", id), NEAR / 2);
+}
+
+#[test]
+fn rounds_settled_before_the_rule_keep_their_bonds() {
+    let (mut c, keys) = setup(1);
+    let id = round_on(&mut c, TASK, false);
+    lock(&mut c, id);
+    answer_all(&mut c, id);
+    settle_now(&mut c, &keys, id, 10, [4, 0, 2]);
+    assert_eq!(claim(&mut c, "b.testnet", id), NEAR / 2);
+}
+
+#[test]
+#[should_panic(expected = "stake does not cover the job budget")]
+fn a_job_bigger_than_the_signers_stake_is_not_settled() {
+    // Audit P1: one signature must not release more than the stake a dispute could slash.
+    let (mut c, keys) = setup(1);
+    veteran(&mut c, &keys);
+    ctx(CLIENT, 50 * NEAR, 2_000_000);
+    let job = c.post_job(SKILL.into(), "job-task".into(), "sha256:jobtests".into(), 0, Some(1), None, 3_600_000, None, None);
+    ctx("a.testnet", 0, 2_000_100);
+    c.take_job(job);
+    ctx("a.testnet", 0, 2_000_200);
+    c.submit_job(job, "sha256:job-answer".into(), None);
+    ctx("verifier.testnet", 0, 2_000_300);
+    c.settle_job(job, 10, 10, vec![job_sig(&keys[0], job, 10, "a.testnet", 10)]);
+}
+
+#[test]
+fn an_agent_subcontracts_part_of_its_job() {
+    let (mut c, keys) = setup(1);
+    veteran(&mut c, &keys);
+    let parent = post(&mut c, 0);
+    ctx("a.testnet", 0, 2_000_100);
+    c.take_job(parent);
+    ctx("a.testnet", NEAR / 10, 2_000_150);
+    let sub = c.post_job(SKILL.into(), "job-task".into(), "sha256:jobtests".into(), 0, Some(1), None, 3_600_000, None, Some(parent));
+    let j = c.get_job(sub).unwrap();
+    assert_eq!((j.parent_job, j.poster.as_str()), (Some(parent), "a.testnet"));
+    assert_eq!(c.get_job(parent).unwrap().parent_job, None);
+    ctx("b.testnet", 0, 2_000_200);
+    c.take_job(sub);
+    assert_eq!(c.get_job(sub).unwrap().agent, Some(acc("b.testnet")));
+}
+
+#[test]
+#[should_panic(expected = "only the agent working on the parent job")]
+fn only_the_hired_agent_subcontracts() {
+    let (mut c, keys) = setup(1);
+    veteran(&mut c, &keys);
+    let parent = post(&mut c, 0);
+    ctx("a.testnet", 0, 2_000_100);
+    c.take_job(parent);
+    ctx("b.testnet", NEAR / 10, 2_000_150);
+    c.post_job(SKILL.into(), "job-task".into(), "sha256:jobtests".into(), 0, Some(1), None, 3_600_000, None, Some(parent));
+}
+
+#[test]
 fn failed_job_refunds_the_poster_and_costs_rating() {
     let (mut c, keys) = setup(1);
     veteran(&mut c, &keys);
@@ -944,7 +1030,7 @@ fn uncurated_job_pays_but_builds_no_record() {
     let (mut c, keys) = setup(1);
     veteran(&mut c, &keys);
     ctx("friend.testnet", NEAR, 2_000_000);
-    let job = c.post_job(SKILL.into(), "friendly-task".into(), "sha256:x".into(), 0, Some(1), None, 3_600_000, None);
+    let job = c.post_job(SKILL.into(), "friendly-task".into(), "sha256:x".into(), 0, Some(1), None, 3_600_000, None, None);
     ctx("a.testnet", 0, 2_000_100);
     c.take_job(job);
     ctx("a.testnet", 0, 2_000_200);

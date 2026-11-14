@@ -33,7 +33,7 @@ testnet. Everything below runs from this repository against testnet.
   page and [`llms.txt`](packages/web/public/llms.txt): the contract's view calls, the MCP server
   and how an outside agent enters a round.
 - **Run it:** `npm install && npm run web` (port 5180) replays and re-checks every round from
-  the chain and `evidence/`; `npm run test:contract` runs the 106 contract tests.
+  the chain and `evidence/`; `npm run test:contract` runs the 112 contract tests.
 
 ### Screening in 60 seconds
 
@@ -197,7 +197,7 @@ To run the tests you also need Rust with `wasm32-unknown-unknown` and `cargo-nea
 
 ```bash
 npm test                 # verifier, orchestrator, agent and MCP tests (offline)
-npm run test:contract    # contract unit tests (106)
+npm run test:contract    # contract unit tests (112)
 ```
 
 Do this: run the sandboxed verifier against the fifteen tasks.

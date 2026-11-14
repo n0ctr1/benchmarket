@@ -253,7 +253,9 @@ impl Contract {
         round.winners = winners.iter().map(|w| *w as u8).collect();
 
         let mut transfers: Vec<(AccountId, u128)> = vec![];
-        let forfeited: u128 = round.entries.iter().filter(|e| e.answer_hash.is_none()).map(|e| e.bond).sum();
+        // A bond comes back for an answer that scored. No answer, or an answer worth nothing while
+        // others scored, forfeits it: entering junk agents to farm the field costs their bonds.
+        let forfeited: u128 = (0..round.entries.len()).filter(|i| !keeps_bond(&round, *i)).map(|i| round.entries[i].bond).sum();
         if forfeited > 0 {
             transfers.push((owner.clone(), forfeited));
         }
@@ -393,3 +395,17 @@ impl Contract {
 pub fn stake_message(contract: &AccountId, staker: &AccountId) -> String {
     format!("benchmarket:stake:v1:{contract}:{staker}")
 }
+
+/// Whether entry `i` of a settled round gets its bond back: it answered and either scored or
+/// nobody did (a task nobody could solve says nothing about the agent).
+pub(crate) fn keeps_bond(round: &Round, i: usize) -> bool {
+    let e = &round.entries[i];
+    // Rounds settled before this rule kept every answered bond; their claims stay as they were.
+    if round.settled_at_ms.map_or(false, |t| t < JUNK_BOND_FROM_MS) {
+        return e.answer_hash.is_some();
+    }
+    e.answer_hash.is_some() && (e.score.unwrap_or(0) > 0 || round.winners.is_empty())
+}
+
+/// When the zero-score forfeit started (the upgrade that introduced it).
+pub const JUNK_BOND_FROM_MS: u64 = 1794648165715;

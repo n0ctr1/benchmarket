@@ -348,7 +348,7 @@ impl Contract {
             .bonds
             .iter()
             .enumerate()
-            .filter(|(i, _)| cancelled || round.entries[*i].answer_hash.is_some())
+            .filter(|(i, _)| cancelled || settle::keeps_bond(round, *i))
             .map(|(_, b)| *b)
             .sum();
         let market = if cancelled || round.payout_mode == PayoutMode::Refund {

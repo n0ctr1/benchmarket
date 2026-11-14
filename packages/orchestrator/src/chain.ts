@@ -103,6 +103,8 @@ export interface TaskView {
 export type JobStatus = "Open" | "Taken" | "Answered" | "Proposed" | "Disputed" | "Paid" | "Failed" | "Cancelled";
 
 export interface JobView {
+  /** Set when an agent posted this job for part of its own (parent) job. */
+  parent_job?: number | null;
   id: number;
   poster: string;
   skill: string;
@@ -409,7 +411,7 @@ export class LeagueChain {
 
   // ----- jobs -----
 
-  postJob(poster: string, p: { skill: string; taskRef: string; testsHash: string; minRating: number; minRounds?: number; passPpm?: number; workWindowMs: number; attested?: boolean; budget: bigint }) {
+  postJob(poster: string, p: { skill: string; taskRef: string; testsHash: string; minRating: number; minRounds?: number; passPpm?: number; workWindowMs: number; attested?: boolean; budget: bigint; parentJob?: number }) {
     return this.call<number>(poster, "post_job", {
       skill: p.skill,
       task_ref: p.taskRef,
@@ -419,6 +421,7 @@ export class LeagueChain {
       pass_ppm: p.passPpm ?? null,
       work_window_ms: p.workWindowMs,
       attested: p.attested ?? false,
+      parent_job: p.parentJob ?? null,
     }, p.budget);
   }
 
