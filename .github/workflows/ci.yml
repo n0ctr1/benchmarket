@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Daily too: the README's commands talk to public RPCs that can change without a commit here.
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
 
 # Read-only token: CI builds and tests, it never writes to the repository.
 permissions:
@@ -33,3 +37,14 @@ jobs:
           workspaces: contract
       - run: cargo test
         working-directory: contract
+
+  readme:
+    # Runs the README's "Screening in 60 seconds" block as written and compares its output,
+    # checks every relative link and anchor, and that the hosted site answers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/readme-smoke.mjs

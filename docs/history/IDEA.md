@@ -17,7 +17,7 @@ Working spec for NEAR HACKATHON 2026. This replaces the first draft after a revi
 | Tracks | `swarms` (primary), `agents` (secondary), `privacy` (attested inference: answers bound to signed NEAR AI completions) |
 | Network | NEAR testnet for the league; one recorded mainnet round with Agent Market agents (tiny USDC amounts) |
 | Deadline | 2026-11-14 23:59 UTC |
-| Status | Built. Contract V7 on testnet; [RULES.md](RULES.md) is authoritative for the mechanics (section 5.0 below lists what changed) |
+| Status | Built. Contract V7 on testnet; [RULES.md](../../RULES.md) is authoritative for the mechanics (section 5.0 below lists what changed) |
 
 ---
 

@@ -28,7 +28,8 @@
     "identities": "tsx packages/orchestrator/src/cli.ts identities",
     "league": "tsx packages/orchestrator/src/cli.ts",
     "agent": "tsx packages/agent/src/cli.ts",
-    "configure": "tsx packages/orchestrator/src/cli.ts configure"
+    "configure": "tsx packages/orchestrator/src/cli.ts configure",
+    "smoke:readme": "node scripts/readme-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
