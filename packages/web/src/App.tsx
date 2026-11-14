@@ -18,7 +18,9 @@ import { RoundView } from "./views/Round";
 import { useRecheck, VerifyView } from "./views/VerifyView";
 
 // Public RPCs rate-limit; poll gently and not at all while the tab is hidden.
-const POLL_MS = 15000;
+const POLL_MS = 30000;
+// Tasks, passports, jobs and briefs change rarely: read them on load and every fourth poll.
+const SLOW_EVERY = 4;
 
 type View = "home" | "league" | "round" | "verify" | "leaderboard" | "account" | "llms";
 // A round, and its re-check, open from the League feed; they have no tab of their own.
@@ -81,7 +83,9 @@ export function App() {
   const [mode, setMode] = useState<Mode | null>(savedMode);
   const [picker, setPicker] = useState(() => savedMode() === null);
   const [step, setStep] = useState(savedStep);
-  const [touring, setTouring] = useState(() => savedMode() === "judge");
+  // A judge's tour resumes on load, unless the page was opened on a link to something else: then
+  // the link wins and the header offers to resume the tour.
+  const [touring, setTouring] = useState(() => savedMode() === "judge" && /^#?\/?(home)?$/.test(window.location.hash));
   const toStep = (k: number) => {
     const n = Math.max(0, Math.min(STEPS.length - 1, k));
     setStep(n);
@@ -103,24 +107,30 @@ export function App() {
   useEffect(() => {
     let live = true;
     let identitiesSeen = -1;
+    let ticks = 0;
     const tick = async () => {
       if (document.hidden && identitiesSeen >= 0) return;
+      const slow = ticks++ % SLOW_EVERY === 0;
       try {
-        const [r, l, b, h, ids, t, j, br] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight(), getIdentities(), getTasks(), getJobs(), getBriefs()]);
+        const [r, l, b, h] = await Promise.all([getRounds(50), getLeaderboard("code.js"), getBettors(), blockHeight()]);
         if (!live) return;
-        setBriefs(br);
-        const scouts = [...new Set(br.flatMap((x) => x.nominations.map((nn) => nn.scout)))];
-        Promise.all(scouts.map(async (s) => [s, await getScoutRecord(s)] as const)).then((rows) => live && setPicks(Object.fromEntries(rows)));
-        setIdentities(ids);
-        if (ids.length !== identitiesSeen) {
-          identitiesSeen = ids.length;
-          loadIdentityNotes().then((x) => live && setNotes(x ?? {}));
+        if (slow) {
+          const [ids, t, j, br] = await Promise.all([getIdentities(), getTasks(), getJobs(), getBriefs()]);
+          if (!live) return;
+          setBriefs(br);
+          const scouts = [...new Set(br.flatMap((x) => x.nominations.map((nn) => nn.scout)))];
+          Promise.all(scouts.map(async (s) => [s, await getScoutRecord(s)] as const)).then((rows) => live && setPicks(Object.fromEntries(rows)));
+          setIdentities(ids);
+          if (ids.length !== identitiesSeen) {
+            identitiesSeen = ids.length;
+            loadIdentityNotes().then((x) => live && setNotes(x ?? {}));
+          }
+          setTasks(t);
+          setJobs(j);
         }
         setRounds(r);
         setRatings(l);
         setBettors(b);
-        setTasks(t);
-        setJobs(j);
         setHeight(h);
         setError(null);
       } catch (e) {
