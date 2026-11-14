@@ -21,9 +21,6 @@ test: node_modules
 	npm test
 	cd contract && cargo test --quiet
 
-# Rebuilds the contract in the pinned image and compares it with the code deployed on chain.
+# Rebuilds the commit the deployed contract names on chain (NEP-330) and compares the hashes.
 verify-wasm:
-	cd contract && cargo near build reproducible-wasm
-	@local=$$(python3 -c "import hashlib,sys;d=open('contract/target/near/benchmarket.wasm','rb').read();h=int.from_bytes(hashlib.sha256(d).digest(),'big');A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';s='';exec('while h:\n h,r=divmod(h,58);s=A[r]+s');print(s)"); \
-	chain=$$(curl -s https://test.rpc.fastnear.com -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"view_account","finality":"final","account_id":"benchmarket.testnet"}}' | python3 -c "import json,sys;print(json.load(sys.stdin)['result']['code_hash'])"); \
-	echo "local build: $$local"; echo "on chain:    $$chain"; test "$$local" = "$$chain" && echo "verify-wasm: identical"
+	bash scripts/verify-wasm.sh
