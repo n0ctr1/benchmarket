@@ -31,11 +31,12 @@ jobs:
       - run: npm ci
       - run: npm run web:build
         env:
-          BASE_PATH: /${{ github.event.repository.name }}/
+          # Relative, so the same build serves at the custom domain's root and at /<repo>/.
+          BASE_PATH: ./
           LEAGUE_ACCOUNT: benchmarket.testnet
           NEAR_NETWORK: testnet
           NEAR_RPC_URL: https://test.rpc.fastnear.com
-          PUBLIC_VERIFIER_URL: ${{ vars.PUBLIC_VERIFIER_URL }}
+          PUBLIC_VERIFIER_URL: ${{ vars.PUBLIC_VERIFIER_URL || 'https://verifier.bench-market.xyz' }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: packages/web/dist
