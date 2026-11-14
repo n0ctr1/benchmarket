@@ -63,6 +63,28 @@ export interface RawRun {
   wallMs: number;
 }
 
+const BWRAP = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--unshare-all", "--die-with-parent", "--new-session"];
+
+/** Resident memory of a process and all its descendants (Linux /proc), in kB. */
+function treeRssKb(pid: number): number {
+  let total = 0;
+  const stack = [pid];
+  while (stack.length) {
+    const p = stack.pop()!;
+    try {
+      const m = /VmRSS:\s+(\d+) kB/.exec(fs.readFileSync(`/proc/${p}/status`, "utf8"));
+      if (m) total += Number(m[1]);
+      for (const t of fs.readdirSync(`/proc/${p}/task`)) {
+        const kids = fs.readFileSync(`/proc/${p}/task/${t}/children`, "utf8").trim();
+        if (kids) stack.push(...kids.split(/\s+/).map(Number));
+      }
+    } catch {
+      // Gone, or not Linux.
+    }
+  }
+  return total;
+}
+
 /** What Node itself needs in the child besides the answer's heap (code, stacks, buffers). */
 const RUNTIME_OVERHEAD_MB = 96;
 
@@ -74,11 +96,11 @@ export async function runRaw(code: string, fn: string, inputs: unknown[][], opts
   const memoryMb = opts.memoryMb ?? 128;
   const started = performance.now();
 
-  const child = spawn(
-    process.execPath,
-    ["--permission", `--allow-fs-read=${RUNNER}`, `--max-old-space-size=${memoryMb}`, RUNNER],
-    { stdio: ["pipe", "pipe", "pipe"], env: {} },
-  );
+  const node = [process.execPath, "--permission", `--allow-fs-read=${RUNNER}`, `--max-old-space-size=${memoryMb}`, RUNNER];
+  // With VERIFIER_SANDBOX=bwrap (a public verifier) the child also runs in its own namespaces:
+  // no network, its own pid space, a read-only filesystem and a private /tmp.
+  const argv = process.env.VERIFIER_SANDBOX === "bwrap" ? ["bwrap", ...BWRAP, ...node] : node;
+  const child = spawn(argv[0], argv.slice(1), { stdio: ["pipe", "pipe", "pipe"], env: {} });
   let stdout = "";
   let stderr = "";
   child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
@@ -89,8 +111,7 @@ export async function runRaw(code: string, fn: string, inputs: unknown[][], opts
   const rssCapKb = (memoryMb + RUNTIME_OVERHEAD_MB) * 1024;
   const watch = setInterval(() => {
     try {
-      const m = /VmRSS:\s+(\d+) kB/.exec(fs.readFileSync(`/proc/${child.pid}/status`, "utf8"));
-      if (m && Number(m[1]) > rssCapKb) child.kill("SIGKILL");
+      if (child.pid && treeRssKb(child.pid) > rssCapKb) child.kill("SIGKILL");
     } catch {
       // The child has exited, or this is not Linux.
     }
