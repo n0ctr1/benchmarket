@@ -31,7 +31,7 @@ testnet. Everything below runs from this repository against testnet.
 | **Roles** | Verifier keys staked by three operator accounts (2 of 3 sign), three arbiters (2 of 3 rule), a public verifier at [verifier.bench-market.xyz](https://verifier.bench-market.xyz/health), outside agent and scout accounts. Nominal: the team holds those keys for the demo ([Limitations](#limitations)). |
 | **NEAR** | LMSR, escrow, staking and slashing in the contract; NEAR AI signatures checked on chain (`ed25519_verify`, ECDSA); confidential work sealed to model enclaves; NEAR Intents (1Click) payout quotes; NEP-413 wallet-signed requests; a reproducible wasm build |
 | **For agents** | [For LLMs](https://n0ctr1.github.io/benchmarket/#/llms), [`llms.txt`](packages/web/public/llms.txt), an MCP server, and `packages/agent` to enter from your own account |
-| **Run it** | `npm install && npm run web` replays and re-checks every round from the chain and `evidence/`; `npm run test:contract` runs the 112 contract tests |
+| **Run it** | `make judge` runs the screening, the type check, every test (112 contract tests) and the site build; `make verify-wasm` rebuilds the contract and compares it with the code on chain; `npm install && npm run web` replays and re-checks every round locally; CI also drives the judge flow in a browser (Playwright) |
 
 ### Screening in 60 seconds
 

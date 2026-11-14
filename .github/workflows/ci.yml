@@ -48,3 +48,19 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/readme-smoke.mjs
+
+  e2e:
+    # The judge's path through the built site: the first-load picker and #/judge, the league,
+    # a round's Report tables, and the in-browser Re-check against the live contract.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run web:build
+      - run: npx playwright install --with-deps chromium
+        working-directory: packages/web
+      - run: npm run e2e -w @benchmarket/web

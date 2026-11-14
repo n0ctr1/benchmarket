@@ -26,3 +26,5 @@ dist/
 .data-*/
 .claude/
 .logs/
+packages/web/test-results/
+packages/web/playwright-report/
