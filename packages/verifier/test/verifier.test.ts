@@ -16,6 +16,7 @@ import {
   taskPrompt,
   verifyMessage,
   verifyNearAiSignature,
+  signNep413,
   clientKey,
   modelX25519,
   sealField,
@@ -78,6 +79,16 @@ test("classic vm escape through constructors is blocked", async () => {
   }`;
   const r = await runTests(code, "add", tests);
   assert.equal(r.passed, 0);
+});
+
+test("memory outside the heap (typed arrays) is capped too", async () => {
+  // Audit NV6: --max-old-space-size does not cover ArrayBuffer memory.
+  const hog = "const keep = []; function addNumbers(a, b) { for (let i = 0; i < 40; i++) { const x = new Uint8Array(10 * 1024 * 1024); x.fill(1); keep.push(x); } return a + b; }";
+  const started = Date.now();
+  const r = await runTests(hog, "addNumbers", tests, { perTestMs: 20_000 });
+  assert.equal(r.passed, 0);
+  assert.match(String(r.compileError), /killed/);
+  assert.ok(Date.now() - started < 15_000, "killed by the memory watch, not the time limit");
 });
 
 test("Infinity and undefined never pass as null", async () => {
@@ -225,6 +236,58 @@ test("open entry: the server accepts an answer only if it matches the commitment
     const ok = await post({ agent: "ext.testnet", answer });
     assert.equal(ok.status, 200);
     assert.equal(v.getAnswer(4, "ext.testnet")?.answer, answer);
+  } finally {
+    server.close();
+  }
+});
+
+test("only the job's poster, signing with its wallet, hands over a client task, once", async () => {
+  const v = new Verifier([generateKeyPair().secretKey]);
+  const poster = generateKeyPair();
+  const raw = JSON.stringify([{ args: [2, 3], expected: 5 }]);
+  const chain = {
+    contract: "league.testnet",
+    async get() {
+      return { task_ref: "client", status: "Taken", entries: [{ agent: "hire.testnet", answer_hash: null }] };
+    },
+    async jobMeta() {
+      return { tests_hash: sha256Tagged(raw), status: "Taken", poster: "client.testnet", agent: "hire.testnet", answer_hash: null };
+    },
+    async hasKey(account: string, pk: string) {
+      return account === "client.testnet" && pk === poster.publicKey;
+    },
+  };
+  const server = createServer(v, chain).listen(0);
+  const port = (server.address() as { port: number }).port;
+  const body = JSON.stringify({ task: { title: "Add", statement: "Write addNumbers(a, b).", function: "addNumbers", examples: [] }, tests: raw });
+  const post = (headers: Record<string, string>, b = body) =>
+    fetch(`http://localhost:${port}/jobs/9/client-task`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: b }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+  let n = 0;
+  // A wallet's NEP-413 signature over this action, job and body, with a fresh nonce.
+  const wallet = (key: string, account: string, b = body, job = 9, pub = poster.publicKey) => {
+    const nonce = new Uint8Array(32).fill(++n);
+    return {
+      "x-account": account,
+      "x-key": pub,
+      "x-nonce": Buffer.from(nonce).toString("base64"),
+      "x-sig": signNep413(key, `benchmarket:client-task:league.testnet:${job}:${sha256Tagged(b)}`, nonce, "league.testnet"),
+    };
+  };
+  try {
+    assert.equal((await post({})).status, 403, "anonymous");
+    const stranger = generateKeyPair();
+    assert.equal((await post(wallet(stranger.secretKey, "client.testnet", body, 9, stranger.publicKey))).status, 403, "a key the poster does not hold");
+    assert.equal((await post(wallet(poster.secretKey, "client.testnet", body, 10))).status, 403, "a signature for another job");
+    assert.equal((await post(wallet(poster.secretKey, "hire.testnet"))).status, 403, "not the poster");
+    const signedOther = wallet(poster.secretKey, "client.testnet", body.replace("addNumbers(a, b)", "something else"));
+    assert.equal((await post(signedOther)).status, 403, "headers signed over another body");
+    const good = wallet(poster.secretKey, "client.testnet");
+    const ok = await post(good);
+    assert.equal(ok.status, 200);
+    assert.equal(v.clientTask(9)?.function, "addNumbers");
+    assert.equal((await post(good)).status, 409, "never replaced, and the nonce is spent");
+    const huge = await post(wallet(poster.secretKey, "client.testnet"), "x".repeat(3 * 1024 * 1024)).catch(() => ({ status: 0 }));
+    assert.notEqual(huge.status, 200);
   } finally {
     server.close();
   }

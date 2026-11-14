@@ -1,5 +1,6 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58, base64 } from "@scure/base";
+import { sha256 as nobleSha256 } from "@noble/hashes/sha2.js";
 import { sha256Bytes } from "./hash.js";
 
 /** An ed25519 key pair in NEAR string format. */
@@ -46,4 +47,44 @@ export function verifyMessage(publicKey: string, message: string, signatureB64: 
   if (!publicKey.startsWith(PREFIX)) return false;
   const pub = base58.decode(publicKey.slice(PREFIX.length));
   return ed25519.verify(base64.decode(signatureB64), sha256Bytes(message), pub);
+}
+
+/**
+ * NEP-413 (the wallets' `signMessage`): the wallet signs sha256(u32 LE 2^31 + 413 ||
+ * borsh{message: string, nonce: [u8; 32], recipient: string, callbackUrl: Option<string>}).
+ * This is how a person proves, from a browser wallet, that a request comes from their account.
+ */
+export function nep413Digest(message: string, nonce: Uint8Array, recipient: string): Uint8Array {
+  if (nonce.length !== 32) throw new Error("the NEP-413 nonce is 32 bytes");
+  const str = (s: string) => {
+    const b = new TextEncoder().encode(s);
+    const out = new Uint8Array(4 + b.length);
+    new DataView(out.buffer).setUint32(0, b.length, true);
+    out.set(b, 4);
+    return out;
+  };
+  const tag = new Uint8Array(4);
+  new DataView(tag.buffer).setUint32(0, 2 ** 31 + 413, true);
+  const parts = [tag, str(message), nonce, str(recipient), new Uint8Array([0])];
+  const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) {
+    all.set(p, at);
+    at += p.length;
+  }
+  return nobleSha256(all);
+}
+
+export function signNep413(secretKey: string, message: string, nonce: Uint8Array, recipient: string): string {
+  return base64.encode(ed25519.sign(nep413Digest(message, nonce, recipient), seedFromSecret(secretKey)));
+}
+
+export function verifyNep413(publicKey: string, message: string, nonceB64: string, recipient: string, signatureB64: string): boolean {
+  try {
+    if (!publicKey.startsWith(PREFIX)) return false;
+    const pub = base58.decode(publicKey.slice(PREFIX.length));
+    return ed25519.verify(base64.decode(signatureB64), nep413Digest(message, base64.decode(nonceB64), recipient), pub);
+  } catch {
+    return false;
+  }
 }

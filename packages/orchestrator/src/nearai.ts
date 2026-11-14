@@ -135,9 +135,10 @@ export interface SealedChat {
 }
 
 /**
- * A completion only the model's enclave can read: every message is encrypted to the enclave's key
- * from a fresh attestation report (nonce checked), the reply comes back encrypted to a one-time
- * client key. NEAR AI's gateway and operators see ciphertext only.
+ * A completion sealed to the model's enclave: every message is encrypted to the enclave key from a
+ * fresh attestation report (nonce checked), the reply comes back encrypted to a one-time client
+ * key. The report's TDX quote and GPU evidence are not verified here, so the gateway that serves
+ * the report is trusted not to substitute its own key (RULES.md section 12).
  */
 export async function sealedChat(model: string, messages: ChatMessage[], maxTokens = 32000, timeoutMs = 600_000): Promise<SealedChat> {
   const nonce = randomBytes(32).toString("hex");

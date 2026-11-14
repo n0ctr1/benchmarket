@@ -22,6 +22,8 @@ use crate::*;
 /// Nominations per brief.
 pub const MAX_NOMINATIONS: usize = 32;
 pub const DEFAULT_OFFER_WINDOW_MS: u64 = 3 * 24 * 3_600_000;
+/// No brief window may exceed this, so a brief can never lock the scouts' stakes for good.
+pub const MAX_WINDOW_MS: u64 = 30 * 24 * 3_600_000;
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -132,6 +134,9 @@ pub struct BriefView {
     pub tryout_subsidy: U128,
     pub min_stake: U128,
     pub nominate_until_ms: u64,
+    pub trade_window_ms: u64,
+    pub work_window_ms: u64,
+    pub offer_window_ms: u64,
     pub status: BriefStatus,
     pub nominations: Vec<NominationView>,
     pub tryout_task: Option<String>,
@@ -147,6 +152,8 @@ pub struct BriefView {
 pub(crate) enum Outcome {
     Delivered,
     Failed,
+    /// Failed, but on work the client controlled: the brief closes Failed, every stake back.
+    Unslashed,
     Void,
 }
 
@@ -186,7 +193,9 @@ impl Contract {
         if let Some(c) = &category {
             require!(self.categories.contains_key(c), "no such category");
         }
-        require!(nominate_window_ms >= 60_000 && trade_window_ms >= 60_000 && work_window_ms >= 60_000, "windows must be at least a minute");
+        let offer_window_ms = offer_window_ms.unwrap_or(DEFAULT_OFFER_WINDOW_MS);
+        let windows = [nominate_window_ms, trade_window_ms, work_window_ms, offer_window_ms];
+        require!(windows.iter().all(|w| (60_000..=MAX_WINDOW_MS).contains(w)), "every window must be between a minute and 30 days");
         let pass = pass_ppm.unwrap_or(math::PPM as u32);
         require!(pass > 0 && pass as u64 <= math::PPM, "pass_ppm must be 1..=1000000");
         match (&task_ref, &tests_hash) {
@@ -219,7 +228,7 @@ impl Contract {
             nominate_until_ms: now + nominate_window_ms,
             trade_window_ms,
             work_window_ms,
-            offer_window_ms: offer_window_ms.unwrap_or(DEFAULT_OFFER_WINDOW_MS),
+            offer_window_ms,
             status: BriefStatus::Scouting,
             nominations: vec![],
             tryout_task: None,
@@ -451,7 +460,9 @@ impl Contract {
         let client_task = brief.task_ref.clone().unwrap();
         let client_tests = brief.tests_hash.clone().unwrap();
         let agent = brief.offered.clone().unwrap();
-        let rated = self.tasks.get(&client_task).map_or(false, |t| t.curated);
+        // A confidential hire is run by the client, who commits the answer: it must never move the
+        // agent's public rating.
+        let rated = !brief.confidential && self.tasks.get(&client_task).map_or(false, |t| t.curated);
         let job_id = self.next_job_id;
         self.next_job_id += 1;
         let job = Job {
@@ -563,13 +574,18 @@ impl Contract {
     }
 
     /// Closes a brief. `refund` goes back to the client. Delivered: the hired agent's scouts
-    /// share the reward pro rata to stake. Failed: their stakes go to the client with the
-    /// reward. Void: everything back. Other nominations always get their stake back.
+    /// share the reward pro rata to stake. Failed: their stakes go to the league and the reward
+    /// back to the client. Void: everything back. Other nominations always get their stake back.
     pub(crate) fn close_brief(&mut self, brief_id: u64, outcome: Outcome, refund: u128) {
         let brief = self.briefs.get(&brief_id).cloned().unwrap();
         let hired = brief.offered.clone();
         let mut to_client = refund;
-        if let (Some(agent), true) = (hired.as_ref(), outcome != Outcome::Void) {
+        // A failure can cost the scouts their stake only when it is the agent's: a rated job
+        // (curated task, not confidential), which the agent ran itself on tests it could not
+        // choose. Otherwise the client controlled the outcome, and the stakes go back.
+        let job_rated = brief.job_id.and_then(|j| self.jobs.get(&j)).map_or(false, |j| j.rated);
+        let outcome = if outcome == Outcome::Failed && !job_rated { Outcome::Unslashed } else { outcome };
+        if let (Some(agent), true) = (hired.as_ref(), matches!(outcome, Outcome::Delivered | Outcome::Failed)) {
             let backing: u128 = brief.nominations.iter().filter(|n| n.agent == *agent).map(|n| n.stake).sum();
             let mut paid = 0u128;
             let b = self.briefs.get_mut(&brief_id).unwrap();
@@ -590,8 +606,15 @@ impl Contract {
                     pay.push((n.scout.clone(), 0, 0, n.stake));
                 }
             }
+            // The client gets its reward back; the slashed stakes go to the league, never to the
+            // client, who could otherwise profit from a failure it caused.
+            let mut to_league = 0u128;
             if outcome == Outcome::Failed {
-                to_client += backing + brief.scout_reward;
+                to_client += brief.scout_reward;
+                to_league = backing;
+            }
+            if to_league > 0 {
+                Promise::new(self.owner.clone()).transfer(NearToken::from_yoctonear(to_league)).detach();
             }
             for (scout, amount, earned, slashed) in pay {
                 let r = self.scout_records.entry(scout.clone()).or_default();
@@ -614,7 +637,7 @@ impl Contract {
         let b = self.briefs.get_mut(&brief_id).unwrap();
         b.status = match outcome {
             Outcome::Delivered => BriefStatus::Delivered,
-            Outcome::Failed => BriefStatus::Failed,
+            Outcome::Failed | Outcome::Unslashed => BriefStatus::Failed,
             Outcome::Void => BriefStatus::Cancelled,
         };
         b.closed_at_ms = Some(env::block_timestamp_ms());
@@ -658,6 +681,9 @@ fn brief_view(b: &Brief) -> BriefView {
         tryout_subsidy: U128(b.tryout_subsidy),
         min_stake: U128(b.min_stake),
         nominate_until_ms: b.nominate_until_ms,
+        trade_window_ms: b.trade_window_ms,
+        work_window_ms: b.work_window_ms,
+        offer_window_ms: b.offer_window_ms,
         status: b.status,
         nominations: b
             .nominations

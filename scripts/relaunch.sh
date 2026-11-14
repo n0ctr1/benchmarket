@@ -12,6 +12,8 @@
 set -euo pipefail
 FROM="${1:?usage: scripts/relaunch.sh <funded-account> <new-account> [NEAR]}"
 TO="${2:?name the new league account, e.g. my-benchmarket.testnet}"
+# A NEAR account id only: it is written into .env below.
+[[ "$TO" =~ ^[a-z0-9._-]+$ ]] || { echo "not a NEAR account id: $TO" >&2; exit 1; }
 AMOUNT="${3:-14.5}"
 cd "$(dirname "$0")/.."
 

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +63,9 @@ export interface RawRun {
   wallMs: number;
 }
 
+/** What Node itself needs in the child besides the answer's heap (code, stacks, buffers). */
+const RUNTIME_OVERHEAD_MB = 96;
+
 /** Runs `fn` from `code` on each input in the isolated child process; returns raw outputs. */
 export async function runRaw(code: string, fn: string, inputs: unknown[][], opts: SandboxOptions = {}): Promise<RawRun> {
   if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(fn)) throw new Error(`bad function name ${fn}`);
@@ -80,9 +84,21 @@ export async function runRaw(code: string, fn: string, inputs: unknown[][], opts
   child.stdout.setEncoding("utf8").on("data", (d) => (stdout += d));
   child.stderr.setEncoding("utf8").on("data", (d) => (stderr += d));
   const timer = setTimeout(() => child.kill("SIGKILL"), totalMs);
+  // The heap flag does not cover ArrayBuffer memory, so watch the child's resident memory too
+  // and kill it past the cap plus Node's own footprint (Linux /proc; elsewhere the heap cap only).
+  const rssCapKb = (memoryMb + RUNTIME_OVERHEAD_MB) * 1024;
+  const watch = setInterval(() => {
+    try {
+      const m = /VmRSS:\s+(\d+) kB/.exec(fs.readFileSync(`/proc/${child.pid}/status`, "utf8"));
+      if (m && Number(m[1]) > rssCapKb) child.kill("SIGKILL");
+    } catch {
+      // The child has exited, or this is not Linux.
+    }
+  }, 50);
   child.stdin.end(JSON.stringify({ code, fn, inputs, perTestMs }));
   const exitCode: number | null = await new Promise((resolve) => child.on("close", resolve));
   clearTimeout(timer);
+  clearInterval(watch);
   const wallMs = performance.now() - started;
 
   try {

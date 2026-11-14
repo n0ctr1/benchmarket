@@ -190,7 +190,7 @@ async function confidentialJob(o: { chain: LeagueChain; verifier: Verifier; jobI
     { role: "user", content: taskPrompt(publicView(task), tag) },
   ]);
   if (out.signature?.signature_kind !== "provider_tee") throw new Error(`no enclave signature for ${agent.model}`);
-  say(`  the client ran ${agent.name}'s config sealed to the ${agent.model} enclave (${(out.latencyMs / 1000).toFixed(1)}s); NEAR AI saw ciphertext only`);
+  say(`  the client ran ${agent.name}'s config in the ${agent.model} enclave (${(out.latencyMs / 1000).toFixed(1)}s), sealed to the key from its attestation report`);
   await chain.submitJob(client, jobId, sha256Tagged(out.responseBody), attestationArg(out.signature));
   const job = (await chain.getJob(jobId))!;
   say(`  answer committed with the enclave's signature (${job.model})`);

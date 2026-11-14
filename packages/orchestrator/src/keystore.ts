@@ -41,7 +41,7 @@ export class KeyStore {
 
   save(account: string, publicKey: string, privateKey: string): void {
     const p = this.localPath(account);
-    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
     fs.writeFileSync(p, JSON.stringify({ account_id: account, public_key: publicKey, private_key: privateKey }, null, 2), {
       mode: 0o600,
     });

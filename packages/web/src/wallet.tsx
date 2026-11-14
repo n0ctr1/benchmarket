@@ -18,6 +18,12 @@ export interface Wallet {
   disconnect: () => Promise<void>;
   /** Signs and sends one call to the league contract. Amounts are yoctoNEAR. */
   call: (method: string, args: Record<string, unknown>, deposit?: bigint, gasTera?: number) => Promise<unknown>;
+  /**
+   * Proves to the verifier that a request about a job comes from this account: a NEP-413
+   * wallet signature over `benchmarket:<action>:<contract>:<job id>:<sha256 of body>`, with a
+   * fresh nonce, returned as the headers the verifier reads. Signs only; sends nothing on chain.
+   */
+  authHeaders: (action: string, jobId: number, body: string) => Promise<Record<string, string>>;
 }
 
 const Ctx = createContext<Wallet>({
@@ -26,6 +32,9 @@ const Ctx = createContext<Wallet>({
   connect: () => {},
   disconnect: async () => {},
   call: async () => {
+    throw new Error("wallet not ready");
+  },
+  authHeaders: async () => {
     throw new Error("wallet not ready");
   },
 });
@@ -83,6 +92,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     [selector, account],
   );
 
+  const authHeaders = useCallback(
+    async (action: string, jobId: number, body: string) => {
+      if (!selector || !account) throw new Error("connect a wallet first");
+      const wallet = await selector.wallet();
+      if (!wallet.signMessage) throw new Error("this wallet cannot sign messages; use Meteor or Intear");
+      const { Buffer } = await import("buffer");
+      const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(32)));
+      const { sha256Tagged } = await import("@benchmarket/shared/hash");
+      const signed = await wallet.signMessage({ message: `benchmarket:${action}:${LEAGUE}:${jobId}:${sha256Tagged(body)}`, recipient: LEAGUE, nonce });
+      if (!signed) throw new Error("the wallet did not return a signature");
+      return { "x-account": signed.accountId, "x-key": signed.publicKey, "x-nonce": nonce.toString("base64"), "x-sig": signed.signature };
+    },
+    [selector, account],
+  );
+
   const value = useMemo<Wallet>(
     () => ({
       ready: !!selector,
@@ -94,8 +118,9 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         await w.signOut();
       },
       call,
+      authHeaders,
     }),
-    [selector, modal, account, call],
+    [selector, modal, account, call, authHeaders],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

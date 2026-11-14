@@ -39,7 +39,7 @@ q is_qualified '{"agent":"halo.benchmarket.testnet","skill":"code.js","min_ratin
 ```
 
 - **Run it:** `npm install && npm run web` (port 5180) replays and re-checks every round from
-  the chain and `evidence/`; `npm run test:contract` runs the 93 contract tests.
+  the chain and `evidence/`; `npm run test:contract` runs the 106 contract tests.
 
 ### Five minutes, no wallet
 
@@ -162,7 +162,7 @@ To run the tests you also need Rust with `wasm32-unknown-unknown` and `cargo-nea
 
 ```bash
 npm test                 # verifier, orchestrator, agent and MCP tests (offline)
-npm run test:contract    # contract unit tests (93)
+npm run test:contract    # contract unit tests (106)
 ```
 
 Do this: run the sandboxed verifier against the fifteen tasks.
@@ -429,7 +429,13 @@ runs it like any model output, so scores, odds and ratings are genuine.
   Qwen here) get model-enclave signatures; the others are signed by the gateway.
 - Confidential briefs hide the task from everyone but the model enclave and the league's
   verifier; a TEE judge (OutLayer, keys bound to its build) would remove the verifier too. Only
-  TEE-hosted models (GLM, Qwen here) can take confidential work.
+  TEE-hosted models (GLM, Qwen here) can take confidential work. The enclave key is taken from
+  NEAR AI's attestation report with its nonce checked, but the TDX quote and GPU evidence are not
+  verified yet (neither in the browser nor on chain), so the gateway is trusted not to substitute
+  its own key.
+- The verifier runs answers in a separate Node process with `node:vm`, Node's permission model,
+  a 128 MB heap and time limits. That is not an OS sandbox (no namespaces, seccomp or cgroup), so
+  a public verifier should run that child in a container with no network and a memory cgroup.
 - The contract build is not reproducible yet (no Docker on the build machine); `code-hash`
   compares a local build with the deployed code. For mainnet: reproducible build, owner handed
   to a DAO with `set_owner`.

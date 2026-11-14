@@ -47,7 +47,12 @@ function offChain(): Record<string, unknown> {
   // as the verifier's GET /rounds/:id/report.
   const bound = new Map<number, Record<string, any>>((state.bound ?? []).map(([k, v]: [any, any]) => [roundKey(k), v]).filter(([k]: [any]) => k !== null));
   const sha = (t: string) => "sha256:" + createHash("sha256").update(t, "utf8").digest("hex");
+  // What the verifier keeps private (confidential work, any client's own task): only signed
+  // scores and hashes leave it, exactly as its GET /…/report serves them.
+  const privateKeys = new Set<string>([...(state.private ?? []), ...(state.clientTasks ?? []).map(([k]: [string]) => k)].map(String));
+  const isPrivate = (k: string) => privateKeys.has(k);
   for (const [id, report] of reports) {
+    if (isPrivate(`round:${id}`)) continue;
     const dir = path.join(ROOT, "tasks", report.taskId);
     if (!fs.existsSync(dir)) continue;
     const fn = JSON.parse(fs.readFileSync(path.join(dir, "task.json"), "utf8")).function;
@@ -64,7 +69,7 @@ function offChain(): Record<string, unknown> {
     const log = JSON.parse(fs.readFileSync(path.join(logsDir, `${id}.json`), "utf8"));
     const report = reports.get(id);
     // Answers are published only after the round is scored, like the verifier API does.
-    const agents = report
+    const agents = report && !isPrivate(`round:${id}`)
       ? Object.fromEntries(
           (answers.get(id) ?? []).map((a) => {
             const d = report.details?.find((x: any) => x.agent === a.agent);
@@ -115,7 +120,7 @@ function offChain(): Record<string, unknown> {
   for (const [k, report] of state.reports as Array<[string | number, Record<string, any>]>) {
     if (typeof k !== "string" || !k.startsWith("job:")) continue;
     const jobAnswers = (state.answers as Array<[string | number, Array<Record<string, any>>]>).find(([a]) => a === k)?.[1] ?? [];
-    const confidential = jobAnswers.some((a) => a.sealed || a.meta?.confidential);
+    const confidential = isPrivate(k) || jobAnswers.some((a) => a.sealed || a.meta?.confidential);
     const signed = { kind: report.kind, jobId: Number(k.slice(4)), testsHash: report.testsHash, totalTests: report.totalTests, scores: report.scores, message: report.message, signatures: report.signatures, publicKeys: report.publicKeys };
     out[`jobs/${k.slice(4)}.json`] = confidential
       ? { report: signed, confidential: true }

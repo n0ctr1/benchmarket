@@ -44,6 +44,12 @@ fn sign(k: &SigningKey, round_id: u64, total: u32, scores: &[(AccountId, u32)]) 
     sign_with(k, settle::ROUND_DOMAIN, round_id, total, scores)
 }
 
+/// The key's proof that `staker` holds it, for its first stake.
+fn stake_proof(k: &SigningKey, staker: &str) -> Option<Base64VecU8> {
+    let msg = settle::stake_message(&near_sdk::env::current_account_id(), &acc(staker));
+    Some(Base64VecU8(k.sign(&near_sdk::env::sha256_array(msg.as_bytes())).to_bytes().to_vec()))
+}
+
 /// Three staked verifier keys, no dispute window (scores settle at once) unless a test sets one.
 fn setup(threshold: u8) -> (Contract, Vec<SigningKey>) {
     ctx("owner.testnet", 0, 1_000);
@@ -55,7 +61,7 @@ fn setup(threshold: u8) -> (Contract, Vec<SigningKey>) {
     c.set_params(p);
     for k in &keys {
         ctx("staker.testnet", NEAR, 1_000);
-        c.stake_verifier(near_pk(k));
+        c.stake_verifier(near_pk(k), stake_proof(k, "staker.testnet"));
     }
     curate(&mut c);
     (c, keys)
@@ -455,7 +461,7 @@ fn stranger_cannot_cancel_early() {
 fn builder_must_post_a_bond() {
     let (mut c, _) = setup(1);
     issue(&mut c, "a.testnet");
-    ctx("manager.testnet", 0, 1_000);
+    ctx("manager.testnet", rounds::ROUND_STORAGE_FEE, 1_000);
     let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None, None);
     ctx("a.testnet", NEAR / 10, 1_100);
     c.register_agent(id, acc("a.testnet"), League::Open, "cfg".into());
@@ -519,7 +525,7 @@ fn uncurated_round_does_not_score_scouts() {
 #[should_panic(expected = "tests hash does not match the curated task")]
 fn curated_task_pins_its_tests() {
     let (mut c, _) = setup(1);
-    ctx("manager.testnet", 0, 1_000);
+    ctx("manager.testnet", rounds::ROUND_STORAGE_FEE, 1_000);
     c.create_round(SKILL.into(), TASK.into(), "sha256:other".into(), LOCK, 5, None, None);
 }
 
@@ -670,13 +676,17 @@ fn verifier_signature_is_not_an_arbiter_ruling() {
 }
 
 #[test]
-fn unresolved_dispute_expires_into_a_refund() {
+fn unresolved_dispute_keeps_the_signed_scores() {
+    // Audit NV4: an expired dispute used to cancel the round, a free refund for a losing scout.
     let (mut c, keys) = setup(1);
     let id = disputed_round(&mut c, &keys);
+    let proposed = c.get_round(id).unwrap().proposal.unwrap().scores;
     ctx("anyone.testnet", 0, 60_000 + 3 * 24 * 3_600_000);
     c.expire_dispute(id);
-    assert_eq!(c.get_round(id).unwrap().status, RoundStatus::Cancelled);
-    assert_eq!(claim(&mut c, "a.testnet", id), NEAR / 2);
+    let r = c.get_round(id).unwrap();
+    assert_eq!(r.status, RoundStatus::Settled);
+    assert_eq!(r.entries.iter().map(|e| e.score.unwrap()).collect::<Vec<_>>(), proposed.iter().map(|s| s.1).collect::<Vec<_>>());
+    assert!(get_logs().iter().any(|l| l.contains("dispute_expired")));
 }
 
 #[test]
@@ -726,6 +736,65 @@ fn attested_answer_is_recorded_and_counted() {
     assert_eq!(c.get_rating(acc("a.testnet"), SKILL.into()).attested, 1);
     assert!(!c.is_qualified(acc("b.testnet"), SKILL.into(), 0, Some(1), Some(1)));
     assert!(c.is_qualified(acc("a.testnet"), SKILL.into(), 0, Some(1), Some(1)));
+}
+
+#[test]
+fn a_copied_attestation_that_scores_zero_counts_nothing() {
+    // Audit L1: copying another agent's public attestation must not raise the `attested` count;
+    // the verifier scores a copy 0 (wrong config and round tag), and only scored answers count.
+    let (mut c, keys) = setup(1);
+    let id = attested_round(&mut c);
+    ctx("a.testnet", 0, ANSWER);
+    c.submit_answer(id, ATT_HASH.into(), Some(attestation()));
+    ctx("b.testnet", 0, ANSWER + 1);
+    c.submit_answer(id, ATT_HASH.into(), Some(attestation()));
+    let s = scores([4, 0, 0]);
+    let sig = sign(&keys[0], id, 10, &s);
+    ctx("verifier.testnet", 0, LOCK + 15 * 60_000 + 1);
+    c.settle(id, 10, s, vec![sig]);
+    assert_eq!(c.get_rating(acc("a.testnet"), SKILL.into()).attested, 1);
+    assert_eq!(c.get_rating(acc("b.testnet"), SKILL.into()).attested, 0);
+}
+
+#[test]
+#[should_panic(expected = "attach the round storage fee")]
+fn a_round_from_outside_the_league_pays_its_storage() {
+    // Audit M7: a free create_round stored about 1 kB on the contract's balance for good.
+    let (mut c, _) = setup(1);
+    ctx("someone.testnet", 0, 1_000);
+    c.create_round(SKILL.into(), "anything".into(), "sha256:x".into(), LOCK, 5, None, None);
+}
+
+#[test]
+fn the_storage_fee_is_not_part_of_the_bounty() {
+    let (mut c, _) = setup(1);
+    ctx("someone.testnet", rounds::ROUND_STORAGE_FEE + NEAR, 1_000);
+    let id = c.create_round(SKILL.into(), "anything".into(), "sha256:x".into(), LOCK, 5, None, None);
+    assert_eq!(c.get_round(id).unwrap().bounty.0, NEAR);
+}
+
+#[test]
+#[should_panic(expected = "at most 30 days")]
+fn the_betting_window_is_capped() {
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), 1_000 + rounds::MAX_BET_WINDOW_MS + 1, 5, None, None);
+}
+
+#[test]
+fn anyone_cancels_a_round_that_never_filled() {
+    // Audit L2: with one entrant a round can never lock, and an absent manager held the bond.
+    let (mut c, _) = setup(1);
+    issue(&mut c, "a.testnet");
+    ctx("owner.testnet", 0, 1_000);
+    let id = c.create_round(SKILL.into(), TASK.into(), "sha256:tests".into(), LOCK, 5, None, None);
+    ctx("a.testnet", NEAR / 2, 1_100);
+    c.register_agent(id, acc("a.testnet"), League::Open, "cfg-a".into());
+    let timeout = c.get_config().params.settle_timeout_ms;
+    ctx("anyone.testnet", 0, LOCK + timeout + 1);
+    c.cancel_round(id);
+    assert_eq!(c.get_round(id).unwrap().status, RoundStatus::Cancelled);
+    assert_eq!(claim(&mut c, "a.testnet", id), NEAR / 2);
 }
 
 #[test]
@@ -797,6 +866,33 @@ fn qualified_agent_is_hired_paid_and_rated() {
     let r = c.get_rating(acc("a.testnet"), SKILL.into());
     assert_eq!(r.jobs_done, 1);
     assert_eq!(c.get_task("job-task".into()).unwrap().jobs, 1);
+}
+
+#[test]
+fn an_expired_job_dispute_pays_the_passing_agent() {
+    // Audit hardening: an unanswered job dispute used to refund the poster, leaving a passing
+    // agent unpaid; now the signed score stands and the disputer's bond comes back.
+    let (mut c, keys) = setup(1);
+    veteran(&mut c, &keys);
+    ctx("owner.testnet", 0, 1_000);
+    let mut p = c.get_config().params;
+    p.dispute_window_ms = 60_000;
+    p.unstake_delay_ms = p.dispute_window_ms + p.resolve_timeout_ms;
+    c.set_params(p);
+    let job = post(&mut c, 1_400);
+    ctx("a.testnet", 0, 2_000_100);
+    c.take_job(job);
+    ctx("a.testnet", 0, 2_000_200);
+    c.submit_job(job, "sha256:job-answer".into(), None);
+    ctx("verifier.testnet", 0, 2_000_300);
+    c.settle_job(job, 10, 10, vec![job_sig(&keys[0], job, 10, "a.testnet", 10)]);
+    let bond = c.get_config().params.dispute_bond.0;
+    ctx("griefer.testnet", bond, 2_000_400);
+    c.dispute_job(job);
+    let timeout = c.get_config().params.resolve_timeout_ms;
+    ctx("anyone.testnet", 0, 2_000_400 + timeout);
+    c.expire_job_dispute(job);
+    assert_eq!(c.get_job(job).unwrap().status, JobStatus::Paid);
 }
 
 #[test]
@@ -1048,7 +1144,10 @@ fn brief_funnel_pays_the_scouts_who_found_the_agent() {
 
 #[test]
 fn failed_hire_costs_its_scouts_their_stake() {
+    // A curated client task the agent ran itself: the failure is the agent's, the backers pay.
     let (mut c, keys) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.add_task("client-csv".into(), SKILL.into(), "sha256:client".into());
     let id = scouted(&mut c);
     tryout(&mut c, &keys, id, [9, 6, 2]);
     deliver(&mut c, &keys, id, 5);
@@ -1059,6 +1158,19 @@ fn failed_hire_costs_its_scouts_their_stake() {
     let rec = c.get_scout_record(acc("s1.testnet"));
     assert_eq!((rec.failed, rec.slashed.0), (1, NEAR));
     assert!(get_logs().iter().any(|l| l.contains("brief_closed")));
+}
+
+#[test]
+fn failure_on_the_clients_own_tests_slashes_nobody() {
+    // Audit M2: on an uncurated task the client wrote the tests, so it controls the failure.
+    let (mut c, keys) = setup(1);
+    let id = scouted(&mut c);
+    tryout(&mut c, &keys, id, [9, 6, 2]);
+    deliver(&mut c, &keys, id, 5);
+    let b = c.get_brief(id).unwrap();
+    assert_eq!(b.status, BriefStatus::Failed);
+    assert!(b.nominations.iter().all(|n| n.payout.0 == n.stake.0));
+    assert_eq!(c.get_scout_record(acc("s1.testnet")).slashed.0, 0);
 }
 
 #[test]
@@ -1099,16 +1211,92 @@ fn brief_without_nominations_is_refunded() {
 }
 
 #[test]
-fn hire_that_misses_its_deadline_fails_the_brief() {
+fn hire_that_misses_its_deadline_is_void_and_unrated() {
+    // Audit M1: the client accepts the offer for the agent, so a missed deadline must not cost
+    // the agent rating (a griefer could otherwise lower any agent's rating for gas).
     let (mut c, keys) = setup(1);
     let id = scouted(&mut c);
     tryout(&mut c, &keys, id, [9, 6, 2]);
+    let offered = c.get_brief(id).unwrap().offered.unwrap();
+    let before = c.get_rating(offered.clone(), SKILL.into());
     ctx(CLIENT, 0, 5_000_000);
     let job = c.accept_offer(id, None, None);
     ctx("anyone.testnet", 0, 5_000_000 + 3_600_001);
     c.release_job(job);
-    assert_eq!(c.get_job(job).unwrap().status, JobStatus::Failed);
-    assert_eq!(c.get_brief(id).unwrap().status, BriefStatus::Failed);
+    let j = c.get_job(job).unwrap();
+    assert_eq!(j.status, JobStatus::Failed);
+    assert_eq!(j.rating_delta, 0);
+    let after = c.get_rating(offered, SKILL.into());
+    assert_eq!((after.rating, after.jobs_failed), (before.rating, before.jobs_failed));
+    let b = c.get_brief(id).unwrap();
+    assert_eq!(b.status, BriefStatus::Cancelled);
+    // Every scout gets its stake back: nobody profits from the miss.
+    assert!(b.nominations.iter().all(|n| n.payout.0 == n.stake.0));
+}
+
+#[test]
+fn confidential_hire_never_moves_the_agents_rating() {
+    // Audit M1: on a confidential hire the client commits the answer, even on a curated task.
+    let (mut c, _) = setup(1);
+    ctx("owner.testnet", 0, 1_000);
+    c.set_inference_signers(vec![format!("model:{ENCLAVE_SIGNER}"), ATT_SIGNER.into()]);
+    issue(&mut c, "a.testnet");
+    ctx(CLIENT, 3 * NEAR + NEAR + NEAR / 2 + NEAR, 3_000_000);
+    let id = c.post_brief(SKILL.into(), "Private work.".into(), None, None, None, U128(3 * NEAR), U128(NEAR), U128(NEAR / 2), U128(NEAR), U128(NEAR / 10), 600_000, 600_000, 3_600_000, None, None, None, Some(true));
+    nominate(&mut c, id, "s1.testnet", "a.testnet", "t1", NEAR);
+    ctx("anyone.testnet", 0, 3_600_000);
+    c.start_tryout(id, None);
+    ctx(CLIENT, 0, 3_700_000);
+    let job = c.accept_offer(id, Some("job-task".into()), Some("sha256:jobtests".into()));
+    assert!(!c.get_job(job).unwrap().rated);
+}
+
+#[test]
+#[should_panic(expected = "between a minute and 30 days")]
+fn brief_windows_are_capped() {
+    // Audit M3: an endless offer window would lock the scouts' stakes for good.
+    let (mut c, _) = setup(1);
+    ctx(CLIENT, 3 * NEAR + NEAR + NEAR / 2 + NEAR, 3_000_000);
+    c.post_brief(SKILL.into(), "x".into(), None, None, None, U128(3 * NEAR), U128(NEAR), U128(NEAR / 2), U128(NEAR), U128(NEAR / 10), 600_000, 600_000, 3_600_000, None, None, Some(u64::MAX), None);
+}
+
+#[test]
+fn brief_view_shows_every_window() {
+    let (mut c, _) = setup(1);
+    let id = post_brief(&mut c);
+    let b = c.get_brief(id).unwrap();
+    assert_eq!((b.trade_window_ms, b.work_window_ms, b.offer_window_ms), (600_000, 3_600_000, briefs::DEFAULT_OFFER_WINDOW_MS));
+}
+
+#[test]
+#[should_panic(expected = "needs that key's signature")]
+fn first_stake_on_a_key_needs_the_keys_signature() {
+    // Audit M4: without it anyone could squat a verifier key with 1 yoctoNEAR.
+    ctx("owner.testnet", 0, 1_000);
+    let mut c = Contract::new(acc("owner.testnet"), vec![near_pk(&key(1))], 1);
+    ctx("squatter.testnet", 1, 1_000);
+    c.stake_verifier(near_pk(&key(1)), None);
+}
+
+#[test]
+#[should_panic(expected = "not by this key")]
+fn a_stake_proof_is_bound_to_the_staker() {
+    ctx("owner.testnet", 0, 1_000);
+    let mut c = Contract::new(acc("owner.testnet"), vec![near_pk(&key(1))], 1);
+    let proof = stake_proof(&key(1), "operator.testnet");
+    ctx("squatter.testnet", 1, 1_000);
+    c.stake_verifier(near_pk(&key(1)), proof);
+}
+
+#[test]
+fn the_owner_of_a_stake_tops_it_up_without_a_new_proof() {
+    ctx("owner.testnet", 0, 1_000);
+    let mut c = Contract::new(acc("owner.testnet"), vec![near_pk(&key(1))], 1);
+    ctx("operator.testnet", NEAR, 1_000);
+    c.stake_verifier(near_pk(&key(1)), stake_proof(&key(1), "operator.testnet"));
+    ctx("operator.testnet", NEAR, 2_000);
+    c.stake_verifier(near_pk(&key(1)), None);
+    assert_eq!(c.get_verifier_stakes()[0].amount.0, 2 * NEAR);
 }
 
 #[test]
@@ -1183,7 +1371,7 @@ fn family_task_runs_on_fresh_tests_each_round() {
     ctx("owner.testnet", 0, 1_000);
     c.add_task("fam".into(), SKILL.into(), "family:sha256:generator".into());
     issue(&mut c, "a.testnet");
-    ctx("manager.testnet", 0, 1_000);
+    ctx("manager.testnet", rounds::ROUND_STORAGE_FEE, 1_000);
     let r1 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-1".into(), LOCK, 5, None, None);
     let r2 = c.create_round(SKILL.into(), "fam".into(), "sha256:tests-seed-2".into(), LOCK, 5, None, None);
     assert!(c.get_round(r1).unwrap().rated && c.get_round(r2).unwrap().rated);
@@ -1418,7 +1606,7 @@ fn others_cannot_issue_an_identity() {
 #[should_panic(expected = "agent has no identity")]
 fn registration_needs_an_identity() {
     let (mut c, _) = setup(1);
-    ctx("manager.testnet", 0, 1_000);
+    ctx("manager.testnet", rounds::ROUND_STORAGE_FEE, 1_000);
     let id = c.create_round(SKILL.into(), "t".into(), "h".into(), 5_000, 5, None, None);
     ctx("builder.testnet", NEAR, 1_100);
     c.register_agent(id, acc("nobody.testnet"), League::Open, "cfg".into());

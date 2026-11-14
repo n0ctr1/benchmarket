@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { sha256Tagged } from "@benchmarket/shared/hash";
-import { configHash, roundTag, taskPrompt } from "@benchmarket/shared/inference";
+import { roundTag, taskPrompt } from "@benchmarket/shared/inference";
 import { near, short, type Brief, type Identity, type Job, type Rating, type Task } from "../chain";
 import { CATEGORIES, SCOUT_MIN_STAKE } from "../categories";
 import { Identicon } from "../Figure";
@@ -158,6 +158,7 @@ function Handover({ brief }: { brief: Brief }) {
 /** After the hire: send the task to the verifier, or run it sealed in the enclave and settle. */
 function Deliver({ brief, job, hire }: { brief: Brief; job: Job; hire?: RosterAgent }) {
   const tx = useTx();
+  const w = useWallet();
   const saved = (() => {
     try {
       return JSON.parse(sessionStorage.getItem(`bm.handover.${brief.id}`) ?? "null") as { title: string; fn: string; tests: string } | null;
@@ -208,7 +209,10 @@ function Deliver({ brief, job, hire }: { brief: Brief; job: Job; hire?: RosterAg
             disabled={!hashOk || !statement.trim()}
             onClick={async () => {
               setMsg(null);
-              const r = await fetch(`${__VERIFIER__}/jobs/${job.id}/client-task`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ task: { title: title || "Client task", statement, function: fn, examples: JSON.parse(examples || "[]") }, tests }) }).catch((e) => ({ ok: false, json: async () => ({ error: String(e) }) }) as Response);
+              const payload = JSON.stringify({ task: { title: title || "Client task", statement, function: fn, examples: JSON.parse(examples || "[]") }, tests });
+              const auth = await w.authHeaders("client-task", job.id, payload).catch((e) => ({ error: String(e instanceof Error ? e.message : e) }));
+              if ("error" in auth) return setMsg(`Wallet: ${auth.error}`);
+              const r = await fetch(`${__VERIFIER__}/jobs/${job.id}/client-task`, { method: "POST", headers: { "content-type": "application/json", ...auth }, body: payload }).catch((e) => ({ ok: false, json: async () => ({ error: String(e) }) }) as Response);
               const j = await r.json().catch(() => ({}));
               setMsg(r.ok ? "Delivered. Only the hire can read it, by signing with its own key; the verifier scores its answer on your tests." : `Verifier: ${j.error ?? "unreachable"}`);
             }}
@@ -219,7 +223,7 @@ function Deliver({ brief, job, hire }: { brief: Brief; job: Job; hire?: RosterAg
       ) : (
         <>
           <p className="muted">
-            Confidential: run {hire ? `${hire.name}'s public config (${hire.model})` : "the hire's config"} on your task inside the model's enclave, from this browser. Your NEAR AI key stays in this tab; NEAR AI sees only ciphertext and the enclave signs the exchange.
+            Confidential: run {hire ? `${hire.name}'s public config (${hire.model})` : "the hire's config"} on your task inside the model's enclave, from this browser. Your NEAR AI key stays in this tab; the task is sealed to the enclave key from NEAR AI's attestation report (its TDX quote is not verified here yet), and the enclave signs the exchange.
           </p>
           <label className="field">
             <span className="field-k">Your NEAR AI API key</span>
@@ -254,10 +258,13 @@ function Deliver({ brief, job, hire }: { brief: Brief; job: Job; hire?: RosterAg
               disabled={!run || job.status !== "Answered" || !!verdict}
               onClick={async () => {
                 const cfg = { name: hire!.name, model: hire!.model, systemPrompt: hire!.systemPrompt, tools: [] as string[] };
+                const payload = JSON.stringify({ function: fn, title, tests, response: run!.responseBody, request: run!.requestBody, sealed: run!.sealed, config: cfg });
+                const auth = await w.authHeaders("sealed", job.id, payload).catch((e) => ({ error: String(e instanceof Error ? e.message : e) }));
+                if ("error" in auth) return setMsg(`Wallet: ${auth.error}`);
                 const r = await fetch(`${__VERIFIER__}/jobs/${job.id}/sealed`, {
                   method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ function: fn, title, tests, response: run!.responseBody, request: run!.requestBody, sealed: run!.sealed, config: cfg, config_hash: configHash(cfg) }),
+                  headers: { "content-type": "application/json", ...auth },
+                  body: payload,
                 }).catch(() => null);
                 const j = r ? await r.json().catch(() => ({})) : { error: "verifier unreachable" };
                 if (r?.ok) setVerdict(j);

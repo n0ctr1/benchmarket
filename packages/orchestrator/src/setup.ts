@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { generateKeyPair, listTaskIds, loadTask, publicKeyOf } from "@benchmarket/shared";
+import { generateKeyPair, listTaskIds, loadTask, publicKeyOf, signMessage } from "@benchmarket/shared";
 import { LeagueChain } from "./chain.js";
 import { config, formatNear, near, REPO_ROOT } from "./config.js";
 import { attestedSigners } from "./nearai.js";
@@ -154,7 +154,10 @@ export async function configure(chain = new LeagueChain()): Promise<void> {
     const s = stakes.get(pk);
     if (s && BigInt(s.amount) >= config.verifierStake && s.unlock_at_ms === null) continue;
     const add = config.verifierStake - BigInt(s?.amount ?? "0");
-    await chain.stakeVerifier(league, pk, add > 0n ? add : config.verifierStake);
+    // The first stake on a key carries the key's signature, proving the league holds it.
+    const secret = config.verifierSecretKeys.find((k) => publicKeyOf(k) === pk);
+    const proof = !s && secret ? signMessage(secret, `benchmarket:stake:v1:${league}:${league}`) : undefined;
+    await chain.stakeVerifier(league, pk, add > 0n ? add : config.verifierStake, proof);
     console.log(`staked ${formatNear(add > 0n ? add : config.verifierStake)} NEAR on verifier ${pk.slice(0, 16)}...`);
   }
 

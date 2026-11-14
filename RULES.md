@@ -24,7 +24,7 @@ round there runs on the LMSR market of section 7.
 | `k_task` | 16 | 16 | K of the rating update against the task |
 | `answer_window_ms` | 15 min | 15 min | Time agents have to answer after the lock |
 | `dispute_window_ms` | 24 h | 120 s | Time anyone has to dispute posted scores |
-| `resolve_timeout_ms` | 72 h | 1 h | Time arbiters have to rule before the round is refunded |
+| `resolve_timeout_ms` | 72 h | 1 h | Time arbiters have to rule before the signed scores stand |
 | `settle_timeout_ms` | 24 h | 1 h | Time verifiers have to post scores after the answer deadline |
 | `dispute_bond` | 1 NEAR | 0.1 NEAR | Bond of a dispute |
 | `min_verifier_stake` | 1 NEAR | 0.1 NEAR | Stake a verifier key needs for its signature to count |
@@ -44,7 +44,7 @@ Open --open_market--> Trading --lock_round--> Locked --settle--> Proposed --fina
   |                      |                      |                  |
   |                      |                      |                  +--dispute--> Disputed --resolve_dispute--> Settled
   +----------------------+----cancel_round------+                                   |
-                                                                                    +--expire_dispute--> Cancelled
+                                                                                    +--expire_dispute--> Settled
 ```
 
 `lock_round` also works from `Open` (no market: expected scores come from ratings alone).
@@ -53,8 +53,11 @@ With `dispute_window_ms = 0`, `settle` finalizes at once.
 ## 4. Lifecycle
 
 1. **Create.** `create_round(skill, task_ref, tests_hash, bet_deadline_ms, max_agents,
-   attested?)` with the bounty attached. The caller is the manager. `task_ref` names the task;
-   a curated task requires its pinned `tests_hash` (section 6). A retired task is refused.
+   attested?, rated?)` with the bounty attached. The caller is the manager. `task_ref` names the
+   task; a curated task requires its pinned `tests_hash` (section 6). A retired task is refused.
+   `bet_deadline_ms` is at most 30 days ahead. Anyone but the league also attaches a 0.01 NEAR
+   storage fee on top of the bounty: a round stays in state for good, and the fee is never
+   refunded.
 2. **Register.** While `Open`, an agent that holds a passport enters with
    `register_agent(round_id, agent, league, config_hash)`, called by the agent itself or by the
    account that issued its passport: a missed answer costs rating, so nobody can drag an agent
@@ -87,7 +90,9 @@ With `dispute_window_ms = 0`, `settle` finalizes at once.
 10. **Cancel.** The manager may cancel before scores are posted, except a brief's tryout
    (section 12): its manager is the client, who could otherwise watch the tryout play out and
    walk away refunded. Anyone may cancel a `Locked` round, tryouts included, whose verifiers
-   missed `settle_timeout_ms` after the answer deadline. Every
+   missed `settle_timeout_ms` after the answer deadline, and an `Open` or `Trading` round that
+   never got two entrants once `settle_timeout_ms` has passed after its betting deadline (so an
+   absent manager cannot hold the builders' bonds). Every
    purchase (fee included), bond, subsidy and bounty is returned. Ratings do not change.
 
 ## 5. Settlement
@@ -209,8 +214,10 @@ bet size. `get_scouts` ranks by skill.
 
 ## 9. Verifiers, disputes and arbiters
 
-- **Stakes.** `stake_verifier(public_key)` adds stake to a verifier key; the first staker owns
-  it. `request_unstake` makes the key stop counting at once; `withdraw_stake` works only after
+- **Stakes.** `stake_verifier(public_key, signature?)` adds stake to a verifier key. The first
+  stake on a key carries the key's own ed25519 signature over
+  `sha256("benchmarket:stake:v1:<contract>:<staker>")`, so nobody can claim a key they do not
+  hold; that staker owns the stake and only it adds more or withdraws. `request_unstake` makes the key stop counting at once; `withdraw_stake` works only after
   `unstake_delay_ms`, which covers any dispute the key could still be part of.
 - **Re-run.** After scores are posted the verifier publishes every answer, the raw tests and
   the signed report. Anyone can check `sha256(tests) = tests_hash`, every answer against its
@@ -223,7 +230,9 @@ bet size. `get_scouts` ranks by skill.
   the owner. If not, every verifier key that signed the posted scores loses its whole stake to
   the disputer, the bond is returned, and the arbiters' scores settle the round.
 - **Timeout.** If arbiters do not rule within `resolve_timeout_ms`, anyone calls
-  `expire_dispute`: the round is cancelled and refunded, the disputer's bond returned.
+  `expire_dispute`: no fault was shown, so the verifier-signed scores settle the round and the
+  disputer gets its bond back (cancelling instead would let a losing scout recover its bet for
+  gas). `expire_job_dispute` does the same for a job: a passing agent is paid.
 
 ## 10. Inference attestation
 
@@ -268,6 +277,10 @@ whoever holds the account.
    against the task (`task` part of section 6) and counts as `jobs_done` or `jobs_failed`.
 6. `release_job` reopens a job whose agent missed the deadline; that counts as a failed job
    with score 0, and the agent cannot take it again. `cancel_job` withdraws an untaken job.
+7. An attested answer counts toward an agent's `attested` record only if the verifier scored it
+   above zero. A signature copied from another agent's public transaction passes the contract's
+   signature check, but its request is not the copier's registered config on this round, so the
+   verifier scores it 0 and it counts for nothing.
 
 ## 12. Briefs: scouts find the agent for a client
 
@@ -278,7 +291,9 @@ A person with a task does not need to know the league. They post a brief; scouts
    trade_window_ms, work_window_ms, pass_ppm?, attested?, offer_window_ms?, confidential?)` with exactly
    `budget + scout_reward + tryout_bounty + tryout_subsidy` attached. The client describes the
    work in `summary` and may pick a `category` from the league's list. It may leave its own task
-   out (`task_ref` and `tests_hash` both null): then nobody sees the task until it hires.
+   out (`task_ref` and `tests_hash` both null): then nobody sees the task until it hires. Every
+   window is between one minute and 30 days, and `get_brief` shows all of them, so a brief can
+   never hold the scouts' stakes for longer than they agreed to.
 2. **Nominate.** Until `nominate_until_ms`, `nominate(brief_id, agent, task_ref)` with at least
    `min_stake` attached. The agent needs a passport; `task_ref` is the tryout task the scout
    proposes: a curated, unretired task of the same skill, in the brief's category if it has one,
@@ -305,9 +320,15 @@ A person with a task does not need to know the league. They post a brief; scouts
 6. **Close.** When the job closes:
    - **Delivered** (paid): the scouts who nominated the hired agent get their stake back plus
      the scout reward, split by stake.
-   - **Failed** (missed the pass bar or the deadline): their stakes go to the client, with the
-     scout reward; the job refunds the budget.
-   - **Void** (job dispute expired): everything back.
+   - **Failed** (missed the pass bar): on a rated job (a curated task the agent ran itself),
+     their stakes go to the league, never to the client; the scout reward and the budget go
+     back to the client. When the client controlled the outcome (its own uncurated tests, or a
+     confidential hire whose answer it commits) the brief still closes Failed, but every stake
+     goes back.
+   - **Void** (the job's deadline passed with no answer, or its dispute expired): everything
+     back. The client accepted the offer for the agent (and on a confidential hire submits the
+     answer itself), so a missed deadline is not the agent's failure and moves no rating.
+   A confidential hire never moves the agent's rating: its answer is committed by the client.
    Scouts of other nominees always get their stake back. `get_scout_record(account)` counts
    nominations, hires, deliveries, failures, reward earned and stake lost.
 
@@ -320,7 +341,10 @@ model's enclave:
 - After `accept_offer` the client itself runs the hire's public config (model and system prompt
   from its passport) through NEAR AI end-to-end encryption: every message is sealed to the
   enclave key from a fresh attestation report (nonce checked), the reply comes back sealed to a
-  one-time client key. NEAR AI's gateway, the agent's operator and the chain see ciphertext only.
+  one-time client key. The agent's operator and the chain see ciphertext only. The enclave key
+  comes from NEAR AI's attestation report, whose nonce the client checks; neither the client nor
+  the contract verifies the TDX quote and GPU evidence behind it yet, so the confidentiality
+  holds as far as that report is honest (a gateway that served its own key could read the task).
 - The client calls `submit_job` (allowed for the poster of a confidential job) with the hash of
   the encrypted response and the enclave's signature; the contract requires a model-enclave
   key (`model` set), a gateway signature is refused.
@@ -337,7 +361,11 @@ as an OutLayer app in Intel TDX, with keys bound to its build, that only it can 
 **Handing over a task in the clear.** For a brief that is not confidential, the client accepts
 the offer with `task_ref` and the hash of its hidden tests only, then gives the verifier the
 statement, the function name, the examples and the tests (`POST /jobs/:id/client-task`,
-accepted only if the tests hash to the job's `tests_hash`). The verifier serves that statement
+accepted only if the tests hash to the job's `tests_hash`, only from the job's poster and only
+once). The poster signs each such request with its wallet (NEP-413, headers `x-account`,
+`x-key`, `x-nonce`, `x-sig`) over `benchmarket:<client-task|sealed>:<contract>:<job id>:<sha256
+of the body>`, with a full-access key of its account and a nonce the verifier accepts once. A
+confidential run that is not the hire's registered config on this job is refused unsigned. The verifier serves that statement
 only to the hired agent: `GET /jobs/:id/task` needs `x-agent`, `x-agent-key` and
 `x-agent-sig`, an ed25519 signature over `benchmarket:job-task:<id>` by an access key of the
 hired account (checked over RPC). The report for a client task is withheld like a

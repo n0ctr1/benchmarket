@@ -194,23 +194,24 @@ impl Contract {
         require!(job.status == JobStatus::Taken, "job is not taken");
         require!(env::block_timestamp_ms() > job.deadline_ms, "the agent still has time");
         let agent = job.agent.clone().unwrap();
+        if let Some(brief_id) = self.job_brief.get(&job_id).copied() {
+            // A hire from a brief is accepted by the client, not by the agent (and on a
+            // confidential hire the client submits the answer), so a missed deadline is not the
+            // agent's failure: no rating change, the budget and every stake go back.
+            let j = self.job_mut(job_id);
+            j.status = JobStatus::Failed;
+            j.score = Some(0);
+            j.closed_at_ms = Some(env::block_timestamp_ms());
+            let (poster, budget) = (j.poster.clone(), j.budget);
+            emit("job_closed", json!({ "job_id": job_id, "agent": agent, "passed": false, "reason": "deadline missed, unrated" }));
+            Promise::new(poster).transfer(NearToken::from_yoctonear(budget)).detach();
+            self.close_brief(brief_id, briefs::Outcome::Void, 0);
+            return;
+        }
         let delta = self.rate_job(&job, &agent, 0, 1);
         if job.rated {
             let r = self.ratings.get_mut(&RatingKey { skill: job.skill.clone(), agent: agent.clone() }).unwrap();
             r.jobs_failed += 1;
-        }
-        if let Some(brief_id) = self.job_brief.get(&job_id).copied() {
-            // A hire from a brief was offered to this agent only: missing the deadline fails it.
-            let j = self.job_mut(job_id);
-            j.status = JobStatus::Failed;
-            j.score = Some(0);
-            j.rating_delta = delta;
-            j.closed_at_ms = Some(env::block_timestamp_ms());
-            let (poster, budget) = (j.poster.clone(), j.budget);
-            emit("job_closed", json!({ "job_id": job_id, "agent": agent, "passed": false, "reason": "deadline missed" }));
-            Promise::new(poster).transfer(NearToken::from_yoctonear(budget)).detach();
-            self.close_brief(brief_id, briefs::Outcome::Failed, 0);
-            return;
         }
         let j = self.job_mut(job_id);
         j.status = JobStatus::Open;
@@ -323,15 +324,11 @@ impl Contract {
         require!(job.status == JobStatus::Disputed, "job is not disputed");
         let d = job.dispute.clone().unwrap();
         require!(env::block_timestamp_ms() >= d.at_ms + timeout, "arbiters still have time");
-        job.status = JobStatus::Cancelled;
-        job.closed_at_ms = Some(env::block_timestamp_ms());
-        let (poster, budget) = (job.poster.clone(), job.budget);
-        emit("job_cancelled", json!({ "job_id": job_id, "reason": "dispute expired" }));
-        Promise::new(poster).transfer(NearToken::from_yoctonear(budget)).detach();
+        // No fault was shown: the verifier-signed score stands (a passing agent is paid) and the
+        // disputer gets its bond back.
+        emit("job_dispute_expired", json!({ "job_id": job_id, "by": d.by }));
         Promise::new(d.by).transfer(NearToken::from_yoctonear(d.bond)).detach();
-        if let Some(brief_id) = self.job_brief.get(&job_id).copied() {
-            self.close_brief(brief_id, briefs::Outcome::Void, 0);
-        }
+        self.finalize_job_inner(job_id);
     }
 
     pub fn get_job(&self, job_id: u64) -> Option<JobView> {

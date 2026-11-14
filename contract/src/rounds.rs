@@ -7,6 +7,11 @@ use near_sdk::{env, near, require, AccountId, NearToken, Promise};
 use crate::legacy::{RoundStatusV1, RoundV1};
 use crate::*;
 
+/// What a round created by anyone but the league pays for its storage (about 1 kB, kept for good).
+pub const ROUND_STORAGE_FEE: u128 = 10_000_000_000_000_000_000_000;
+/// The longest betting window a round may set, so a builder's bond cannot be held for years.
+pub const MAX_BET_WINDOW_MS: u64 = 30 * 24 * 3_600_000;
+
 #[near]
 impl Contract {
     // ----- manager -----
@@ -30,11 +35,17 @@ impl Contract {
         require!(!tests_hash.is_empty() && tests_hash.len() <= 128, "bad tests hash");
         require!(max_agents >= 2 && max_agents <= MAX_AGENTS, "max_agents must be 2..=16");
         require!(bet_deadline_ms > env::block_timestamp_ms(), "deadline in the past");
+        require!(bet_deadline_ms <= env::block_timestamp_ms() + MAX_BET_WINDOW_MS, "the betting window is at most 30 days");
+        // A round and its task record stay in state for good: anyone but the league pays for that
+        // storage up front, a fee that is not part of the bounty and is never refunded.
+        let deposit = env::attached_deposit().as_yoctonear();
+        let fee = if env::predecessor_account_id() == self.owner { 0 } else { ROUND_STORAGE_FEE };
+        require!(deposit >= fee, "attach the round storage fee (0.01 NEAR) plus any bounty");
         let (task_rating, curated) = self.use_task(&task_ref, &skill, &tests_hash);
         let rated = curated && rated.unwrap_or(true);
         let id = self.next_round_id;
         self.next_round_id += 1;
-        let bounty = env::attached_deposit().as_yoctonear();
+        let bounty = deposit - fee;
         let round = Round {
             id,
             manager: env::predecessor_account_id(),
@@ -312,7 +323,10 @@ impl Contract {
             && !env::storage_has_key(&tryout_key(round_id))
             && matches!(round.status, RoundStatus::Open | RoundStatus::Trading | RoundStatus::Locked);
         let stale = round.status == RoundStatus::Locked && now > round.answer_deadline_ms + timeout;
-        require!(by_manager || stale, "only the manager can cancel (never a brief's tryout), or anyone after the settle timeout");
+        // A round that never filled can never lock: after the betting deadline plus the settle
+        // timeout anyone may call it off, so an absent manager cannot hold the bonds.
+        let unfilled = matches!(round.status, RoundStatus::Open | RoundStatus::Trading) && round.entries.len() < 2 && now > round.bet_deadline_ms + timeout;
+        require!(by_manager || stale || unfilled, "only the manager can cancel (never a brief's tryout), or anyone after the settle timeout");
         self.cancel(round_id, "cancelled");
     }
 

@@ -96,27 +96,38 @@ impl Contract {
         self.finalize_round(round_id);
     }
 
-    /// If arbiters do not rule within `resolve_timeout_ms`, anyone may cancel the round:
-    /// everything is refunded, the disputer's bond included.
+    /// If arbiters do not rule within `resolve_timeout_ms`, anyone may close the dispute: no
+    /// fault was shown, so the verifier-signed scores settle the round and the disputer gets its
+    /// bond back. (Cancelling instead would let a losing scout recover its bet for gas.)
     pub fn expire_dispute(&mut self, round_id: u64) {
         let round = self.round_ref(round_id);
         require!(round.status == RoundStatus::Disputed, "round is not disputed");
         let d = round.dispute.clone().unwrap();
         require!(env::block_timestamp_ms() >= d.at_ms + self.params.resolve_timeout_ms, "arbiters still have time");
-        self.cancel(round_id, "dispute expired");
+        emit("dispute_expired", json!({ "round_id": round_id, "by": d.by }));
         Promise::new(d.by).transfer(NearToken::from_yoctonear(d.bond)).detach();
+        self.finalize_round(round_id);
     }
 
     // ----- verifier stakes -----
 
-    /// Adds stake to a verifier key. The first staker owns the stake; only they can add more or
-    /// withdraw. A key's signatures count only while it holds `min_verifier_stake`.
+    /// Adds stake to a verifier key. The first stake needs the key's own signature over
+    /// `benchmarket:stake:v1:<contract>:<caller>` (sha256, ed25519), so nobody can claim a key
+    /// they do not hold; that staker owns the stake and only they can add more or withdraw.
+    /// A key's signatures count only while it holds `min_verifier_stake`.
     #[payable]
-    pub fn stake_verifier(&mut self, public_key: PublicKey) {
-        ed25519_bytes(&public_key);
+    pub fn stake_verifier(&mut self, public_key: PublicKey, signature: Option<Base64VecU8>) {
+        let key = ed25519_bytes(&public_key);
         let caller = env::predecessor_account_id();
         let amount = env::attached_deposit().as_yoctonear();
         require!(amount > 0, "attach the stake");
+        if !self.verifier_stakes.contains_key(&public_key) {
+            let sig: [u8; 64] = signature
+                .and_then(|s| s.0.try_into().ok())
+                .unwrap_or_else(|| env::panic_str("the first stake on a key needs that key's signature over benchmarket:stake:v1:<contract>:<caller>"));
+            let digest = env::sha256_array(stake_message(&env::current_account_id(), &caller).as_bytes());
+            require!(env::ed25519_verify(&sig, &digest, &key), "the signature is not by this key");
+        }
         let s = self.verifier_stakes.entry(public_key.clone()).or_insert(VerifierStake { owner: caller.clone(), amount: 0, unlock_at_ms: None });
         require!(s.owner == caller, "this key's stake belongs to another account");
         s.amount += amount;
@@ -324,7 +335,9 @@ impl Contract {
                 if winners.contains(&i) {
                     r.wins += 1;
                 }
-                if e.attested {
+                // An attested answer counts only if the verifier scored it: a copied attestation
+                // fails the config and round-tag checks and scores 0.
+                if e.attested && scores[i] > 0 {
                     r.attested += 1;
                 }
             }
@@ -374,4 +387,9 @@ impl Contract {
             Promise::new(to).transfer(NearToken::from_yoctonear(amount)).detach();
         }
     }
+}
+
+/// What a verifier key signs to prove its holder is staking it.
+pub fn stake_message(contract: &AccountId, staker: &AccountId) -> String {
+    format!("benchmarket:stake:v1:{contract}:{staker}")
 }

@@ -3,8 +3,10 @@ import { clientKey, modelX25519, openField, sealField } from "@benchmarket/share
 /**
  * A confidential job run from the client's own browser: the hired agent's public config (model
  * and system prompt) runs on the client's task inside the model's enclave on NEAR AI, with the
- * prompt and the answer end-to-end encrypted (NEAR AI E2EE v2). NEAR AI sees ciphertext only;
- * the enclave signs the exchange. The client's NEAR AI key stays in this tab's memory.
+ * prompt and the answer end-to-end encrypted (NEAR AI E2EE v2) to the enclave key from NEAR AI's
+ * attestation report (nonce checked; its TDX quote is not verified here, so the gateway is trusted
+ * not to substitute its own key). The enclave signs the exchange. The client's NEAR AI key stays
+ * in this tab's memory.
  */
 const BASE = "https://cloud-api.near.ai/v1";
 

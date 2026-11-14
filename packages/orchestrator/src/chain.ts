@@ -386,8 +386,9 @@ export class LeagueChain {
     return this.call<void>(owner, "set_inference_signers", { signers });
   }
 
-  stakeVerifier(staker: string, publicKey: string, amount: bigint) {
-    return this.call<void>(staker, "stake_verifier", { public_key: publicKey }, amount);
+  /** `signature` (base64): the key's own signature, required on a key's first stake. */
+  stakeVerifier(staker: string, publicKey: string, amount: bigint, signature?: string) {
+    return this.call<void>(staker, "stake_verifier", { public_key: publicKey, signature: signature ?? null }, amount);
   }
 
   setCategory(owner: string, id: string, title: string, description: string) {
