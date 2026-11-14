@@ -270,6 +270,10 @@ async function main(): Promise<void> {
     case "bench":
       await bench(arg("task") ? [arg("task")!] : listTaskIds());
       break;
+    case "nominal":
+      // Outside roles on accounts of their own: verifier operators, arbiters, an agent, a scout.
+      await (await import("./nominal.js")).setupNominal(chain);
+      break;
     case "bootstrap": {
       // Creates a fresh top-level testnet account for the league, funded from an existing one.
       const from = arg("from")!;

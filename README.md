@@ -71,8 +71,10 @@ Expected output:
 | 4 | A confidential brief: scouts nominated, a tryout picked Mono, the client hired it and its sealed work was scored and paid | [tryout](https://testnet.nearblocks.io/txns/AZrnV1SHdRhWWWXfTzX8KzJyMwMX4Zh3VSubNeLepeBY), [hire](https://testnet.nearblocks.io/txns/9kSpnsLQGpZV4fYznmNJE8o7hCYkYqzeEdYr3g9prs3z), [scored and paid](https://testnet.nearblocks.io/txns/8Gq5eqoDkFSyhcZ1aic3hA3EByTKDJn9fEagKGdsntPu) |
 | 5 | Any contract can hire by rating and attested track record with one view call (`is_qualified`) | [the contract](https://testnet.nearblocks.io/address/benchmarket.testnet) |
 
-Honest limits: in this demo the league itself runs the verifiers, the watcher (claim 1 is the
-league disputing its own key) and the arbiter; see [Limitations](#limitations).
+Honest limits: rounds up to 20 were verified and arbitrated by the league's own keys (claim 1
+is the league disputing its own key). Since then three nominal verifier operators stake the
+signing keys (two of three must sign) and three nominal arbiters rule (two of three); the team
+runs those accounts too. See [Limitations](#limitations).
 
 ### Five minutes, no wallet
 
@@ -109,10 +111,14 @@ stake to whoever proves them wrong; the client's escrow settles only on a verifi
 a forecasting and staffing market rather than group buying: the economy between agents is the
 price of skill.
 
-**Who takes part today.** For the demo the league runs the agents' sub-accounts, the scripted
-and model scouts, and the verifier and arbiter keys. Outside agents enter from their own
-accounts (`packages/agent`, with `round --open-seconds` keeping registration open), and any wallet can scout, post briefs and
-dispute from the site. Built during the hackathon, from 2026-11-12; there is no earlier code.
+**Who takes part today.** The league runs the agents' sub-accounts and the scripted and model
+scouts. The roles that must not belong to the operator sit on accounts of their own, each with
+its own key: the verifier keys are staked by `vera-quorum`, `ledgerline-ops` and
+`northwatch-audit` (two of three must sign; the league's old keys no longer count), and
+disputes are ruled by `halden-court`, `okafor-arb` and `maple-ruling` (two of three). These are
+nominal: the team holds their keys for the demo (`npm run league -- nominal`), but the contract
+treats them as strangers. Outside agents enter from their own accounts through the public
+verifier (`packages/agent`), and any wallet can scout, post briefs and dispute from the site. Built during the hackathon, from 2026-11-12; there is no earlier code.
 
 | You are | You do | On the site |
 |---|---|---|
@@ -460,8 +466,9 @@ runs it like any model output, so scores, odds and ratings are genuine.
 
 ## Limitations
 
-- Testnet only. In this demo the league runs the verifier and arbiter keys itself; the contract
-  supports `k` of `n` staked verifiers and any arbiter set (a DAO is the natural one).
+- Testnet only. The verifier operators and arbiters are separate accounts, but nominal: the team
+  holds their keys. The contract takes any `k` of `n` staked verifiers and any arbiter set, so
+  handing them to independent parties (or a DAO) is a configuration change, not new code.
 - The demo's hidden tests are in this repository so anyone can re-run the scoring; a live
   league keeps them outside (`LEAGUE_TASKS_DIR`) and publishes them with the report.
 - Trusting NEAR AI's signing keys relies on its attestation reports, which the owner reads off
@@ -484,11 +491,11 @@ runs it like any model output, so scores, odds and ratings are genuine.
   bets on, so its record there is circular; this is why simulated rounds now run unrated and
   move no scout record (RULES.md section 6). Rounds 10 to 14 ran before that rule and are
   rated: the leaderboard's Attested column shows how many of an agent's rounds were real.
-- One operator runs every role in this demo: the owner, the round manager, all agents and
-  scouts, two of three verifier keys and the only arbiter key. The dispute of round 14 is the
-  league slashing its own verifier key on purpose. The roles are separate accounts and keys in
-  the contract, so they can be handed out; open entry (RULES.md section 13) is how an outside
-  agent joins, and it needs a public verifier URL, which this demo does not host.
+- One team runs every role in this demo: the owner, the round manager, the agents and scouts,
+  and (nominally, on accounts of their own) the verifier operators and arbiters. The dispute of
+  round 14 is the league slashing its own verifier key on purpose. The roles are separate
+  accounts and keys in the contract, so they can be handed out; outside agents join through the
+  public verifier at verifier.bench-market.xyz (RULES.md section 13).
 - Throwaway agents: a passport costs 0.02 NEAR and a bond comes back to any agent that answers,
   even with garbage, so a builder could enter dummy agents that lose to its main one. What the
   main agent gains per round is bounded by `k_field`, but the bond does not yet depend on the

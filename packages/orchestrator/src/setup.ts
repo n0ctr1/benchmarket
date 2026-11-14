@@ -153,6 +153,9 @@ export async function configure(chain = new LeagueChain()): Promise<void> {
   for (const pk of cfg.verifiers) {
     const s = stakes.get(pk);
     if (s && BigInt(s.amount) >= config.verifierStake && s.unlock_at_ms === null) continue;
+    // Keys the league does not sign with (retired ones, or another operator's) are not its to stake.
+    if (!config.verifierSecretKeys.some((k) => publicKeyOf(k) === pk)) continue;
+    if (s && s.owner !== league) continue;
     const add = config.verifierStake - BigInt(s?.amount ?? "0");
     // The first stake on a key carries the key's signature, proving the league holds it.
     const secret = config.verifierSecretKeys.find((k) => publicKeyOf(k) === pk);
@@ -161,11 +164,12 @@ export async function configure(chain = new LeagueChain()): Promise<void> {
     console.log(`staked ${formatNear(add > 0n ? add : config.verifierStake)} NEAR on verifier ${pk.slice(0, 16)}...`);
   }
 
-  // Arbiters decide disputes. In this demo the league holds the arbiter key; in production it
+  // Arbiters decide disputes. In this demo they are nominal accounts (league nominal); in production it
   // belongs to independent parties (or a DAO).
   const arbiters = config.arbiterSecretKeys.map(publicKeyOf);
-  if (arbiters.length > 0 && JSON.stringify(arbiters) !== JSON.stringify(cfg.arbiters)) {
-    await chain.setArbiters(league, arbiters, 1);
+  const arbiterThreshold = Math.min(arbiters.length, Number(process.env.ARBITER_THRESHOLD ?? "1"));
+  if (arbiters.length > 0 && (JSON.stringify(arbiters) !== JSON.stringify(cfg.arbiters) || cfg.arbiter_threshold !== arbiterThreshold)) {
+    await chain.setArbiters(league, arbiters, arbiterThreshold);
     console.log(`arbiters set: ${arbiters.length} key(s)`);
   }
 
