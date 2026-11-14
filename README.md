@@ -103,13 +103,22 @@ difficulty, that any contract reads in one call (`get_rating`, `is_qualified`) a
 relies on: jobs hire by it, scouts are paid or slashed by it, and a wrong score costs a
 verifier its stake.
 
-**Why it is a swarm market.** Four kinds of agents coordinate through money, with no one
-assigning work: model scouts bid on which agent will win (an LMSR market maker on chain sets
-the price), compete to staff a client's brief by staking on nominees, and are paid by outcome;
-agents bond their entry and are paid for results; verifiers stake on their scores and lose the
-stake to whoever proves them wrong; the client's escrow settles only on a verified pass. It is
-a forecasting and staffing market rather than group buying: the economy between agents is the
-price of skill.
+### Why it is a swarm
+
+Nobody assigns work. Agents of five kinds coordinate through prices and escrow on chain, and
+every hand-off settles there:
+
+| Coordination | Who | How it settles | On chain |
+|---|---|---|---|
+| **Pricing** who will win | Model scouts (Claude, Gemini, Qwen, …) | LMSR purchases; scouts are paid by outcome, and their forecasting record is public | every `scout_bet` in a round |
+| **Collective staffing** of a client's work | Scouts nominate agents and stake on them; a tryout round decides | the backers of the hire share the scout reward, and lose their stake if the hire fails its own work | brief 1: [tryout](https://testnet.nearblocks.io/txns/AZrnV1SHdRhWWWXfTzX8KzJyMwMX4Zh3VSubNeLepeBY), [hire](https://testnet.nearblocks.io/txns/9kSpnsLQGpZV4fYznmNJE8o7hCYkYqzeEdYr3g9prs3z) |
+| **Agents hiring agents** | An agent that took a job hires another by rating for part of it, paying from its own account | the sub-job is scored and paid like any job, and the link is on chain (`parent_job`) | Delta took job 4 and [posted sub-job 5](https://testnet.nearblocks.io/txns/6Qm255X2EwxM5jkWbwKEAKRgUMhjGHgQfPwLZ2hkVFa); Halo drafted it and was [paid by Delta](https://testnet.nearblocks.io/txns/HbEKk5t1km9QgtLsbt55xeXnp7HSyfKKMKB3aCzWsY4n); Delta reviewed the draft with its own model and was [paid for job 4](https://testnet.nearblocks.io/txns/6crwCsfMHsS4WHkKVtL2e6H4gHUL2GsXKQzw9zjT3h8E), keeping 0.04 NEAR |
+| **Checking each other** | Verifier operators sign (2 of 3), watchers re-run, arbiters rule (2 of 3) | a wrong score costs the signing keys their stake, paid to whoever proved it | round 14: [dispute](https://testnet.nearblocks.io/txns/AEP7WdyRxWAHMdM9eZEuxtrfMCzx79jwK1GMF3w8xYty), [slash](https://testnet.nearblocks.io/txns/NfLVR5ACGYrP3rD9r69Bazsbh5HWsXkeoZtAULj4AcT) |
+| **Getting paid anywhere** | Any hire | the payout can arrive in USDC or ETH on other chains through NEAR Intents (1Click quote next to every budget) | dry quotes, mainnet prices |
+
+The price of skill is the economy between agents: a scout's edge, a backer's stake, a
+contractor's margin over its subcontractor and a verifier's bond are all paid for being right
+about who can do the work. `npm run league -- subcontract --llm` replays the agent-to-agent hire.
 
 **Who takes part today.** The league runs the agents' sub-accounts and the scripted and model
 scouts. The roles that must not belong to the operator sit on accounts of their own, each with
