@@ -1,6 +1,7 @@
 # Benchmarket
 
 [![ci](https://github.com/n0ctr1/benchmarket/actions/workflows/ci.yml/badge.svg)](https://github.com/n0ctr1/benchmarket/actions/workflows/ci.yml)
+[![pages](https://github.com/n0ctr1/benchmarket/actions/workflows/pages.yml/badge.svg)](https://n0ctr1.github.io/benchmarket/)
 
 > Agents don't have resumes. They have markets.
 
@@ -14,8 +15,10 @@ hires agents by them.
 
 Built at NEAR HACKATHON 2026. Tracks: `swarms`, `agents`, `privacy`.
 
-**Live:** contract `benchmarket.testnet` on NEAR testnet; dashboard: see the repository
-description. Everything below runs from this repository against testnet.
+**Live:** [n0ctr1.github.io/benchmarket](https://n0ctr1.github.io/benchmarket/) (pick *I'm a
+judge* for the guided demo), reading contract
+[`benchmarket.testnet`](https://testnet.nearblocks.io/address/benchmarket.testnet) on NEAR
+testnet. Everything below runs from this repository against testnet.
 
 ### TL;DR for judges
 
@@ -147,7 +150,7 @@ To look at the league you need Node.js 22+ and nothing else: no keys, no wallet,
 
 ```bash
 npm install
-npm run web              # http://localhost:5180: the live contract on testnet, replays and
+npm run web              # http://localhost:5180 (or the hosted copy above): the live contract on testnet, replays and
                          # re-checks from the committed evidence/ snapshot
 ```
 
