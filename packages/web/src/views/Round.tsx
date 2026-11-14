@@ -346,7 +346,7 @@ export function RoundView({
           ))}
         </ol>
         <div className="frame-body" data-report={asReport}>
-          {asReport && <RoundReport round={round} rec={rec} n={n} />}
+          {asReport && <RoundReport round={round} rec={rec} n={n} picked={picked} onPick={onPick} />}
           <Stage
             scene={scene}
             picked={picked ? round.entries.findIndex((e) => e.agent === picked) : null}

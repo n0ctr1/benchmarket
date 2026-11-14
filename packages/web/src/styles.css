@@ -4420,3 +4420,24 @@ details[open] > summary::before {
   color: var(--mute);
   line-height: 1.5;
 }
+
+.report-row-link {
+  cursor: pointer;
+}
+
+.report-row-link:hover td,
+.report-row-link[data-picked="true"] td {
+  background: var(--off);
+}
+
+.report-row-link button.linkish {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}

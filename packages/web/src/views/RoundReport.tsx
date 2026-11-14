@@ -11,7 +11,7 @@ const hash = (h: string | null | undefined, n = 12) => (h ? `${h.replace(/^sha25
  * move, every entrant with its commitment, model, score and rating change, and the signed
  * result. "Copy proof" puts the same facts, with where to verify each, on the clipboard.
  */
-export function RoundReport({ round, rec, n }: { round: Round; rec: RoundRecord | null; n: Names }) {
+export function RoundReport({ round, rec, n, picked = null, onPick }: { round: Round; rec: RoundRecord | null; n: Names; picked?: string | null; onPick?: (agent: string | null) => void }) {
   const [copied, setCopied] = useState(false);
   const bets = (rec?.events ?? []).filter((e) => e.kind === "scout_bet");
   const total = rec?.report?.totalTests ?? round.total_tests;
@@ -87,8 +87,22 @@ export function RoundReport({ round, rec, n }: { round: Round; rec: RoundRecord 
               const s = e.score ?? scores.get(e.agent) ?? null;
               const win = round.winners.includes(e.agent);
               return (
-                <tr key={e.agent} data-win={win}>
-                  <td>{n.name(e.agent)}</td>
+                <tr
+                  key={e.agent}
+                  data-win={win}
+                  data-picked={picked === e.agent}
+                  className={onPick ? "report-row-link" : undefined}
+                  onClick={onPick ? () => onPick(picked === e.agent ? null : e.agent) : undefined}
+                >
+                  <td>
+                    {onPick ? (
+                      <button className="linkish" onClick={(ev) => (ev.stopPropagation(), onPick(picked === e.agent ? null : e.agent))} title="Open this agent's profile">
+                        {n.name(e.agent)}
+                      </button>
+                    ) : (
+                      n.name(e.agent)
+                    )}
+                  </td>
                   <td className="mono">{e.model ?? rec?.agents[e.agent]?.meta?.model ?? "—"}</td>
                   <td className="mono">{ppm(e.p_ppm)}</td>
                   <td className="mono" title={e.answer_hash ?? ""}>{hash(e.answer_hash)}</td>
