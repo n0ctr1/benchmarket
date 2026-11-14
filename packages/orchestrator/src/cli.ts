@@ -306,6 +306,15 @@ async function main(): Promise<void> {
     case "bench":
       await bench(arg("task") ? [arg("task")!] : listTaskIds());
       break;
+    case "multisig":
+      // The contract's owner becomes a 2-of-3 multisig of nominal signers.
+      await (await import("./governance.js")).setupMultisig(chain);
+      break;
+    case "owner-call": {
+      // An owner call proposed by one multisig signer and confirmed by a second.
+      await (await import("./governance.js")).ownerCall(chain, arg("method")!, JSON.parse(arg("args", "{}")!));
+      break;
+    }
     case "nominal":
       // Outside roles on accounts of their own: verifier operators, arbiters, an agent, a scout.
       await (await import("./nominal.js")).setupNominal(chain);

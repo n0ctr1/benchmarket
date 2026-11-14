@@ -33,7 +33,7 @@ async function exists(id: string): Promise<boolean> {
 }
 
 /** Creates a top-level testnet account through the `testnet` registrar, funded by a funder. */
-async function ensureAccount(chain: LeagueChain, id: string, amount: bigint, say: (l: string) => void): Promise<void> {
+export async function ensureAccount(chain: LeagueChain, id: string, amount: bigint, say: (l: string) => void): Promise<void> {
   if (await exists(id)) {
     if (!chain.keys.has(id)) throw new Error(`${id} exists but its key is not here`);
     return;
