@@ -58,26 +58,32 @@ pub fn blended_odds_ppm(pools: &[u128], ratings_centi: &[i64], min_pool: u128) -
     blend_ppm(&market_odds_ppm(pools), &prior_odds_ppm(ratings_centi), total, min_pool)
 }
 
-/// Rating deltas in centi-points for one settled round with a winner.
+/// Rating deltas in centi-points against the field, for one settled round with a winner.
 ///
-/// The outcome is each agent's share of all points scored, `s_i = score_i / sum(scores)`, so
-/// an agent that solved as much as the winner is not treated like one that solved nothing.
-/// `delta_i = k * (s_i - p_i)`, rounded toward zero for everyone except `absorber` (the
-/// winner), which takes minus the sum of the others, so the total change is exactly zero.
-pub fn rating_deltas(p_ppm: &[u64], scores: &[u32], absorber: usize, k_factor: u32) -> Vec<i64> {
+/// The market prices who wins, so the outcome compared with it is who won: each of the `w`
+/// winners scores `1/w`, everyone else 0, and `p_i` is the agent's win probability at the lock.
+/// The change is weighted by how much the round told the agents apart, `(n - w) / (n - 1)`: a
+/// sole winner is full information, a round that most of the field solved says little about
+/// who is better and moves little, and a round everyone solved moves nothing. How much each
+/// agent solved is rated against the task (`task_deltas`), not against the field.
+/// `delta_i = k * (n - w) / (n - 1) * (won_i - p_i)`, rounded toward zero for everyone except
+/// `absorber` (a winner), which takes minus the sum of the others, so the total is exactly zero.
+pub fn rating_deltas(p_ppm: &[u64], winners: &[usize], absorber: usize, k_factor: u32) -> Vec<i64> {
+    let n = p_ppm.len() as i128;
+    let w = winners.len() as i128;
+    if n < 2 || w == 0 {
+        return vec![0; p_ppm.len()];
+    }
     let k_centi = k_factor as i128 * 100;
-    let total: u128 = scores.iter().map(|s| *s as u128).sum();
     let mut deltas: Vec<i64> = p_ppm
         .iter()
-        .zip(scores.iter())
         .enumerate()
-        .map(|(i, (p, sc))| {
-            if i == absorber || total == 0 {
-                0
-            } else {
-                let s_ppm = (*sc as u128 * PPM as u128 / total) as i128;
-                (k_centi * (s_ppm - *p as i128) / PPM as i128) as i64
+        .map(|(i, p)| {
+            if i == absorber {
+                return 0;
             }
+            let won_ppm = if winners.contains(&i) { PPM as i128 / w } else { 0 };
+            (k_centi * (n - w) * (won_ppm - *p as i128) / ((n - 1) * PPM as i128)) as i64
         })
         .collect();
     let others: i64 = deltas.iter().sum();
@@ -268,17 +274,29 @@ mod tests {
     #[test]
     fn deltas_match_the_spec_example_and_sum_to_zero() {
         let p = [400_000, 250_000, 200_000, 100_000, 50_000];
-        // Shares 50%, 25%, 25%, 0, 0 against expectations 40%, 25%, 20%, 10%, 5%.
-        let d = rating_deltas(&p, &[20, 10, 10, 0, 0], 0, 32);
-        assert_eq!(d, vec![320, 0, 160, -320, -160]);
-        assert_eq!(d.iter().sum::<i64>(), 0);
-        // A perfect score that loses only on time still gains when it beat its expectation.
-        let d = rating_deltas(&[333_333, 111_111, 555_556], &[36, 36, 36], 0, 32);
-        assert!(d[1] > 0 && d[2] < 0);
+        // A sole winner (agent 0) of five: full weight. Won 1 vs 40%, the others 0 vs p.
+        let d = rating_deltas(&p, &[0], 0, 32);
+        assert_eq!(d, vec![1920, -800, -640, -320, -160]);
         assert_eq!(d.iter().sum::<i64>(), 0);
         // Rounding residue goes to the absorber, so the sum is still zero.
-        let d = rating_deltas(&[333_333, 333_333, 333_334], &[7, 5, 3], 2, 32);
+        let d = rating_deltas(&[333_333, 333_333, 333_334], &[2], 2, 32);
         assert_eq!(d.iter().sum::<i64>(), 0);
+    }
+
+    #[test]
+    fn a_round_most_of_the_field_solved_moves_little() {
+        // Round 23's shape: 7 of 8 solved everything; the favourite (64%) only shared the win.
+        let p = [640_000, 4_000, 100_000, 100_000, 50_000, 50_000, 50_000, 6_000];
+        let winners = [0, 1, 2, 3, 4, 5, 6];
+        let d = rating_deltas(&p, &winners, 0, 32);
+        // Weight (8 - 7) / 7: the favourite loses about a seventh of what a sole loss would cost.
+        assert!(d[0] < 0 && d[0] > -300, "favourite moved {}", d[0]); // about -2.3 points, not -7.9
+        assert!(d[1].abs() < 70, "long shot moved {}", d[1]);
+        assert!(d[7] < 0);
+        assert_eq!(d.iter().sum::<i64>(), 0);
+        // Everyone solved: nothing to learn about the field.
+        let d = rating_deltas(&[500_000, 500_000], &[0, 1], 0, 32);
+        assert_eq!(d, vec![0, 0]);
     }
 
     #[test]

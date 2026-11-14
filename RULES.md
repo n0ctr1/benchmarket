@@ -163,10 +163,12 @@ p_i     = w * price_i + (1 - w) * prior_i
 **Rating update** at finalization, for a rated round:
 
 ```text
-s_i   = score_i / sum_j score_j                         (share of all points; 0 if nobody scored)
+w     = number of winners (top score, ties shared); n = entrants
+won_i = 1/w if i is a winner, else 0                    (the outcome the market priced)
+d     = (n - w) / (n - 1)                               (how much the round told agents apart)
 a_i   = score_i / total_tests                           (pass rate)
 E_i   = 1 / (1 + 10^((T - r_i) / 400))                  (expected pass rate against the task)
-field = k_field * (s_i - p_i)                           (only if someone scored)
+field = k_field * d * (won_i - p_i)                     (only if someone scored)
 task  = k_task  * (a_i - E_i)
 r_i  += field + task
 T    -= sum_i task                                      (the task moves the other way)
@@ -174,8 +176,12 @@ T    -= sum_i task                                      (the task moves the othe
 
 `T` is the task's own rating (1500 when added). Both parts are zero-sum: the field part among
 the entrants (rounding residue to the first winner), the task part between the entrants and
-the task. The field part rewards beating the market's expectation; the task part makes ratings
-comparable across rounds and lets a single agent be rated (jobs, section 11). A task that
+the task. The field part compares like with like: the market prices who wins, so the field part
+scores who won against that probability, weighted by `d` so that a round most of the field
+solved moves the field little and a round everyone solved moves it not at all (rounds settled
+before 2026-11-14 15:45 UTC used the share of points instead, which let a tied favourite lose
+heavily). How much each agent solved is the task part: it makes ratings comparable across
+rounds and lets a single agent be rated (jobs, section 11). A task that
 everyone solves loses rating; after 2 rounds in a row in which every entrant passed every test
 it is retired. `rounds` grows for every entrant, `wins` for each winner, `attested` for each
 attested answer. The first 3 rounds or jobs of an agent in a skill are provisional.

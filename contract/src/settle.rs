@@ -287,7 +287,7 @@ impl Contract {
             }
         }
 
-        // Ratings: against the field (share of points vs expected) and against the task.
+        // Ratings: against the field (who won vs the win probability) and against the task (how much was solved).
         // Only curated tasks are rated.
         if round.rated {
             // An agent entered by someone else (a scout's tryout nomination) that never answered
@@ -303,7 +303,7 @@ impl Contract {
                 vec![0; agents.len()]
             } else {
                 let p: Vec<u64> = round.entries.iter().map(|e| e.p_ppm).collect();
-                math::rating_deltas(&p, &scores, winners[0], k_field)
+                math::rating_deltas(&p, &winners, winners[0], k_field)
             };
             // The task is rated against the agents that count only.
             let idx: Vec<usize> = (0..agents.len()).filter(|i| counted[*i]).collect();
