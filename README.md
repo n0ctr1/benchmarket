@@ -443,6 +443,12 @@ runs it like any model output, so scores, odds and ratings are genuine.
   stakes; the tryout round and the job are created by the contract itself.
 - **Composable reputation:** `get_rating`, `is_qualified` (optionally with a minimum of attested
   rounds), `get_leaderboard`, `get_tasks`, `get_scouts`, `get_jobs`.
+- **NEAR Intents (1Click):** what a payout would arrive as in another token on another chain
+  (USDC on NEAR, Base or Arbitrum, ETH), as a dry quote next to the budget when posting a task and
+  from `npm run league -- quote --amount 0.1`. 1Click runs on mainnet, so on testnet it prices
+  the same amount there; nothing is reserved or sent.
+- **Wallet-signed requests (NEP-413):** a client hands its task to the verifier with a wallet
+  signature over the request body, checked against a full-access key of its account.
 - **In-place upgrades:** `migrate` carries state across contract versions (an earlier deployment
   went V5 to V6 to V7 this way, old rounds readable and claimable under their own rules);
   `benchmarket.testnet` started on V7 and takes upgrades in place.

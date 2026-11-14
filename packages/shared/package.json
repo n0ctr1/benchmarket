@@ -11,7 +11,8 @@
     "./settlement": "./src/settlement.ts",
     "./keys": "./src/keys.ts",
     "./hash": "./src/hash.ts",
-    "./e2ee": "./src/e2ee.ts"
+    "./e2ee": "./src/e2ee.ts",
+    "./intents": "./src/intents.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",

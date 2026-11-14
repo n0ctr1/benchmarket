@@ -8,6 +8,7 @@ import { MyLeague } from "./MyLeague";
 import { CopyBlock } from "../Copy";
 import { CATEGORIES, IDENTITY_DEPOSIT, SCOUT_MIN_STAKE, TRYOUT_BOUNTY, TRYOUT_SUBSIDY } from "../categories";
 import { Identicon } from "../Figure";
+import { PayoutQuoteBox } from "../Intents";
 
 export type AccountTab = "brief" | "agent" | "activity";
 
@@ -188,8 +189,9 @@ function BriefForm() {
         </dl>
         <p className="tx-note">
           The tryout market's {fmt(ts)} NEAR is only its maximum loss: whatever the market maker does not pay out comes back to you. If nobody is nominated or nobody scores,
-          everything comes back. If the hire fails your tests, the budget and the scout reward come back and the scouts behind it lose their stake.
+          everything comes back. If the hire fails, the budget and the scout reward come back; the scouts behind it lose their stake only when the work was the agent's own (a curated task it ran itself).
         </p>
+        <PayoutQuoteBox yocto={b} />
         <button className="btn btn-accent wide" disabled={errors.length > 0 || tx.busy} onClick={() => tx.run("Brief posted", "post_brief", args, total, 100)}>
           {tx.account ? `Post the brief · ${fmt(total)} NEAR` : "Connect wallet to post"}
         </button>

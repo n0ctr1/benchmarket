@@ -4379,3 +4379,44 @@ details > summary::before {
 details[open] > summary::before {
   content: "\2212  ";
 }
+
+/* ----- NEAR Intents payout quote ----- */
+.intents {
+  border: 1px solid var(--line-2);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.intents-head,
+.intents-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.intents-head select {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.intents-line {
+  font-size: 12px;
+}
+
+.intents-line b {
+  color: var(--acid);
+}
+
+.intents-note {
+  font-size: 10.5px;
+  color: var(--mute);
+  line-height: 1.5;
+}

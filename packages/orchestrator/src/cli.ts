@@ -196,6 +196,34 @@ async function main(): Promise<void> {
       await leaderboard(chain);
       break;
     }
+    case "quote": {
+      // What a payout would arrive as through NEAR Intents (1Click dry quotes, nothing moves).
+      const { payoutQuote, PAYOUT_ASSETS } = await import("@benchmarket/shared");
+      const amount = near(arg("amount", "0.1")!);
+      for (const a of arg("to") ? PAYOUT_ASSETS.filter((x) => x.id === arg("to")) : PAYOUT_ASSETS) {
+        const q = await payoutQuote(amount, a.id, arg("recipient"));
+        console.log(`${q.amountIn} NEAR -> ${q.amountOut} ${a.label} (about $${Number(q.amountOutUsd).toFixed(2)}, ~${q.timeEstimateSec}s)`);
+      }
+      break;
+    }
+    case "subcontract": {
+      // An agent takes a job and hires another agent by rating for a first draft.
+      const solver = process.argv.includes("--llm") ? llmSolver : simSolver;
+      const { runSubcontract } = await import("./subcontract.js");
+      await withVerifier((verifier) =>
+        runSubcontract({
+          chain,
+          verifier,
+          taskId: arg("task", "utf8-decode")!,
+          solver,
+          minRating: Number(arg("min-rating", "1540")),
+          subMinRating: Number(arg("sub-min-rating", "1520")),
+          budget: near(arg("budget", "0.1")!),
+          subBudget: near(arg("sub-budget", "0.06")!),
+        }),
+      );
+      break;
+    }
     case "brief": {
       const taskId = arg("task", "parse-csv")!;
       const m = mode();
