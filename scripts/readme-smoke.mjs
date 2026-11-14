@@ -62,7 +62,7 @@ const slug = (h) =>
     .replace(/ /g, "-");
 const anchors = new Set([...README.matchAll(/^#{1,6} (.+)$/gm)].map((m) => slug(m[1].replace(/`/g, ""))));
 
-for (const doc of ["README.md", "RULES.md", "evidence/README.md", "docs/history/IDEA.md"]) {
+for (const doc of ["README.md", "RULES.md", "evidence/README.md", "docs/history/IDEA.md", "docs/run.md", "SECURITY.md"]) {
   const file = path.join(ROOT, doc);
   if (!fs.existsSync(file)) continue;
   const text = fs.readFileSync(file, "utf8").replace(/```[\s\S]*?```/g, "");
