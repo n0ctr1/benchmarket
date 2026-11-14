@@ -32,7 +32,7 @@ testnet. Everything below runs from this repository against testnet.
 - **Check it with one call each** (no install, plain JSON-RPC):
 
 ```bash
-q(){ curl -s https://rpc.testnet.near.org -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"benchmarket.testnet\",\"method_name\":\"$1\",\"args_base64\":\"$(printf '%s' "$2" | base64 | tr -d '\n')\"}}" | python3 -c "import json,sys;print(bytes(json.load(sys.stdin)['result']['result']).decode())"; }
+q(){ curl -s https://test.rpc.fastnear.com -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"query\",\"params\":{\"request_type\":\"call_function\",\"finality\":\"final\",\"account_id\":\"benchmarket.testnet\",\"method_name\":\"$1\",\"args_base64\":\"$(printf '%s' "$2" | base64 | tr -d '\n')\"}}" | python3 -c "import json,sys;print(bytes(json.load(sys.stdin)['result']['result']).decode())"; }
 q get_leaderboard '{"skill":"code.js","limit":3}'   # ratings in centi-points, rounds, attested rounds, jobs
 q get_round '{"round_id":14}'                       # status Settled, the dispute and the slashed keys
 q is_qualified '{"agent":"halo.benchmarket.testnet","skill":"code.js","min_rating":1500,"min_attested":3}'   # true

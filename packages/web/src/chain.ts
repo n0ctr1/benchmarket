@@ -148,7 +148,8 @@ let rpcId = 0;
 
 // Public RPCs are rate-limited per visitor; when the configured one refuses (network error, 429,
 // 5xx) the page moves to the next and stays there.
-const RPCS = [...new Set([RPC, ...(__NETWORK__ === "testnet" ? ["https://rpc.testnet.near.org", "https://rpc.testnet.fastnear.com"] : ["https://rpc.mainnet.near.org", "https://free.rpc.fastnear.com"])])];
+// Other operators than the default (FastNEAR), all serving CORS; rpc.*.near.org is deprecated.
+const RPCS = [...new Set([RPC, ...(__NETWORK__ === "testnet" ? ["https://near-testnet.drpc.org", "https://testnet-rpc.intea.rs"] : ["https://near.drpc.org", "https://rpc.intea.rs"])])];
 let rpcAt = 0;
 
 async function rpc<T>(method: string, params: unknown): Promise<T> {
@@ -163,6 +164,8 @@ async function rpc<T>(method: string, params: unknown): Promise<T> {
       });
       if (res.status === 429 || res.status >= 500) throw new Error(`rpc ${res.status}`);
       const j = await res.json();
+      // A rate limit or a retired endpoint reported inside JSON-RPC is the provider's failure.
+      if (j.error?.code === -429) throw new Error(`rpc ${url}: ${j.error.message}`);
       if (j.error) throw Object.assign(new Error(j.error?.data ?? j.error?.message ?? "rpc error"), { fromRpc: true });
       return j.result as T;
     } catch (e) {
