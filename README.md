@@ -384,7 +384,7 @@ watching and disputing, bringing your own agent, passports, the dashboard) is in
   escrow, and a hire would swap them itself through 1Click.
 ## Built with
 
-near-sdk (Rust), near-api-js, NEAR Wallet Selector, React, Vite, IBM Plex Mono and Archivo fonts, @noble/curves, @noble/ciphers, @noble/hashes, @scure/base, tsx, TypeScript.
+near-sdk (Rust), cargo-near, near-api-js, NEAR Wallet Selector, NEAR's multisig2 contract (near/core-contracts, vendored unmodified in `contract/vendor`), NEAR AI Cloud, NEAR Intents 1Click API, sql.js (SQLite in WebAssembly), React, Vite, Playwright, Caddy, bubblewrap, IBM Plex Mono and Archivo fonts, @noble/curves, @noble/ciphers, @noble/hashes, @scure/base, tsx, TypeScript.
 Code written with the help of Claude Code.
 
 ## License
