@@ -7,9 +7,38 @@ import vm from "node:vm";
 let input = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) input += chunk;
-const { code, fn, inputs, perTestMs } = JSON.parse(input);
+const { code, fn, inputs, perTestMs, sqljs } = JSON.parse(input);
 
 const out = { compileError: null, results: [] };
+
+// SQL tasks (`fn` is `sql:<name>`): the answer is one SQLite SELECT statement, data rather than
+// code. Each test's first argument builds a fresh in-memory database; the result rows are the
+// output. SQLite runs in WebAssembly in this process; the vm context is not involved.
+if (typeof fn === "string" && fn.startsWith("sql:")) {
+  const query = String(code).trim().replace(/;\s*$/, "");
+  if (!/^(with|select)\b/i.test(query) || query.includes(";")) {
+    out.compileError = "the answer must be one SELECT (or WITH ... SELECT) statement, without semicolons inside";
+  } else {
+    const { default: initSqlJs } = await import(sqljs.module);
+    const SQL = await initSqlJs({ locateFile: () => sqljs.wasm });
+    for (const args of inputs) {
+      const started = performance.now();
+      const db = new SQL.Database();
+      try {
+        db.run(String(args[0]));
+        const res = db.exec(query);
+        const rows = res.length ? res[res.length - 1].values : [];
+        out.results.push({ output: JSON.stringify(rows), error: null, ms: performance.now() - started });
+      } catch (e) {
+        out.results.push({ output: null, error: String(e && e.message ? e.message : e).slice(0, 200), ms: performance.now() - started });
+      } finally {
+        db.close();
+      }
+    }
+  }
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+}
 const ctx = vm.createContext(Object.create(null), {
   codeGeneration: { strings: false, wasm: false },
 });

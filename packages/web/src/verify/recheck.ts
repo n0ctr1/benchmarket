@@ -83,7 +83,13 @@ export async function recheckRound(round: Round, pub: Published, config: ChainCo
     const gen = await runInBrowser(pub.family.generator, "generate", [[pub.family.seed, pub.family.count]], 5000);
     const inputs = parsed(gen.results[0]?.output ?? null).value as unknown[][] | undefined;
     if (!inputs) add("Tests", "The seed regenerates the tests", false, gen.compileError ?? "generator failed");
-    else {
+    else if (pub.function.startsWith("sql:")) {
+      // A SQL family: the browser regenerates the databases from the seed; the expected rows
+      // come from the reference query, which the Node watcher runs in SQLite.
+      const published = tests.map((t) => JSON.stringify(t.args));
+      const same = inputs.length >= published.length && published.every((a) => inputs.some((x) => JSON.stringify(x) === a));
+      add("Tests", "The revealed seed regenerates exactly these databases", same, `seed ${short(pub.family.seed, 16)} gives ${inputs.length} databases; expected rows: Node watcher`);
+    } else {
       const ref = await runInBrowser(pub.family.reference, pub.function, inputs);
       const again = inputs.flatMap((args, i) => {
         const o = ref.results[i]?.output;
@@ -129,6 +135,15 @@ export async function recheckRound(round: Round, pub: Published, config: ChainCo
     }
     if (content === null) {
       scores.push([e.agent, 0]);
+      continue;
+    }
+    if (pub.function.startsWith("sql:")) {
+      // SQL answers run in SQLite; this page does not ship it, so the watcher decides the score.
+      const posted = round.proposal?.scores.find((s) => s[0] === e.agent)?.[1] ?? e.score ?? 0;
+      const c = { group: who, label: "Re-run gives the posted score: decided by the Node watcher", ok: false, deferred: true, detail: `a SQL answer, run in SQLite by npm run league -- watch --round ${round.id} (posted ${posted}/${tests.length})` };
+      all.push(c);
+      onCheck(c);
+      scores.push([e.agent, posted]);
       continue;
     }
     const run = await runInBrowser(normalizeCode(content), pub.function, tests.map((t) => t.args));

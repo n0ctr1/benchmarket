@@ -1,0 +1,1 @@
+WITH d AS (SELECT account, day, SUM(delta) AS dd FROM ledger GROUP BY account, day), b AS (SELECT account, day, SUM(dd) OVER (PARTITION BY account ORDER BY day ROWS UNBOUNDED PRECEDING) AS balance FROM d) SELECT account, day, balance, MIN(balance) OVER (PARTITION BY account ORDER BY day ROWS UNBOUNDED PRECEDING) AS low FROM b ORDER BY account, day

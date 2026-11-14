@@ -1,0 +1,1 @@
+WITH t AS (SELECT c.id, c.name, c.country, SUM(o.amount_cents) AS total FROM customers c JOIN orders o ON o.customer_id = c.id WHERE o.status = 'paid' GROUP BY c.id), r AS (SELECT country, name, total, ROW_NUMBER() OVER (PARTITION BY country ORDER BY total DESC, id ASC) AS rn FROM t) SELECT country, name, total FROM r WHERE rn = 1 ORDER BY country

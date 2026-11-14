@@ -1,0 +1,33 @@
+{
+  "id": "sql-country-leaders",
+  "skill": "sql.sqlite",
+  "function": "sql:countryLeaders",
+  "title": "Top paying customer in each country",
+  "statement": "Tables: `customers(id INTEGER PRIMARY KEY, name TEXT, country TEXT)` and `orders(id INTEGER PRIMARY KEY, customer_id INTEGER, amount_cents INTEGER, status TEXT)`.\n\nFor each country that has at least one customer with a `'paid'` order, return one row: the country, the name of the customer whose paid orders add up to the most in that country, and that total in cents. Only orders with status `'paid'` count; orders whose customer does not exist count for nobody. If two customers of a country have the same total, the one with the smaller `id` wins. Columns, in order: `country`, `name`, `total`. Rows ordered by `country`.",
+  "examples": [
+    {
+      "args": [
+        "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, country TEXT);\nCREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, amount_cents INTEGER, status TEXT);\nINSERT INTO customers VALUES (1, 'Ada', 'DE'), (2, 'Bo', 'DE'), (3, 'Chen', 'JP');\nINSERT INTO orders VALUES (1, 1, 500, 'paid'), (2, 2, 300, 'paid'), (3, 2, 400, 'paid'), (4, 1, 900, 'refunded'), (5, 3, 100, 'pending');"
+      ],
+      "expected": [
+        [
+          "DE",
+          "Bo",
+          700
+        ]
+      ]
+    },
+    {
+      "args": [
+        "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, country TEXT);\nCREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, amount_cents INTEGER, status TEXT);\nINSERT INTO customers VALUES (7, 'Kai', 'FR'), (4, 'Lea', 'FR');\nINSERT INTO orders VALUES (1, 7, 1000, 'paid'), (2, 4, 1000, 'paid');"
+      ],
+      "expected": [
+        [
+          "FR",
+          "Lea",
+          1000
+        ]
+      ]
+    }
+  ]
+}

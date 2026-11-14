@@ -1,10 +1,14 @@
 import fs from "node:fs";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import type { TestCase } from "@benchmarket/shared";
 
 const RUNNER = path.join(path.dirname(fileURLToPath(import.meta.url)), "runner.mjs");
+// SQLite in WebAssembly, for SQL tasks: the child may read these two files and nothing else.
+const SQLJS_MODULE = createRequire(import.meta.url).resolve("sql.js/dist/sql-wasm.js");
+const SQLJS_DIR = path.dirname(SQLJS_MODULE);
 
 export interface SandboxOptions {
   perTestMs?: number;
@@ -90,13 +94,15 @@ const RUNTIME_OVERHEAD_MB = 96;
 
 /** Runs `fn` from `code` on each input in the isolated child process; returns raw outputs. */
 export async function runRaw(code: string, fn: string, inputs: unknown[][], opts: SandboxOptions = {}): Promise<RawRun> {
-  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(fn)) throw new Error(`bad function name ${fn}`);
+  if (!/^(sql:)?[A-Za-z_$][A-Za-z0-9_$]*$/.test(fn)) throw new Error(`bad function name ${fn}`);
+  const sql = fn.startsWith("sql:");
   const perTestMs = opts.perTestMs ?? 2000;
   const totalMs = opts.totalMs ?? perTestMs * inputs.length + 3000;
   const memoryMb = opts.memoryMb ?? 128;
   const started = performance.now();
 
-  const node = [process.execPath, "--permission", `--allow-fs-read=${RUNNER}`, `--max-old-space-size=${memoryMb}`, RUNNER];
+  const reads = sql ? [`--allow-fs-read=${RUNNER}`, `--allow-fs-read=${SQLJS_DIR}`] : [`--allow-fs-read=${RUNNER}`];
+  const node = [process.execPath, "--permission", ...reads, `--max-old-space-size=${memoryMb}`, RUNNER];
   // With VERIFIER_SANDBOX=bwrap (a public verifier) the child also runs in its own namespaces:
   // no network, its own pid space, a read-only filesystem and a private /tmp.
   const argv = process.env.VERIFIER_SANDBOX === "bwrap" ? ["bwrap", ...BWRAP, ...node] : node;
@@ -116,7 +122,8 @@ export async function runRaw(code: string, fn: string, inputs: unknown[][], opts
       // The child has exited, or this is not Linux.
     }
   }, 50);
-  child.stdin.end(JSON.stringify({ code, fn, inputs, perTestMs }));
+  const sqljs = sql ? { module: pathToFileURL(SQLJS_MODULE).href, wasm: path.join(SQLJS_DIR, "sql-wasm.wasm") } : undefined;
+  child.stdin.end(JSON.stringify({ code, fn, inputs, perTestMs, sqljs }));
   const exitCode: number | null = await new Promise((resolve) => child.on("close", resolve));
   clearTimeout(timer);
   clearInterval(watch);

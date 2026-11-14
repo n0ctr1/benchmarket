@@ -9,6 +9,15 @@ import type { AgentConfig } from "./roster.js";
  */
 export function simAnswer(agent: AgentConfig, task: TaskWithTests, salt: string): string {
   const reference = fs.readFileSync(task.referencePath, "utf8");
+  if (task.function.startsWith("sql:")) {
+    // A SQL answer is one query: right, or (by the agent's failure rate) subtly wrong.
+    const bonus = agent.strengths.includes(task.id) ? agent.sim.strengthBonus : 0;
+    let h = 2166136261;
+    for (const ch of `${agent.id}|${salt}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+    const wrong = h % 1000 < Math.max(0, agent.sim.failPermille - bonus) * 3;
+    const query = wrong ? reference.trim().replace(/\bDESC\b/, "ASC").replace(/> 1800/, ">= 1800").replace(/ROWS UNBOUNDED PRECEDING\) AS low/, "ROWS 1 PRECEDING) AS low") : reference.trim();
+    return "```sql\n" + query + "\n```";
+  }
   const renamed = reference.replace(new RegExp(`function\\s+${task.function}\\s*\\(`), "function __reference(");
   const bonus = agent.strengths.includes(task.id) ? agent.sim.strengthBonus : 0;
   const failPermille = Math.max(0, agent.sim.failPermille - bonus);

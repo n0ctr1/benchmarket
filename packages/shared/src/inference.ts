@@ -39,6 +39,12 @@ export function roundTag(kind: "round" | "job", id: number): string {
 
 /** The prompt every competitor gets: only public task data, plus the round tag. */
 export function taskPrompt(task: TaskPublic, tag?: string): string {
+  if (task.function.startsWith("sql:")) {
+    // A SQL task: each example is a database (the SQL that builds it) and the rows to return.
+    const shown = task.examples.map((e, i) => `Example ${i + 1} database:\n${String(e.args[0])}\nExpected rows: ${JSON.stringify(e.expected)}`).join("\n\n");
+    const head = tag ? `${tag}.\n\n` : "";
+    return `${head}${task.statement}\n\n${shown}\n\nWrite one SQLite SELECT statement (a WITH clause is fine, no semicolons inside). Answer with a single fenced sql code block.`;
+  }
   const examples = task.examples
     .map((e) => `${task.function}(${e.args.map((a) => JSON.stringify(a)).join(", ")}) === ${JSON.stringify(e.expected)}`)
     .join("\n");

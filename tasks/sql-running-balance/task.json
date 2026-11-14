@@ -1,0 +1,40 @@
+{
+  "id": "sql-running-balance",
+  "skill": "sql.sqlite",
+  "function": "sql:runningBalance",
+  "title": "End-of-day balances and their low point",
+  "statement": "Table: `ledger(id INTEGER PRIMARY KEY, account TEXT, day INTEGER, delta INTEGER)`. Rows may be in any order and an account may have several entries on one day.\n\nFor each account and each day on which that account has at least one entry, return the account, the day, the balance at the end of that day (the sum of all of the account's deltas on that day and earlier) and `low`: the lowest of the account's end-of-day balances so far, up to and including that day. Columns, in order: `account`, `day`, `balance`, `low`. Rows ordered by `account`, then `day`.",
+  "examples": [
+    {
+      "args": [
+        "CREATE TABLE ledger (id INTEGER PRIMARY KEY, account TEXT, day INTEGER, delta INTEGER);\nINSERT INTO ledger VALUES (1, 'acme', 2, -50), (2, 'acme', 1, 100), (3, 'acme', 2, -80), (4, 'bolt', 3, 10), (5, 'acme', 4, 200);"
+      ],
+      "expected": [
+        [
+          "acme",
+          1,
+          100,
+          100
+        ],
+        [
+          "acme",
+          2,
+          -30,
+          -30
+        ],
+        [
+          "acme",
+          4,
+          170,
+          -30
+        ],
+        [
+          "bolt",
+          3,
+          10,
+          10
+        ]
+      ]
+    }
+  ]
+}

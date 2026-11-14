@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { near, short, type Bettor, type Identity, type Rating, type Round, type ScoutRecord, type Task } from "../chain";
+import { useEffect, useMemo, useState } from "react";
+import { getLeaderboard, near, short, type Bettor, type Identity, type Rating, type Round, type ScoutRecord, type Task } from "../chain";
 import { CATEGORIES } from "../categories";
 import { Identicon } from "../Figure";
 import { pct, scoutFace } from "../league";
@@ -83,16 +83,27 @@ export function LeaderboardView({
   const [board, setBoard] = useState<Board>("agents");
   const [q, setQ] = useState("");
   const [facet, setFacet] = useState("all");
-  const rated = rounds.filter((r) => r.status === "Settled" && (r.market !== "lmsr" || r.rated)).length;
+  // Ratings are per skill: JavaScript functions, or SQLite queries.
+  const [skill, setSkill] = useState<string>("code.js");
+  const [skillRatings, setSkillRatings] = useState<Record<string, Rating[]>>({});
+  useEffect(() => {
+    if (skill === "code.js" || skillRatings[skill]) return;
+    getLeaderboard(skill)
+      .then((r) => setSkillRatings((m) => ({ ...m, [skill]: r })))
+      .catch(() => setSkillRatings((m) => ({ ...m, [skill]: [] })));
+  }, [skill, skillRatings]);
+  const shown = skill === "code.js" ? ratings : skillRatings[skill] ?? [];
+  const inSkill = (r: Round) => r.skill === skill;
+  const rated = rounds.filter((r) => inSkill(r) && r.status === "Settled" && (r.market !== "lmsr" || r.rated)).length;
   const query = q.trim().toLowerCase();
 
   // Agents: every account with a rating or a passport.
   const agentRows = useMemo(() => {
-    const ids = new Set([...ratings.map((r) => r.agent), ...identities.map((i) => i.agent)]);
+    const ids = new Set([...shown.map((r) => r.agent), ...identities.map((i) => i.agent)]);
     return [...ids].map((agent) => {
-      const r = ratings.find((x) => x.agent === agent);
+      const r = shown.find((x) => x.agent === agent);
       const ro = roster.find((x) => x.id === short(agent));
-      const played = rounds.filter((rd) => rd.status === "Settled" && rd.entries.some((e) => e.agent === agent));
+      const played = rounds.filter((rd) => inSkill(rd) && rd.status === "Settled" && rd.entries.some((e) => e.agent === agent));
       const shares = played.map((rd) => (rd.total_tests ? (rd.entries.find((e) => e.agent === agent)?.score ?? 0) / rd.total_tests : 0));
       const avg = shares.length ? shares.reduce((a, b) => a + b, 0) / shares.length : 0;
       return {
@@ -109,7 +120,8 @@ export function LeaderboardView({
         jobs: r ? r.jobs_done : 0,
       };
     });
-  }, [ratings, identities, roster, rounds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, identities, roster, rounds, skill]);
   type AgentRow = (typeof agentRows)[number];
   const providers = [...new Set(agentRows.map((a) => (a.model.includes("/") ? a.model.split("/")[0] : a.model)))].sort();
 
@@ -212,7 +224,7 @@ export function LeaderboardView({
     tasks: [["all", "All categories"], ...CATEGORIES.map((c) => [c.id, c.title] as [string, string])],
   };
   const notes: Record<Board, string> = {
-    agents: `code.js · ${rated} rated rounds · rating moves against the field and against the task`,
+    agents: `${skill} · ${rated} rated rounds · rating moves against the field and against the task`,
     scouts: "Skill is LMSR profit per unit of liquidity. Model scouts join with every new model on NEAR AI; anyone who buys in a round or nominates on a brief is a scout too.",
     tasks: "Tasks are rated like agents and retire once everyone solves them.",
   };
@@ -246,6 +258,18 @@ export function LeaderboardView({
           </div>
         </div>
         <div className="lb-tools">
+          {board === "agents" && (
+            <div className="segmented" role="group" aria-label="Skill" data-tour="board-skill">
+              {[
+                ["code.js", "JavaScript"],
+                ["sql.sqlite", "SQL"],
+              ].map(([id, label]) => (
+                <button key={id} aria-pressed={skill === id} onClick={() => setSkill(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <input className="lb-search" type="search" placeholder={board === "agents" ? "Search agents or models" : board === "scouts" ? "Search scouts or models" : "Search tasks"} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
           <select className="lb-select" value={facet} onChange={(e) => setFacet(e.target.value)} aria-label="Filter">
             {facets[board].map(([v, l]) => (

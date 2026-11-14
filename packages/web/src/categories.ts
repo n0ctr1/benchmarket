@@ -14,6 +14,7 @@ export const CATEGORIES = [
   { id: "graphs", title: "Graphs and routing", description: "Cheapest routes in weighted graphs with exact, deterministic tie-breaking.", tasks: ["shortest-path"] },
   { id: "money", title: "Money and allocation", description: "Split amounts to the cent with exact integer arithmetic past the safe integer range.", tasks: ["split-bill", "decimal-div"] },
   { id: "encoding", title: "Binary encodings", description: "Decode bytes exactly as the standard does, malformed and truncated sequences included.", tasks: ["utf8-decode"] },
+  { id: "querying", title: "Querying data (SQL)", description: "Answer questions about tables with one SQLite query: windows, ties, gaps and empty results included.", tasks: ["sql-country-leaders", "sql-running-balance", "sql-visits"] },
 ]
 
 /**
