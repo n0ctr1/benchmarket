@@ -267,8 +267,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const verifier = new Verifier(keys, process.env.VERIFIER_DATA_DIR ?? ".data/verifier");
   const contract = process.env.LEAGUE_ACCOUNT;
   const chain = contract ? rpcChain(process.env.NEAR_RPC_URL ?? "https://test.rpc.fastnear.com", contract) : undefined;
-  createServer(verifier, chain).listen(port, () => {
-    console.log(`verifier listening on http://localhost:${port}`);
+  // Behind a reverse proxy set VERIFIER_HOST=127.0.0.1 so only the proxy reaches it.
+  const host = process.env.VERIFIER_HOST ?? "0.0.0.0";
+  createServer(verifier, chain).listen(port, host, () => {
+    console.log(`verifier listening on http://${host}:${port}`);
     console.log(`public keys: ${verifier.publicKeys.join(", ")}`);
   });
 }
