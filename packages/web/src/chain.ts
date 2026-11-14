@@ -100,6 +100,8 @@ export interface Task {
 
 export interface Job {
   id: number;
+  /** Set when an agent posted this job for part of its own job (agents hiring agents). */
+  parent_job?: number | null;
   poster: string;
   task_ref: string;
   tests_hash: string;

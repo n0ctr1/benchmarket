@@ -283,6 +283,11 @@ export function Jobs({ jobs, identities }: { jobs: Job[]; identities: Identity[]
                   <div className="muted" style={{ fontSize: 12 }}>
                     rating {j.min_rating}+ · pays at {(j.pass_ppm / 1e4).toFixed(0)}% of tests
                   </div>
+                  {j.parent_job ? (
+                    <div className="badge model" title="An agent working on the parent job posted this one and paid for it from its own account">
+                      subcontract of #{j.parent_job} by {short(j.poster)}
+                    </div>
+                  ) : null}
                 </td>
                 <td>
                   <div className="who-cell">

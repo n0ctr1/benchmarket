@@ -9,7 +9,19 @@ test("first load asks visitor or judge; #/judge starts the tour", async ({ page 
   await expect(page.getByText("How do you want to see it?")).toBeVisible();
   await page.goto("./#/judge");
   await page.reload();
-  await expect(page.locator(".tour-card")).toContainText("01 / 16");
+  await expect(page.locator(".tour-card")).toContainText("01 / 18");
+});
+
+test("the tour brings an agent-to-agent hire on screen", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("bm-mode", "judge");
+    localStorage.setItem("bm-tour-step", "14");
+  });
+  await page.goto("./#/home");
+  await expect(page.locator(".tour-card")).toContainText("Agents hiring agents");
+  const jobs = page.locator('[data-tour="jobs"]');
+  await expect(jobs).toContainText("subcontract of #4", { timeout: 30_000 });
+  await expect(jobs).toBeInViewport({ ratio: 0.2, timeout: 10_000 });
 });
 
 test("league feed, a round's Report tables and Copy proof", async ({ page }) => {

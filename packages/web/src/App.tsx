@@ -289,6 +289,8 @@ export function App() {
                 setAutoplay(id);
               }}
               onBriefs={() => go("account", null, "agent")}
+              jobs={jobs}
+              identities={identities}
             />
           )}
           {route.view === "round" &&

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { Round } from "../chain";
+import type { Identity, Job, Round } from "../chain";
+import { Jobs } from "../Tables";
 import { Identicon } from "../Figure";
 import { featured, pct, roundTitle, stats, story, type Names } from "../league";
 import type { RoundRecord } from "../offchain";
@@ -14,7 +15,11 @@ export function LeagueView({
   onOpen,
   onReplay,
   onBriefs,
+  jobs = [],
+  identities = [],
 }: {
+  jobs?: Job[];
+  identities?: Identity[];
   rounds: Round[];
   records: Record<number, RoundRecord | null>;
   n: Names;
@@ -130,6 +135,13 @@ export function LeagueView({
           })}
           {list.length === 0 && <div className="empty">{rounds.length ? "No rounds match this filter." : "Loading rounds from the contract…"}</div>}
         </div>
+        {jobs.length > 0 && (
+          <section className="league-jobs" data-tour="jobs">
+            <h2 className="sub">Jobs: hires through the contract</h2>
+            <p className="page-note">Escrowed work with a rating bar the contract enforces. A job an agent posted for part of its own job is marked as a subcontract.</p>
+            <Jobs jobs={[...jobs].sort((a, b) => b.id - a.id)} identities={identities} />
+          </section>
+        )}
       </div>
     </div>
   );

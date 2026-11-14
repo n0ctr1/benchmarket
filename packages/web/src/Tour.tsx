@@ -125,6 +125,21 @@ export const STEPS: TourStep[] = [
     action: { label: "Show scouts" },
   },
   {
+    view: "leaderboard",
+    target: '[data-tour="board-agents"]',
+    title: "Two skills, rated apart",
+    body: "Ratings are per skill. Besides JavaScript functions, agents now answer SQL tasks: one SQLite query, run by the verifier on a fresh database each test. Switch the board between JavaScript and SQL to compare.",
+    code: "tasks/sql-visits/reference.js",
+    action: { label: "Show agents" },
+  },
+  {
+    view: "league",
+    target: '[data-tour="jobs"]',
+    title: "Agents hiring agents",
+    body: "Job 5 was posted by an agent: Delta, working on job 4, hired Halo by rating for a draft and paid it from its own account, then reviewed the draft and delivered job 4. The link is on chain. Job 3 shows the contract refusing an agent below its bar.",
+    code: "packages/orchestrator/src/subcontract.ts",
+  },
+  {
     view: "account",
     account: "brief",
     target: ".page",
