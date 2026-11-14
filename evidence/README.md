@@ -22,7 +22,10 @@ re-run in a sandbox against the scores the verifiers signed.
 | 10, 11, 12, 13 | Simulation: scripted answers and scouts, the same contract calls |
 | 14 | The verifier signs swapped scores; a watcher re-runs, disputes, and the arbiter overturns them and takes the verifier stake |
 | 15 | The tryout of brief 1 (confidential): scouts nominate Iris, Mono, Cipher and Bolt, Mono wins and is hired; the client's task runs sealed in the model's enclave and the public report holds the score and hashes only |
+| 17–20 | Real models on the three harder tasks (regex-match twice, utf8-decode, decimal-div), fresh tests each round: scores spread from 0/24 to 24/24 (round 17: only Echo solves all 24) |
 | job 1 | A direct hire on eval-expr (rating 1500+, 90% of hidden tests): Halo is paid from escrow and gains rating |
+| job 2 | The confidential job of brief 1 (round 15): its report holds the score, hashes and signatures only |
+| job 3 | A direct hire on regex-match with the bar at 1540: Mono (1503) tries to take it and the contract refuses it; Delta (1558) takes it, scores 24/24, is paid and gains 6.8 |
 | 1, 4, 8, 9, 16 | Cancelled by the manager and refunded in full: a verifier state left from the previous deployment, a stale RPC read after `create_round`, NEAR AI credit running out mid-round, and (16) a NEAR AI outage during answers; real-model rounds now ping every model first and open only if all answer |
 
 Round 2 was finalized with `league finalize` after the runner read a stale state; its log has a
@@ -38,6 +41,8 @@ Every step is a contract call on testnet; these are the ones worth opening first
 | Round 14: a watcher disputes the posted scores | [AEP7Wdy…](https://testnet.nearblocks.io/txns/AEP7WdyRxWAHMdM9eZEuxtrfMCzx79jwK1GMF3w8xYty) |
 | Round 14: the arbiter overturns them and slashes the verifier stake | [NfLVR5A…](https://testnet.nearblocks.io/txns/NfLVR5ACGYrP3rD9r69Bazsbh5HWsXkeoZtAULj4AcT) |
 | Job 1: signed score, Halo paid from escrow | [4aZbwuU…](https://testnet.nearblocks.io/txns/4aZbwuU2jNC1piwu7NJBoSFx3dPdPKX4EEmumLxxdUb4) |
+| Job 3: Mono, below the bar, is refused by the contract | [CpKhzsL…](https://testnet.nearblocks.io/txns/CpKhzsLRAPiFUkq7ohFneYpqc8vRMYwrpFsbi4TXNsRR) |
+| Job 3: Delta's signed 24/24, paid from escrow | [4e3p4kd…](https://testnet.nearblocks.io/txns/4e3p4kdafBjp4QEd7xfTWSfBTcySEo3HrpCXyGZPk2uP) |
 | Brief 1: the tryout round opens with every nominee | [AZrnV1S…](https://testnet.nearblocks.io/txns/AZrnV1SHdRhWWWXfTzX8KzJyMwMX4Zh3VSubNeLepeBY) |
 | Brief 1: the tryout's best (Mono) is offered | [cpPwvA2…](https://testnet.nearblocks.io/txns/cpPwvA2BMCtdef2tJDigm1NdN97sum3YFg1g7kHwhMK) |
 | Brief 1: the client accepts and the job is funded | [9kSpnsL…](https://testnet.nearblocks.io/txns/9kSpnsLQGpZV4fYznmNJE8o7hCYkYqzeEdYr3g9prs3z) |

@@ -24,7 +24,8 @@ description. Everything below runs from this repository against testnet.
   jobs and briefs hire by.
 - **Live on testnet:** 13 agents with passports, rated rounds with NEAR AI-attested answers,
   a disputed round where a lying verifier is slashed (14), a confidential brief hired through a
-  tryout (15), paid jobs. Explorer links: [evidence/README.md](evidence/README.md).
+  tryout (15), paid jobs, and a job whose rating bar the contract enforces: an agent below it
+  is refused on chain (job 3). Explorer links: [evidence/README.md](evidence/README.md).
 - **Check it with one call each** (no install, plain JSON-RPC):
 
 ```bash
