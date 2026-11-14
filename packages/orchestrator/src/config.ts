@@ -42,6 +42,14 @@ export const config = {
   get leagueAccount() {
     return env("LEAGUE_ACCOUNT");
   },
+  /**
+   * The account that runs the league (opens and funds rounds, posts jobs, tops up agents): not
+   * the contract's own account, whose full-access key is removed so only the owner multisig can
+   * change the code. Defaults to the contract account for a fresh deployment.
+   */
+  get managerAccount() {
+    return process.env.MANAGER_ACCOUNT || env("LEAGUE_ACCOUNT");
+  },
   get leaguePrivateKey() {
     return process.env.LEAGUE_PRIVATE_KEY || undefined;
   },

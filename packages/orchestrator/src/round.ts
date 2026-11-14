@@ -124,7 +124,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   const reserve = 0.05;
   for (const id of [...agents.map((a) => agentAccount(a, league)), ...scouts.map((s) => `${s.id}.${league}`)]) {
     const need = id.startsWith("scout") ? config.scoutBet : config.builderStake;
-    const sent = await chain.topUp(league, id, need + (opts.extraScoutFunds && id.startsWith("scout") ? opts.extraScoutFunds : 0n) + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
+    const sent = await chain.topUp(config.managerAccount, id, need + (opts.extraScoutFunds && id.startsWith("scout") ? opts.extraScoutFunds : 0n) + BigInt(Math.round(reserve * 1e6)) * 10n ** 18n);
     if (sent > 0n) say(`  topped up ${short(id)} with ${formatNear(sent, sent < 10n ** 21n ? 6 : 3)} NEAR`);
   }
 
@@ -138,7 +138,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   const isFamily = !existing && task.familyHash && (record ? record.tests_hash === task.familyHash : false);
   const fresh = isFamily ? await (remote ? remote.prepareTests(task.id) : verifier.prepareTests(task.id)) : null;
   const roundId = existing ? existing.id : Number(
-    await chain.createRound(league, {
+    await chain.createRound(config.managerAccount, {
       skill: task.skill,
       taskRef: opts.taskRef ?? task.id,
       testsHash: fresh ?? task.testsHash,
@@ -184,7 +184,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
 
   // 3. The manager funds the market maker. Its subsidy is its maximum loss.
   if (!existing) {
-    await chain.openMarket(league, roundId, config.subsidy);
+    await chain.openMarket(config.managerAccount, roundId, config.subsidy);
     say(`  market maker funded with ${formatNear(config.subsidy)} NEAR (LMSR)`);
   }
 
@@ -275,7 +275,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     posted = { scores: s, signatures: signScores(config.verifierSecretKeys, DOMAINS.round, roundId, report.totalTests, s).signatures };
     say(`  (demo) the verifier signs swapped scores: ${short(s[hi][0])} ${s[hi][1]}, ${short(s[lo][0])} ${s[lo][1]}`);
   }
-  await chain.settle(league, roundId, report.totalTests, posted.scores, posted.signatures.slice(0, config.verifierThreshold));
+  await chain.settle(config.managerAccount, roundId, report.totalTests, posted.scores, posted.signatures.slice(0, config.verifierThreshold));
   // The RPC node may answer from a block before the settle landed; read until it shows.
   let round = (await chain.getRound(roundId))!;
   for (let i = 0; i < 20 && round.status === "Locked"; i++) {
@@ -294,18 +294,18 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
     if (check.ok) {
       const wait = round.proposal!.dispute_until_ms - Date.now() + 2000;
       if (wait > 0) await sleep(wait);
-      await chain.finalize(league, roundId);
+      await chain.finalize(config.managerAccount, roundId);
     } else {
       // The watcher disputes; arbiters re-run on their own and rule with their signature.
       const bond = BigInt((await chain.getConfig()).params.dispute_bond);
-      await chain.dispute(league, roundId, bond);
+      await chain.dispute(config.managerAccount, roundId, bond);
       say(`  watcher disputes with a ${formatNear(bond)} NEAR bond`);
       note("disputed", { bond: bond.toString(), problems: check.problems });
       if (config.arbiterSecretKeys.length) {
         const disputed = (await chain.getRound(roundId))!;
         const ruling = await recheck(published, disputed);
         const sig = signScores(config.arbiterSecretKeys, DOMAINS.roundArbiter, roundId, ruling.totalTests, ruling.scores).signatures;
-        await chain.resolveDispute(league, roundId, ruling.totalTests, ruling.scores, sig);
+        await chain.resolveDispute(config.managerAccount, roundId, ruling.totalTests, ruling.scores, sig);
         const r = (await chain.getRound(roundId))!;
         say(`  arbiter re-ran and ruled: ${r.dispute?.overturned ? "scores overturned, the signing verifier keys lost their stake to the disputer" : "scores upheld"}`);
         note("dispute_resolved", { overturned: r.dispute?.overturned ?? null, scores: ruling.scores });

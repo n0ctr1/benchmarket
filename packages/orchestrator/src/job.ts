@@ -33,7 +33,7 @@ export async function runJob(opts: JobOptions): Promise<JobView> {
   const league = config.leagueAccount;
   const task = loadTask(taskId);
   const jobId = Number(
-    await chain.postJob(league, {
+    await chain.postJob(config.managerAccount, {
       skill: task.skill,
       taskRef: opts.taskRef ?? task.id,
       testsHash: task.testsHash,
@@ -99,14 +99,14 @@ export async function workJob(o: { chain: LeagueChain; verifier: Verifier; jobId
   const report = await verifier.scoreJob(jobId, task.id, entry);
   const d = report.details[0];
   say(`  verifier: ${d.score}/${report.totalTests}${d.check ? ` (${d.check})` : ""}`);
-  await chain.settleJob(league, jobId, report.totalTests, d.score, report.signatures.slice(0, config.verifierThreshold));
+  await chain.settleJob(config.managerAccount, jobId, report.totalTests, d.score, report.signatures.slice(0, config.verifierThreshold));
   let j = (await chain.getJob(jobId))!;
   if (j.status === "Proposed") {
     const check = await recheck(verifier.published(jobId, "job")!, { id: jobId, tests_hash: j.tests_hash, entries: [entry], proposal: { total_tests: report.totalTests, scores: [[acc, j.score ?? d.score]] } }, "job");
     say(`  watcher re-run: ${check.ok ? "score matches" : check.problems.join("; ")}`);
     const wait = (j.dispute_until_ms ?? 0) - Date.now() + 2000;
     if (wait > 0) await sleep(wait);
-    await chain.finalizeJob(league, jobId);
+    await chain.finalizeJob(config.managerAccount, jobId);
     j = (await chain.getJob(jobId))!;
   }
   const sign = j.rating_delta >= 0 ? "+" : "";

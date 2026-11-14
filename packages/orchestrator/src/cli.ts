@@ -145,7 +145,7 @@ async function watch(chain: LeagueChain, roundId: number, dispute: boolean): Pro
   if (!check.ok && dispute) {
     if (round.status !== "Proposed") throw new Error(`round is ${round.status}; disputes are only possible while Proposed`);
     const bond = BigInt((await chain.getConfig()).params.dispute_bond);
-    await chain.dispute(config.leagueAccount, roundId, bond);
+    await chain.dispute(config.managerAccount, roundId, bond);
     console.log(`disputed with a ${(Number(bond) / 1e24).toFixed(2)} NEAR bond; arbiters now re-run and rule`);
   }
 }
@@ -159,7 +159,7 @@ async function arbitrate(chain: LeagueChain, roundId: number): Promise<void> {
   if (round?.status !== "Disputed") throw new Error(`round ${roundId} is not disputed`);
   const check = await recheck(await published(roundId), round);
   const { signatures } = signScores(keys, DOMAINS.roundArbiter, roundId, check.totalTests, check.scores);
-  await chain.resolveDispute(config.leagueAccount, roundId, check.totalTests, check.scores, signatures);
+  await chain.resolveDispute(config.managerAccount, roundId, check.totalTests, check.scores, signatures);
   const after = (await chain.getRound(roundId))!;
   console.log(`ruled: scores ${after.dispute?.overturned ? "overturned, verifier stake slashed" : "upheld, bond forfeited"}; winners ${after.winners.join(", ") || "none"}`);
 }
@@ -269,7 +269,7 @@ async function main(): Promise<void> {
     case "cancel": {
       // The manager cancels an unsettled round; every purchase, bond, subsidy and bounty goes back.
       const id = Number(arg("round"));
-      if ((await chain.getRound(id))?.status !== "Cancelled") await chain.cancelRound(config.leagueAccount, id);
+      if ((await chain.getRound(id))?.status !== "Cancelled") await chain.cancelRound(config.managerAccount, id);
       console.log(`round ${id} cancelled`);
       await claimAll(chain, id);
       break;
@@ -286,7 +286,7 @@ async function main(): Promise<void> {
         log?.events.push({ at: Date.now(), kind: "watcher_check", data: { ok: check.ok, problems: check.problems } });
         if (!check.ok) throw new Error(`posted scores do not match a re-run: ${check.problems.join("; ")}`);
       }
-      if (before.status === "Proposed") await chain.finalize(config.leagueAccount, id);
+      if (before.status === "Proposed") await chain.finalize(config.managerAccount, id);
       const r = (await chain.getRound(id))!;
       log?.events.push({ at: Date.now(), kind: "round_settled", data: { winners: r.winners, scores: r.proposal?.scores ?? [], finalized_late: true } });
       if (log) fs.writeFileSync(logPath, JSON.stringify(log, null, 2));
@@ -309,6 +309,10 @@ async function main(): Promise<void> {
     case "multisig":
       // The contract's owner becomes a 2-of-3 multisig of nominal signers.
       await (await import("./governance.js")).setupMultisig(chain);
+      break;
+    case "owner-upgrade":
+      // A code upgrade proposed by one multisig signer and confirmed by a second.
+      await (await import("./governance.js")).ownerUpgrade(chain, arg("wasm", "contract/target/near/benchmarket.wasm")!);
       break;
     case "owner-call": {
       // An owner call proposed by one multisig signer and confirmed by a second.

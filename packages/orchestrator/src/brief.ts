@@ -52,7 +52,7 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
 
   // The client and the scouts need funds for the escrow and the stakes.
   const escrow = opts.budget + opts.scoutReward + bounty + subsidy;
-  const sent = await chain.topUp(league, client, escrow + near("0.05"));
+  const sent = await chain.topUp(config.managerAccount, client, escrow + near("0.05"));
   if (sent > 0n) say(`  topped up the client with ${formatNear(sent)} NEAR`);
 
   const category = opts.category ?? CATEGORIES.find((c) => c.tasks.includes(task.id))?.id;
@@ -106,7 +106,7 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
     if (!scout.nominate) continue;
     const account = `${scout.id}.${league}`;
     const picks = await scout.nominate({ summary: opts.summary, skill: task.skill, category: cat ? `${cat.title}: ${cat.description}` : undefined }, field, tryoutTasks);
-    await chain.topUp(league, account, config.scoutStake * BigInt(picks.length) + config.scoutBet + near("0.05"));
+    await chain.topUp(config.managerAccount, account, config.scoutStake * BigInt(picks.length) + config.scoutBet + near("0.05"));
     for (const p of picks) {
       try {
         await chain.nominate(account, briefId, p.agent, p.task, config.scoutStake);
@@ -129,7 +129,8 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
   const next = await chain.nextTryoutTask(briefId);
   const nextRecord = next ? (await chain.getTasks()).find((t) => t.task_ref === next) : undefined;
   const fresh = next && nextRecord?.tests_hash.startsWith("family:") ? await verifier.prepareTests(next) : undefined;
-  await chain.startTryout(league, briefId, fresh);
+  // The client starts its own tryout (the contract lets the owner or the client do it).
+  await chain.startTryout(client, briefId, fresh);
   let b = (await chain.getBrief(briefId))!;
   if (fresh && b.tryout_round) verifier.bindTests("round", b.tryout_round, fresh);
   if (b.tryout_round) {
@@ -144,7 +145,7 @@ export async function runBrief(opts: BriefOptions): Promise<BriefView> {
       freshTests: !!fresh,
       log: (l) => say(`  | ${l}`),
     });
-    await chain.offer(league, briefId);
+    await chain.offer(config.managerAccount, briefId);
     b = (await chain.getBrief(briefId))!;
   }
   if (b.status !== "Offered") {
@@ -200,12 +201,12 @@ async function confidentialJob(o: { chain: LeagueChain; verifier: Verifier; jobI
   const report = await verifier.scoreJob(jobId, task.id, entry);
   const d = report.details[0];
   say(`  verifier opened only this exchange with the revealed one-time keys: ${d.score}/${report.totalTests}${d.check ? ` (${d.check})` : ""}`);
-  await chain.settleJob(league, jobId, report.totalTests, d.score, report.signatures.slice(0, config.verifierThreshold));
+  await chain.settleJob(config.managerAccount, jobId, report.totalTests, d.score, report.signatures.slice(0, config.verifierThreshold));
   let j = (await chain.getJob(jobId))!;
   if (j.status === "Proposed") {
     const wait = (j.dispute_until_ms ?? 0) - Date.now() + 2000;
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    await chain.finalizeJob(league, jobId);
+    await chain.finalizeJob(config.managerAccount, jobId);
     j = (await chain.getJob(jobId))!;
   }
   say(`  ${j.status === "Paid" ? `paid ${agent.name}` : "failed the bar, client refunded"}; the public report holds the score and hashes only`);

@@ -48,6 +48,26 @@ export async function setupMultisig(chain: LeagueChain, say: (l: string) => void
   }
 }
 
+/**
+ * A code upgrade through the multisig: `upgrade` on the contract with the wasm as the raw call
+ * input. The multisig holds the request (about 1 NEAR per 100 KB of storage) until a second
+ * signer confirms it; the storage is released when it executes.
+ */
+export async function ownerUpgrade(chain: LeagueChain, wasmPath: string, say: (l: string) => void = console.log): Promise<number> {
+  const league = config.leagueAccount;
+  const wasm = fs.readFileSync(wasmPath);
+  const request = {
+    receiver_id: league,
+    actions: [{ type: "FunctionCall", method_name: "upgrade", args: wasm.toString("base64"), deposit: "0", gas: "200000000000000" }],
+  };
+  const [first, second] = COUNCIL.signers;
+  const id = Number(await chain.account(first).callFunction({ contractId: COUNCIL.multisig, methodName: "add_request_and_confirm", args: { request }, gas: 300_000_000_000_000n }));
+  say(`${first} proposes request ${id}: upgrade (${wasm.length} bytes)`);
+  await chain.account(second).callFunction({ contractId: COUNCIL.multisig, methodName: "confirm", args: { request_id: id }, gas: 300_000_000_000_000n });
+  say(`${second} confirms request ${id}: the contract deployed the new code`);
+  return id;
+}
+
 /** An owner call through the multisig: the first signer proposes and confirms, a second confirms. */
 export async function ownerCall(chain: LeagueChain, method: string, args: Record<string, unknown>, say: (l: string) => void = console.log): Promise<number> {
   const league = config.leagueAccount;

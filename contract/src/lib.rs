@@ -720,6 +720,18 @@ impl Contract {
         self.inference_signers = signers.into_iter().map(|s| s.to_ascii_lowercase()).collect();
     }
 
+    /// Replaces the contract's code: the owner (the 2-of-3 multisig) passes the new wasm as the
+    /// call's raw input, and the contract deploys it to its own account. With the account's own
+    /// full-access key removed, this is the only way the code can change. A change of state
+    /// layout would ship its migration in the new code (`migrate` is private to the contract).
+    pub fn upgrade(&mut self) -> near_sdk::Promise {
+        self.assert_owner();
+        let code = env::input().unwrap_or_default();
+        require!(code.len() > 1024 && code.starts_with(b"\0asm"), "pass the new wasm as the raw call input");
+        emit("contract_upgraded", json!({ "by": env::predecessor_account_id(), "code_sha256": env::sha256(&code).iter().map(|b| format!("{b:02x}")).collect::<String>() }));
+        near_sdk::Promise::new(env::current_account_id()).deploy_contract(code)
+    }
+
     /// Hands the contract to a new owner (a DAO, for a live league).
     pub fn set_owner(&mut self, owner: AccountId) {
         self.assert_owner();

@@ -50,7 +50,7 @@ export async function issueIdentity(chain: LeagueChain, agent: AgentConfig, say:
     return { agent: account, model: agent.model, zeroPromptHash: "", attempts: [] };
   }
   // The agent pays the passport deposit and gas itself; make sure it can.
-  const sent = await chain.topUp(league, account, IDENTITY_DEPOSIT + 10n ** 23n);
+  const sent = await chain.topUp(config.managerAccount, account, IDENTITY_DEPOSIT + 10n ** 23n);
   if (sent > 0n) say(`  topped up ${agent.id} for its passport`);
   const zero = zeroPrompt();
   const rec: IdentityRecord = { agent: account, model: agent.model, zeroPromptHash: `sha256:${sha(zero)}`, attempts: [] };

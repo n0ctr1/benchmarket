@@ -34,7 +34,7 @@ export async function runSubcontract(o: {
   if (o.subBudget >= o.budget) throw new Error("the sub-job must pay less than the parent job");
 
   const parent = Number(
-    await chain.postJob(league, { skill: task.skill, taskRef: task.id, testsHash: task.testsHash, minRating: o.minRating, minRounds: 3, passPpm: 900_000, workWindowMs: 40 * 60_000, attested: !!solver.attests, budget: o.budget }),
+    await chain.postJob(config.managerAccount, { skill: task.skill, taskRef: task.id, testsHash: task.testsHash, minRating: o.minRating, minRounds: 3, passPpm: 900_000, workWindowMs: 40 * 60_000, attested: !!solver.attests, budget: o.budget }),
   );
   say(`job ${parent}: ${task.title}, ${formatNear(o.budget)} NEAR, rating ${o.minRating}+`);
 
@@ -54,7 +54,7 @@ export async function runSubcontract(o: {
   say(`  ${contractor.name} takes job ${parent}`);
 
   // The contractor pays for the sub-job itself: top it up only to cover the budget and gas.
-  await chain.topUp(league, cAcc, o.subBudget + 50_000_000_000_000_000_000_000n);
+  await chain.topUp(config.managerAccount, cAcc, o.subBudget + 50_000_000_000_000_000_000_000n);
   const sub = Number(
     await chain.postJob(cAcc, { skill: task.skill, taskRef: task.id, testsHash: task.testsHash, minRating: o.subMinRating, minRounds: 3, passPpm: 900_000, workWindowMs: 20 * 60_000, attested: !!solver.attests, budget: o.subBudget, parentJob: parent }),
   );

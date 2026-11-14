@@ -981,6 +981,41 @@ fn only_the_hired_agent_subcontracts() {
     c.post_job(SKILL.into(), "job-task".into(), "sha256:jobtests".into(), 0, Some(1), None, 3_600_000, None, Some(parent));
 }
 
+fn ctx_with_input(caller: &str, input: &[u8]) {
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("league.testnet")).predecessor_account_id(acc(caller)).signer_account_id(acc(caller)).block_timestamp(1_000_000_000);
+    b.context.input = std::rc::Rc::from(input);
+    testing_env!(b.build());
+}
+
+#[test]
+#[should_panic(expected = "only the owner")]
+fn only_the_owner_upgrades_the_code() {
+    let (mut c, _) = setup(1);
+    let mut wasm = b"\0asm".to_vec();
+    wasm.resize(4096, 0);
+    ctx_with_input("stranger.testnet", &wasm);
+    c.upgrade();
+}
+
+#[test]
+#[should_panic(expected = "pass the new wasm")]
+fn an_upgrade_needs_wasm() {
+    let (mut c, _) = setup(1);
+    ctx_with_input("owner.testnet", b"not a contract");
+    c.upgrade();
+}
+
+#[test]
+fn the_owner_upgrades_with_wasm() {
+    let (mut c, _) = setup(1);
+    let mut wasm = b"\0asm".to_vec();
+    wasm.resize(4096, 0);
+    ctx_with_input("owner.testnet", &wasm);
+    c.upgrade();
+    assert!(get_logs().iter().any(|l| l.contains("contract_upgraded")));
+}
+
 #[test]
 fn failed_job_refunds_the_poster_and_costs_rating() {
     let (mut c, keys) = setup(1);
