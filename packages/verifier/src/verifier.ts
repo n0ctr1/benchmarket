@@ -15,6 +15,7 @@ import {
   sha256Tagged,
   signedMessage,
   signMessage,
+  verifyMessage,
   type Domain,
   type PublicConfig,
   type TestCase,
@@ -294,6 +295,21 @@ export class Verifier {
     if (!p) throw new Error(`no prepared tests with hash ${hash}`);
     this.pending.delete(hash);
     this.bound.set(key(kind, id), p);
+    this.save();
+  }
+
+  /**
+   * Takes a report another instance scored and published (the public verifier, holding the same
+   * keys), after checking that every signature is by one of this verifier's keys over its
+   * message. Answers, scores and fresh tests then publish from here as if scored here.
+   */
+  importPublished(kind: Kind, id: number, pub: PublishedReport): void {
+    const mine = new Set(this.publicKeys);
+    const ok = pub.report.signatures.length > 0 && pub.report.signatures.every((sig) => pub.report.publicKeys.some((pk) => mine.has(pk) && verifyMessage(pk, pub.report.message, sig)));
+    if (!ok) throw new Error(`${key(kind, id)}: the imported report is not signed by this verifier's keys`);
+    this.reports.set(key(kind, id), pub.report);
+    this.answers.set(key(kind, id), new Map(pub.answers.map((a) => [a.agent, a])));
+    if (pub.family) this.bound.set(key(kind, id), { taskId: pub.report.taskId, seed: pub.family.seed, raw: pub.rawTests, hash: sha256Tagged(pub.rawTests) });
     this.save();
   }
 

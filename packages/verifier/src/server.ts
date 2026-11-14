@@ -1,6 +1,16 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import { listTaskIds, loadTask, publicView, roundTag, sha256Tagged, taskPrompt, verifyMessage, verifyNep413, viewCall } from "@benchmarket/shared";
-import { answerCode, Verifier, type Kind } from "./verifier.js";
+import { answerCode, Verifier, type ChainEntry, type Kind } from "./verifier.js";
+
+/** Whether the request carries VERIFIER_OPERATOR_TOKEN (compared in constant time). */
+function operatorAuthorized(req: http.IncomingMessage): boolean {
+  const want = process.env.VERIFIER_OPERATOR_TOKEN ?? "";
+  const got = String(req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+  if (want.length < 32 || !got) return false;
+  const h = (s: string) => createHash("sha256").update(s).digest();
+  return timingSafeEqual(h(want), h(got));
+}
 
 /**
  * `task_ref` is a task id, optionally with a variant: `parse-duration@smoke` runs the same
@@ -17,6 +27,8 @@ export interface ChainReader {
   hasKey?(account: string, publicKey: string): Promise<boolean>;
   /** The config hash an agent registered on its passport. */
   configHash?(agent: string): Promise<string | null>;
+  /** The whole round, entries as the contract stores them (what scoring needs). */
+  fullRound?(id: number): Promise<{ task_ref: string; entries: ChainEntry[] } | null>;
   /** The league contract's account (what a poster's signature names). */
   contract?: string;
 }
@@ -25,6 +37,9 @@ export interface ChainReader {
 export function rpcChain(rpcUrl: string, contractId: string): ChainReader {
   return {
     contract: contractId,
+    async fullRound(id) {
+      return viewCall(rpcUrl, contractId, "get_round", { round_id: id });
+    },
     async configHash(agent) {
       const i = await viewCall<{ config_hash?: string } | null>(rpcUrl, contractId, "get_identity", { agent });
       return i?.config_hash ?? null;
@@ -97,6 +112,26 @@ export function createServer(verifier: Verifier, chain?: ChainReader): http.Serv
       if (req.method === "GET" && parts[0] === "tasks") {
         if (parts[1]) return send(200, publicView(loadTask(parts[1])));
         return send(200, listTaskIds().map((id) => publicView(loadTask(id))));
+      }
+      // The league operator's calls (bearer token): fresh tests for a round, binding them once the
+      // round exists, and scoring it once its entrants answered. Scores are public afterwards.
+      if (parts[0] === "operator" && req.method === "POST") {
+        if (!operatorAuthorized(req)) return send(403, { error: "operator token required" });
+        const body = JSON.parse((await readBody(req)) || "{}");
+        if (parts[1] === "prepare") return send(200, { tests_hash: await verifier.prepareTests(String(body.taskId)) });
+        const rid = Number(parts[2]);
+        if (parts[1] === "rounds" && Number.isInteger(rid) && parts[3] === "bind") {
+          verifier.bindTests("round", rid, String(body.tests_hash));
+          return send(200, { ok: true });
+        }
+        if (parts[1] === "rounds" && Number.isInteger(rid) && parts[3] === "score") {
+          if (!chain?.fullRound) return send(503, { error: "this verifier does not read the chain" });
+          const round = await chain.fullRound(rid);
+          if (!round) return send(404, { error: "no such round" });
+          await verifier.score(rid, taskIdOf(round.task_ref), round.entries);
+          return send(200, verifier.published(rid, "round"));
+        }
+        return send(404, { error: "no such operator call" });
       }
       const kind: Kind | null = parts[0] === "rounds" ? "round" : parts[0] === "jobs" ? "job" : null;
       const id = Number(parts[1]);

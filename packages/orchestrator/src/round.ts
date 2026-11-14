@@ -4,6 +4,7 @@ import { loadTask, publicView, roundTag, sha256Tagged, type Completion } from "@
 import { recheck, signScores, type Verifier } from "@benchmarket/verifier";
 import { DOMAINS } from "@benchmarket/shared";
 import type { LeagueChain, RoundView } from "./chain.js";
+import type { RemoteVerifier } from "./remote.js";
 import { config, DATA_DIR, formatNear } from "./config.js";
 import { attestationArg, chat, type CompletionSignature } from "./nearai.js";
 import { agentAccount, configHash, publicConfig, ROSTER, type AgentConfig } from "./roster.js";
@@ -50,6 +51,8 @@ export interface RoundOptions {
   freshTests?: boolean;
   /** Extra balance scouts need on top of their bet (brief nominations). */
   extraScoutFunds?: bigint;
+  /** The public verifier prepares the tests, takes every answer and scores (an open round). */
+  remote?: RemoteVerifier;
   log?: (line: string) => void;
 }
 
@@ -131,7 +134,9 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   // A family task runs on fresh hidden tests: the verifier draws a secret seed, generates them
   // and the round commits their hash. The seed is published with the report.
   const record = existing ? null : (await chain.getTasks()).find((t) => t.task_ref === (opts.taskRef ?? task.id));
-  const fresh = !existing && task.familyHash && (record ? record.tests_hash === task.familyHash : false) ? await verifier.prepareTests(task.id) : null;
+  const remote = opts.remote;
+  const isFamily = !existing && task.familyHash && (record ? record.tests_hash === task.familyHash : false);
+  const fresh = isFamily ? await (remote ? remote.prepareTests(task.id) : verifier.prepareTests(task.id)) : null;
   const roundId = existing ? existing.id : Number(
     await chain.createRound(league, {
       skill: task.skill,
@@ -145,7 +150,7 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
       rated: attested,
     }),
   );
-  if (fresh) verifier.bindTests("round", roundId, fresh);
+  if (fresh) await (remote ? remote.bindTests(roundId, fresh) : verifier.bindTests("round", roundId, fresh));
   const tag = roundTag("round", roundId);
   const log: RoundLog = { roundId, taskId, events: [] };
   const note = (kind: string, data: Record<string, unknown>) => {
@@ -221,7 +226,8 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
         const hash = sha256Tagged(body);
         if (created.attested && !out.signature) throw new Error("the cloud returned no signature for this completion");
         await chain.submitAnswer(acc, roundId, hash, out.signature ? attestationArg(out.signature) : undefined);
-        verifier.submit(roundId, acc, task.id, body, out.meta, { request: out.completion?.request, config: publicConfig(a) });
+        if (remote) await remote.submit(roundId, acc, body, { request: out.completion?.request, config: publicConfig(a), meta: out.meta });
+        else verifier.submit(roundId, acc, task.id, body, out.meta, { request: out.completion?.request, config: publicConfig(a) });
         const took = typeof out.meta?.latencyMs === "number" ? ` in ${(out.meta.latencyMs / 1000).toFixed(1)}s` : "";
         if (out.meta?.mode === "llm") say(`  ${a.name.padEnd(7)} answered${took}${out.signature ? `, ${out.signature.signature_kind ?? "cloud"}-signed and attested on chain` : ""}`);
         note("answer_submitted", { agent: acc, answer_hash: hash, attested: !!out.signature, meta: out.meta ?? null });
@@ -233,14 +239,25 @@ export async function runRound(opts: RoundOptions): Promise<RoundView> {
   );
 
   // Outside agents answer on their own; give them until every entrant has answered (or the deadline).
+  // With the public verifier, an outside agent's commitment on chain is the signal; it posts its
+  // answer to the verifier right after.
   let answered = (await chain.getRound(roundId))!;
-  while (!answered.entries.every((e) => e.answer_hash && verifier.getAnswer(roundId, e.agent)) && Date.now() < answered.answer_deadline_ms) {
+  const delivered = (e: { agent: string; answer_hash: string | null }) => !!e.answer_hash && (remote ? true : !!verifier.getAnswer(roundId, e.agent));
+  while (!answered.entries.every(delivered) && Date.now() < answered.answer_deadline_ms) {
     await sleep(5000);
     answered = (await chain.getRound(roundId))!;
   }
+  if (remote) await sleep(15_000);
 
   // 7. The verifier scores against the hidden tests and signs; the contract checks the signatures.
-  const report = await verifier.score(roundId, task.id, answered.entries);
+  // An open round is scored by the public verifier; its signed report is checked and kept here too.
+  let report;
+  if (remote) {
+    const pub = await remote.score(roundId);
+    verifier.importPublished("round", roundId, pub);
+    report = pub.report;
+    say(`  scored by the public verifier at ${remote.url}`);
+  } else report = await verifier.score(roundId, task.id, answered.entries);
   for (const d of report.details) say(`    ${short(d.agent).padEnd(7)} ${d.score}/${report.totalTests}${d.check ? `  (${d.check})` : ""}`);
   // If an agent never answered, the contract waits for the answer deadline.
   const waitAnswers = answered.entries.every((e) => e.answer_hash) ? 0 : answered.answer_deadline_ms - Date.now() + 2000;

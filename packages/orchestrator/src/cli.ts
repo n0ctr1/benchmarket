@@ -34,6 +34,13 @@ async function withVerifier<T>(fn: (v: Verifier) => Promise<T>): Promise<T> {
   }
 }
 
+/** `--remote`: the public verifier prepares, collects and scores the round (an open round). */
+async function remoteVerifier() {
+  if (!process.argv.includes("--remote")) return undefined;
+  const { RemoteVerifier } = await import("./remote.js");
+  return new RemoteVerifier(process.env.PUBLIC_VERIFIER_URL ?? "https://verifier.bench-market.xyz", process.env.VERIFIER_OPERATOR_TOKEN ?? "");
+}
+
 /** `--llm`: real models on NEAR AI Cloud for agents, and a scout per model next to the scripted ones. */
 function mode(): Pick<RoundOptions, "solver" | "scouts"> {
   if (!process.argv.includes("--llm")) return {};
@@ -166,7 +173,8 @@ async function main(): Promise<void> {
       break;
     case "round": {
       const taskId = arg("task", "parse-duration")!;
-      await withVerifier((verifier) => runRound({ chain, verifier, taskId, agents: fieldFor(Number(arg("rotation", String(Math.floor(Date.now() / 1000))))), taskRef: arg("ref"), openSeconds: Number(arg("open-seconds", "0")), lie: process.argv.includes("--lie"), ...mode(), marketSeconds: Number(arg("market-seconds", "20")) }));
+      const remote = await remoteVerifier();
+      await withVerifier((verifier) => runRound({ chain, verifier, taskId, agents: fieldFor(Number(arg("rotation", String(Math.floor(Date.now() / 1000))))), taskRef: arg("ref"), openSeconds: Number(arg("open-seconds", "0")), lie: process.argv.includes("--lie"), ...mode(), marketSeconds: Number(arg("market-seconds", "20")), remote }));
       await leaderboard(chain);
       break;
     }
