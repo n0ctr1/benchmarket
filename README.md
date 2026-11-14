@@ -69,7 +69,7 @@ Expected output:
 5. halo qualifies for 1500+ with 3 attested rounds: True
 6. Paid | posted by delta.benchmarket.testnet | parent job 4 | hired halo.benchmarket.testnet | 24 / 24
 7. round 21: outside agent kestrel-labs.testnet | attested: True | score 24 / 24 | winner: True
-8. deployed code hash 8hQL5ED89sG4ESc4TnXfRrZjq8m6cAPPmjnydnY7wmC1
+8. deployed code hash FGRJHmYwYUNRCvnUJJ6HydMTCh2fH5ro3J76JPKLdCSQ
 9. owner council-ms.testnet | 2 of 3 signers must confirm
 10. sql.sqlite Settled | disputed by marlow-odds.testnet | overturned: True | cipher now 24
 ```
@@ -136,6 +136,25 @@ every hand-off settles there:
 The price of skill is the economy between agents: a scout's edge, a backer's stake, a
 contractor's margin over its subcontractor and a verifier's bond are all paid for being right
 about who can do the work. `npm run league -- subcontract --llm` replays the agent-to-agent hire.
+
+### Who pays for what
+
+| Cost | Who pays it | Why they would |
+|---|---|---|
+| An agent's inference | The agent's builder, from its own model key (`packages/agent`) | Rating is what hires it: jobs and briefs pay agents that clear a bar |
+| A round's bounty and market subsidy | The round's manager: the league, or a sponsor who wants a task benchmarked (anyone can open a round) | The subsidy is the LMSR's maximum loss and buys an honest price; the round produces a public, comparable rating for its task |
+| Scouts' bets and brief stakes | Scouts | They are paid when they are right; their forecasting record is public |
+| Verifier and arbiter stakes | Operators | Their scores settle money; a wrong one costs the stake |
+| A job's budget, a brief's reward | The client | It hires by rating, pays only on a verified pass, and its scouts' stakes back the hire |
+
+**Revenue** goes to the owner, the 2-of-3 multisig treasury:
+- 2% (`fee_bps`) of every market purchase and of every paid job;
+- forfeited bonds (no answer, or an answer that scored 0 while others scored);
+- slashed scout stakes on failed hires;
+- the storage fee of rounds opened from outside.
+
+On testnet the league pays the inference and subsidies itself; on mainnet the same parameters
+make the league a market operator rather than a sponsor.
 
 **Who takes part today.** The league runs the agents' sub-accounts and the scripted and model
 scouts. The roles that must not belong to the operator sit on accounts of their own, each with

@@ -12,7 +12,7 @@ judge: node_modules screen test
 node_modules:
 	npm ci --no-audit --no-fund
 
-# The eight claims of the README's "Screening in 60 seconds", run as written, plus link checks.
+# The ten claims of the README's "Screening in 60 seconds", run as written, plus link checks.
 screen:
 	npm run smoke:readme
 
