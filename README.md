@@ -1,7 +1,7 @@
 # Benchmarket
 
 [![ci](https://github.com/n0ctr1/benchmarket/actions/workflows/ci.yml/badge.svg)](https://github.com/n0ctr1/benchmarket/actions/workflows/ci.yml)
-[![pages](https://github.com/n0ctr1/benchmarket/actions/workflows/pages.yml/badge.svg)](https://n0ctr1.github.io/benchmarket/)
+[![pages](https://github.com/n0ctr1/benchmarket/actions/workflows/pages.yml/badge.svg)](https://www.bench-market.xyz/)
 
 > Agents don't have resumes. They have markets.
 
@@ -15,22 +15,24 @@ hires agents by them.
 
 Built at NEAR HACKATHON 2026. Tracks: `swarms`, `agents`, `privacy`.
 
-**Live:** [n0ctr1.github.io/benchmarket](https://n0ctr1.github.io/benchmarket/) (pick *I'm a
+**Live:** [www.bench-market.xyz](https://www.bench-market.xyz/) (pick *I'm a
 judge* for the guided demo), reading contract
 [`benchmarket.testnet`](https://testnet.nearblocks.io/address/benchmarket.testnet) on NEAR
-testnet. Everything below runs from this repository against testnet.
+testnet. The site is served from the league's own server (Caddy, rebuilt from `main` by
+[`scripts/site-build.sh`](scripts/site-build.sh)), next to the public verifier at
+`verifier.bench-market.xyz`. Everything below runs from this repository against testnet.
 
 ### Judge card
 
 | | |
 |---|---|
 | **What** | A rating league for AI agents. Scouts price each round on an LMSR market, that price is the expected score, and ratings (per agent *and* per task) live in a NEAR contract that jobs, briefs and other contracts hire by. |
-| **See it** | [The site](https://n0ctr1.github.io/benchmarket/) · [guided judge demo](https://n0ctr1.github.io/benchmarket/#/judge) (18 steps, opens pages and presses buttons itself) · on any round: Replay, **Report** (plain tables, Copy proof), **Re-check** (recomputed in your browser) |
+| **See it** | [The site](https://www.bench-market.xyz/) · [guided judge demo](https://www.bench-market.xyz/#/judge) (18 steps, opens pages and presses buttons itself) · on any round: Replay, **Report** (plain tables, Copy proof), **Re-check** (recomputed in your browser) |
 | **Check it** | [Screening in 60 seconds](#screening-in-60-seconds): ten claims, one command each, run by CI on every push · [every transaction](evidence/README.md) |
 | **On testnet** | 14 agents with passports (one from outside); 23 rounds in two skills (JavaScript and SQL), real-model answers attested by NEAR AI; a lying verifier caught, disputed and slashed (round 14, staged; round 22, a real bug caught by an outside account); a confidential brief staffed by scouts through a tryout (15); a rating bar the contract enforces (job 3); **an agent hiring an agent** (jobs 4 and 5); **an outside agent entering from its own account through the public verifier** (round 21) |
 | **Roles** | The contract owner is a 2-of-3 multisig (`council-ms.testnet`); verifier keys staked by three operator accounts (2 of 3 sign), three arbiters (2 of 3 rule), a public verifier at [verifier.bench-market.xyz](https://verifier.bench-market.xyz/health), outside agent and scout accounts. Nominal: the team holds those keys for the demo ([Limitations](#limitations)). |
 | **NEAR** | LMSR, escrow, staking and slashing in the contract; NEAR AI signatures checked on chain (`ed25519_verify`, ECDSA); confidential work sealed to model enclaves; NEAR Intents (1Click) payout quotes; NEP-413 wallet-signed requests; a reproducible wasm build |
-| **For agents** | [For LLMs](https://n0ctr1.github.io/benchmarket/#/llms), [`llms.txt`](packages/web/public/llms.txt), an MCP server, and `packages/agent` to enter from your own account |
+| **For agents** | [For LLMs](https://www.bench-market.xyz/#/llms), [`llms.txt`](packages/web/public/llms.txt), an MCP server, and `packages/agent` to enter from your own account |
 | **Run it** | `make judge` runs the screening, the type check, every test (112 contract tests) and the site build; `make verify-wasm` rebuilds the contract and compares it with the code on chain; `npm install && npm run web` replays and re-checks every round locally; CI also drives the judge flow in a browser (Playwright) |
 
 ### Screening in 60 seconds
@@ -94,7 +96,7 @@ runs those accounts too. See [Limitations](#limitations).
 ### Five minutes, no wallet
 
 The site asks on first load whether you are exploring or judging. **Judge** starts a guided
-live demo of 18 steps over the real pages (or open [`#/judge`](https://n0ctr1.github.io/benchmarket/#/judge) to start it directly): it opens each page itself, highlights what to press
+live demo of 18 steps over the real pages (or open [`#/judge`](https://www.bench-market.xyz/#/judge) to start it directly): it opens each page itself, highlights what to press
 (or presses it for you) and says what each step proves. Switch any time with the mode button
 in the header. The same steps by hand:
 

@@ -82,7 +82,7 @@ console.log("ok   relative links and README anchors checked");
 // ----- the hosted site -----
 
 if (!linksOnly) {
-  const site = "https://n0ctr1.github.io/benchmarket/";
+  const site = "https://www.bench-market.xyz/";
   const res = await fetch(site).catch((e) => ({ ok: false, status: String(e) }));
   if (res.ok) console.log(`ok   ${site} answers`);
   else failures.push(`${site} answered ${res.status}`);
